@@ -1,6 +1,7 @@
 import React from 'react';
 import { IconPlus, IconDownload, IconFileImport, IconSend } from '@tabler/icons';
 import StyledWrapper from './StyledWrapper';
+import { isNarado } from 'utils/common/product';
 
 const GetStartedStep = ({ onCreateCollection, onImportCollection, onOpenCollection, onStartRequest }) => (
   <StyledWrapper className="step-body">
@@ -35,7 +36,7 @@ const GetStartedStep = ({ onCreateCollection, onImportCollection, onOpenCollecti
         </span>
         <div>
           <div className="secondary-label">Open existing collection</div>
-          <div className="secondary-desc">Open a Bruno collection from your filesystem</div>
+          <div className="secondary-desc">{isNarado() ? 'Open a Bruno collection folder on the server' : 'Open a Bruno collection from your filesystem'}</div>
         </div>
       </button>
       <button className="secondary-action" onClick={onStartRequest}>

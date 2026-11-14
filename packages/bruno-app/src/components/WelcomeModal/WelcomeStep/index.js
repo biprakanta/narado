@@ -6,8 +6,33 @@ import {
   IconRocket
 } from '@tabler/icons';
 import StyledWrapper from './StyledWrapper';
+import { isNarado } from 'utils/common/product';
 
-const highlights = [
+// narado (the web build) runs on a server, so Bruno's offline and local-disk claims don't apply.
+const naradoHighlights = [
+  {
+    icon: IconGitFork,
+    title: 'Stored in Git',
+    desc: 'Collections live in your team\'s GitHub or GitLab repositories, as OpenAPI specs and plain files.'
+  },
+  {
+    icon: IconFolderTabler,
+    title: 'Changes through review',
+    desc: 'Edits become a branch or fork and a merge request. Nothing is pushed straight to main.'
+  },
+  {
+    icon: IconLock,
+    title: 'Your company sign-in',
+    desc: 'Sign in with your organisation\'s single sign-on. Secrets are masked wherever narado shows them.'
+  },
+  {
+    icon: IconRocket,
+    title: 'Ready for AI assistants',
+    desc: 'Assistants can read and send requests through narado\'s MCP server, acting as you.'
+  }
+];
+
+const brunoHighlights = [
   {
     icon: IconFolderTabler,
     title: 'Filesystem only',
@@ -33,7 +58,7 @@ const highlights = [
 const WelcomeStep = () => (
   <StyledWrapper className="step-body">
     <div className="highlights">
-      {highlights.map((item) => {
+      {(isNarado() ? naradoHighlights : brunoHighlights).map((item) => {
         const Icon = item.icon;
         return (
           <div key={item.title} className="highlight-item">

@@ -12,6 +12,7 @@
  * server.js only allows on a loopback address.
  */
 const crypto = require('node:crypto');
+const { signInPage, serveAsset } = require('./pages');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
@@ -283,11 +284,15 @@ const createAuth = ({ dataDir, env = process.env, port, fetchImpl, log = console
     res.writeHead(302, { location, 'cache-control': 'no-store', ...headers });
     res.end();
   };
-  const page = (res, status, message) => {
+  const providerName = env.NARADO_OIDC_PROVIDER_NAME || 'single sign-on';
+  const autoRedirect = env.NARADO_OIDC_AUTO_REDIRECT === '1';
+  const startUrl = (returnTo) => `/auth/login/start?return=${encodeURIComponent(safeReturn(returnTo))}`;
+  const html = (res, status, body) => {
     res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-    const safe = String(message).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-    res.end(`<!doctype html><meta charset="utf-8"><title>narado sign-in</title><body style="font-family:system-ui;max-width:36rem;margin:4rem auto;padding:0 1rem"><h1>Could not sign in</h1><p>${safe}</p><p><a href="/auth/login">Try again</a></p>`);
+    res.end(body);
   };
+  /** A sign-in problem, on the sign-in page with a way to try again. */
+  const page = (res, status, message) => html(res, status, signInPage({ startUrl: startUrl('/'), providerName, notice: { text: message, error: true } }));
 
   const userFor = (req) => {
     if (!enabled) return null;
@@ -304,10 +309,17 @@ const createAuth = ({ dataDir, env = process.env, port, fetchImpl, log = console
       return user ? send(res, 200, { mode: 'oidc', user: { id: user.id, name: user.name, email: user.email } }) : send(res, 401, { mode: 'oidc', user: null }), true;
     }
 
+    if (serveAsset(url.pathname, res)) return true;
     if (!enabled) return send(res, 404, { error: 'Sign-in is not configured on this server' }), true;
 
     try {
-      if (url.pathname === '/auth/login' && req.method === 'GET') {
+      if (url.pathname === '/auth/login' && req.method === 'GET' && !autoRedirect) {
+        const notice = url.searchParams.get('signedout') ? { text: 'You have signed out.' } : null;
+        html(res, 200, signInPage({ startUrl: startUrl(url.searchParams.get('return')), providerName, notice }));
+        return true;
+      }
+
+      if ((url.pathname === '/auth/login/start' || url.pathname === '/auth/login') && req.method === 'GET') {
         for (const [k, v] of pending) if (Date.now() - v.at > LOGIN_TTL_MS) pending.delete(k);
         const start = await oidc.start();
         pending.set(start.state, { nonce: start.nonce, verifier: start.verifier, returnTo: safeReturn(url.searchParams.get('return')), at: Date.now() });
@@ -347,8 +359,8 @@ const createAuth = ({ dataDir, env = process.env, port, fetchImpl, log = console
         const origin = req.headers.origin;
         if (origin && origin !== publicUrl) return send(res, 403, { error: 'Cross-site sign-out refused' }), true;
         const idToken = users.endSession(parseCookies(req.headers.cookie)[COOKIE]);
-        const next = await oidc.logoutUrl(idToken, `${publicUrl}/`).catch(() => null);
-        send(res, 200, { redirect: next || '/' }, { 'set-cookie': cookie('', 0) });
+        const next = await oidc.logoutUrl(idToken, `${publicUrl}/auth/login?signedout=1`).catch(() => null);
+        send(res, 200, { redirect: next || '/auth/login?signedout=1' }, { 'set-cookie': cookie('', 0) });
         return true;
       }
     } catch (err) {

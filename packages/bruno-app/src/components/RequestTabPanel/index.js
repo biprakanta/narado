@@ -28,6 +28,8 @@ import CollectionOverview from 'components/CollectionSettings/Overview';
 import RequestNotLoaded from './RequestNotLoaded';
 import RequestIsLoading from './RequestIsLoading';
 import RequestTabPanelLoading from './RequestTabPanelLoading';
+import { NaradoHome } from 'components/Narado/Brand';
+import { isNaradoAvailable } from 'components/Narado/api';
 import FolderNotFound from './FolderNotFound';
 import ExampleNotFound from './ExampleNotFound';
 import WsQueryUrl from 'components/RequestPane/WsQueryUrl';
@@ -407,6 +409,7 @@ const RequestTabPanel = () => {
   }
 
   if (!activeTabUid || !focusedTab) {
+    if (isNaradoAvailable()) return <NaradoHome />;
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-muted">
         <IconLoader2 className="animate-spin" size={24} strokeWidth={1.5} />

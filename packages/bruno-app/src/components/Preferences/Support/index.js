@@ -10,6 +10,7 @@ import {
 } from '@tabler/icons';
 import StyledWrapper from './StyledWrapper';
 import { useTranslation } from 'react-i18next';
+import { isNarado, NARADO_REPO_URL, BRUNO_REPO_URL } from 'utils/common/product';
 
 const SUPPORT_GROUPS = [
   {
@@ -68,6 +69,22 @@ const SUPPORT_GROUPS = [
   }
 ];
 
+// narado: issues and code go to narado's repository; Bruno's docs and community stay linked,
+// since narado is built on Bruno.
+const supportGroups = () => {
+  if (!isNarado()) return SUPPORT_GROUPS;
+  const swap = { 'report-issues': `${NARADO_REPO_URL}/issues`, 'github': NARADO_REPO_URL };
+  return SUPPORT_GROUPS.map((group) => ({
+    ...group,
+    links: [
+      ...group.links.map((link) => (swap[link.key] ? { ...link, url: swap[link.key] } : link)),
+      ...(group.key === 'community'
+        ? [{ key: 'bruno', icon: IconBrandGithub, url: BRUNO_REPO_URL, label: 'Bruno', description: 'narado is built on Bruno, the open-source API client' }]
+        : [])
+    ]
+  }));
+};
+
 const Support = () => {
   const { t } = useTranslation();
 
@@ -75,7 +92,7 @@ const Support = () => {
     <StyledWrapper className="w-full">
       <div className="section-header">Support</div>
 
-      {SUPPORT_GROUPS.map((group) => (
+      {supportGroups().map((group) => (
         <section className="support-group" key={group.key} aria-labelledby={`support-${group.key}-label`}>
           <h3 className="support-group-label select-none" id={`support-${group.key}-label`}>
             {t(group.label)}

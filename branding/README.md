@@ -73,6 +73,18 @@ Contrast, checked against WCAG 2.1:
 
 Bruno's other themes (Nord, Dracula, Catppuccin and the rest) stay available in Preferences. narado Light and narado Dark are the defaults in the web build; browsers that were on Bruno's default Light or Dark are moved to narado's once.
 
+## Screens
+
+| Sign-in | Welcome | Overview (dark) | Overview (light) |
+|---|---|---|---|
+| ![Sign-in](screenshot-sign-in.jpg) | ![Welcome](screenshot-welcome.jpg) | ![Overview dark](screenshot-overview-dark.jpg) | ![Overview light](screenshot-overview-light.jpg) |
+
+- **Sign-in** (`packages/bruno-web-server/src/narado/pages.js`): illustration, wordmark and a "Sign in with …" button (`NARADO_OIDC_PROVIDER_NAME`), which turns into the loader while the provider opens. Sign-out and sign-in errors land here too. `NARADO_OIDC_AUTO_REDIRECT=1` skips it.
+- **Loading**: [`loader-dark.gif`](loader-dark.gif) shows the animation, in which rings ripple out as the veena is plucked. It is `icons/narado-loader-{light,dark}.svg`, pure CSS, and holds still for people who turn on reduced motion. Used on sign-in, the start-up screen and request loading.
+- **Welcome dialog** (first run): the illustration and narado's own four points, since Bruno's "offline, on your disk" claims don't apply to a server.
+- **Overview**: a night-indigo banner with the illustration, the orbit from the artwork, a greeting by first name and the workspace.
+- **Elsewhere**: the veena as the Git section's icon, "narado on Bruno v…" in the status bar, the veena in the empty response pane, and the illustration on the home screen when no tab is open.
+
 ## Screenshots
 
 | Before (Bruno) | narado Dark | narado Light |
@@ -90,8 +102,12 @@ Bruno's other themes (Nord, Dracula, Catppuccin and the rest) stay available in 
 
 All of it applies only to the web build (`window.isBrunoWeb`). The Electron app keeps Bruno's name, logo and themes, which keeps merges from upstream simple.
 
+## Product name
+
+`packages/bruno-app/src/utils/common/product.js` has `productName()`, `isNarado()` and the repository links. Product text in the web build says narado; the **Bruno file format** and import/export type keep the name Bruno (".bru, Bruno's native format", "Bruno Collection (ZIP)"), because narado really does read and write that format. Support links point to narado's repository for issues and code, and keep Bruno's docs and community with a "built on Bruno" link.
+
 ## Not done yet
 
-- Bruno's name still appears in some places: the welcome dialog, About, Preferences text and a few messages.
-- The sign-in page is Keycloak's own. Brand it with a Keycloak theme, or add a narado sign-in landing page.
+- The provider's own sign-in form (Keycloak in development) is not branded; narado's page comes before it.
 - No typeface has been chosen beyond the interface's own.
+- The app's JavaScript has to download before the start-up screen can show, so a slow first load is briefly blank.

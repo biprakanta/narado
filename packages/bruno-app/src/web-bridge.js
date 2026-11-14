@@ -40,6 +40,7 @@ const installWebBridge = () => {
   const EARLY_MS = 30 * 1000;
 
   const deliver = (channel, args) => {
+    if (channel === 'main:app-loaded' && bootScreen) bootScreen.hide();
     const handlers = listeners.get(channel);
     if (!handlers || !handlers.size) {
       if (early.length < 1000) early.push({ channel, args, at: Date.now() });
@@ -139,7 +140,7 @@ const installWebBridge = () => {
       }
       // Calls in flight cannot complete; fail them so the UI does not hang.
       for (const [id, p] of pending) {
-        p.reject(new Error('Lost connection to the Bruno server'));
+        p.reject(new Error('Lost connection to the narado server'));
         pending.delete(id);
       }
       setTimeout(connect, reconnectDelay);
@@ -200,6 +201,34 @@ const installWebBridge = () => {
   icon('icon', '/narado/narado-favicon.svg', { type: 'image/svg+xml' });
   icon('alternate icon', '/narado/favicon.ico', { sizes: '16x16 32x32 48x48' });
   icon('apple-touch-icon', '/narado/favicon-180.png');
+
+  // Start-up screen: the veena loader until Bruno's main process says the app has loaded.
+  const bootScreen = (() => {
+    let stored = 'system';
+    try {
+      stored = JSON.parse(localStorage.getItem('bruno.theme') || '"system"');
+    } catch {}
+    const dark = stored === 'dark' || (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const el = document.createElement('div');
+    el.id = 'narado-boot';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-label', 'Loading narado');
+    el.style.cssText = `position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;`
+      + `background:${dark ? '#17121F' : '#FFFFFF'};color:${dark ? '#C7BCCB' : '#5E5267'};font:500 14px system-ui,-apple-system,sans-serif;transition:opacity .25s`;
+    el.innerHTML = `<img src="/narado/narado-loader-${dark ? 'dark' : 'light'}.svg" width="96" height="96" alt=""><span>Starting narado…</span>`;
+    const mount = () => document.body.appendChild(el);
+    if (document.body) mount();
+    else document.addEventListener('DOMContentLoaded', mount);
+    let done = false;
+    const hide = () => {
+      if (done) return;
+      done = true;
+      el.style.opacity = '0';
+      setTimeout(() => el.remove(), 300);
+    };
+    setTimeout(hide, 20000); // never block the app if the event is missed
+    return { hide };
+  })();
 
   // Move browsers still on Bruno's default themes to narado's, once. A theme someone
   // picked themselves (anything but the old defaults) is left alone.

@@ -67,6 +67,10 @@ narado signs people in with any OpenID Connect provider (Keycloak, Okta, Google 
 | `NARADO_PUBLIC_URL` | The address people open narado at, for example `https://narado.acme.com` |
 | `NARADO_ALLOWED_EMAIL_DOMAINS` | Optional: only these email domains may sign in, comma-separated |
 | `NARADO_OIDC_SCOPES` | Optional: default `openid profile email` |
+| `NARADO_OIDC_PROVIDER_NAME` | Optional: the name on the sign-in button, for example `Okta`. Default "single sign-on" |
+| `NARADO_OIDC_AUTO_REDIRECT` | Optional: `1` skips narado's sign-in page and goes straight to the provider |
+
+People first see narado's own sign-in page (`src/narado/pages.js`). Sign-out and sign-in errors come back to it.
 
 - **The flow:** authorization code with PKCE. ID tokens are checked for signature, issuer, audience, expiry and nonce.
 - **Sessions:** kept in `<data dir>/narado.db`, with only hashes of the session ids stored. A session ends after 12 hours idle or 7 days in total. The cookie is HttpOnly and SameSite=Lax, and also Secure on https.

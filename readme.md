@@ -1,225 +1,71 @@
-<br />
-<img src="assets/images/logo-transparent.png" width="80"/>
+<p align="center">
+  <img src="branding/icons/narado-illustration-256.png" width="160" alt="narado: the sage Narada with his veena">
+</p>
 
-### Bruno - Opensource IDE for exploring and testing APIs.
+<h1 align="center">narado</h1>
 
-[![GitHub version](https://badge.fury.io/gh/usebruno%2Fbruno.svg)](https://badge.fury.io/gh/usebruno%2Fbruno)
-[![CI](https://github.com/usebruno/bruno/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/usebruno/bruno/actions/workflows/tests.yml)
-[![Commit Activity](https://img.shields.io/github/commit-activity/m/usebruno/bruno)](https://github.com/usebruno/bruno/pulse)
-[![X](https://img.shields.io/twitter/follow/use_bruno?style=social&logo=x)](https://twitter.com/use_bruno)
-[![Website](https://img.shields.io/badge/Website-Visit-blue)](https://www.usebruno.com)
-[![Download](https://img.shields.io/badge/Download-Latest-brightgreen)](https://www.usebruno.com/downloads)
+<p align="center"><strong>API collections in Git, for your whole team.</strong><br>
+A self-hosted, browser-based API client built on <a href="https://github.com/usebruno/bruno">Bruno</a>.</p>
 
-**English**
-| [Українська](docs/readme/readme_ua.md)
-| [Русский](docs/readme/readme_ru.md)
-| [Türkçe](docs/readme/readme_tr.md)
-| [Deutsch](docs/readme/readme_de.md)
-| [Français](docs/readme/readme_fr.md)
-| [Português (BR)](docs/readme/readme_pt_br.md)
-| [한국어](docs/readme/readme_kr.md)
-| [বাংলা](docs/readme/readme_bn.md)
-| [Español](docs/readme/readme_es.md)
-| [Italiano](docs/readme/readme_it.md)
-| [Română](docs/readme/readme_ro.md)
-| [Polski](docs/readme/readme_pl.md)
-| [简体中文](docs/readme/readme_cn.md)
-| [正體中文](docs/readme/readme_zhtw.md)
-| [العربية](docs/readme/readme_ar.md)
-| [日本語](docs/readme/readme_ja.md)
-| [ქართული](docs/readme/readme_ka.md)
-| [Nederlands](docs/readme/readme_nl.md)
-| [فارسی](docs/readme/readme_fa.md)
-| [हिन्दी](docs/readme/readme_hi.md)
+---
 
-Bruno is a new and innovative API client, aimed at revolutionizing the status quo represented by Postman and similar tools out there.
+narado is named after Narada, the travelling sage who carries word between worlds. It carries requests between your team and your APIs.
 
-Bruno stores your collections directly in a folder on your filesystem. We use a plain text markup language, Bru, to save information about API requests.
+Your collections live in your own GitHub or GitLab repositories, stored as OpenAPI specs. Everyone works in the browser against one narado server. Changes go through branches and merge requests, the same way code does.
 
-You can use Git or any version control of your choice to collaborate over your API collections.
+![narado](branding/screenshot-narado-dark.jpg)
 
-Bruno is offline-only. There are no plans to add cloud-sync to Bruno, ever. We value your data privacy and believe it should stay on your device. Read our long-term vision [here](https://github.com/usebruno/bruno/discussions/269)
+## What it does
 
-[Download Bruno](https://www.usebruno.com/downloads)
+- **Bruno in the browser.** Bruno's interface for building and sending requests, with environments, scripts and tests, running on a server you control. HTTP requests are tested in narado; Bruno's other request types have not been checked yet.
+- **Git is the storage.** Open a repository from GitHub or GitLab and narado clones it on the server. Edits stay local until you save them.
+- **Changes through review.** Saving on the default branch asks for a new branch, or a fork when you can only read the repo, and opens a pull or merge request. You can update from main and resolve conflicts in the interface.
+- **OpenAPI as the source of truth.** Requests are stored in the repo's `openapi.yaml`, with client-only data (examples, scripts, environments) in `.client/`. Edits in the interface go back into the spec, keeping its formatting.
+- **Company sign-in.** Any OpenID Connect provider: Okta, Microsoft Entra ID, Google Workspace, Keycloak and others. You can restrict sign-in to your email domains.
+- **MCP server for AI assistants.** Assistants such as Claude Code can list, read and send requests and propose changes through `/mcp`, using personal tokens that act as the person who made them. Sends only reach hosts the workspace names, and secrets are masked.
 
-📢 Watch our recent talk at India FOSS 3.0 Conference [here](https://www.youtube.com/watch?v=7bSMFpbcPiY)
+## Quick start (development)
 
-![bruno](assets/images/landing-2-dark.png#gh-light-mode-only)
-![bruno](assets/images/landing-2-light.png#gh-dark-mode-only) <br /><br />
+Requires Node.js 24 (see `.nvmrc`), Git, and the repo's dependencies (`npm run setup` from the root).
 
-## Commercial Versions ✨
-
-Majority of our features are free and open source.
-We strive to strike a harmonious balance between [open-source principles and sustainability](https://github.com/usebruno/bruno/discussions/269)
-
-You can explore our [paid versions](https://www.usebruno.com/pricing) to see if there are additional features that you or your team may find useful! <br/>
-
-## Table of Contents
-
-- [Installation](#installation)
-- [Bruno CLI](#bruno-cli)
-- [Run with Docker](#run-with-docker)
-- [Features](#features)
-  - [Run across multiple platforms 🖥️](#run-across-multiple-platforms-%EF%B8%8F)
-  - [Collaborate via Git 👩‍💻🧑‍💻](#collaborate-via-git-%E2%80%8D%E2%80%8D)
-- [Important Links 📌](#important-links-)
-- [Showcase 🎥](#showcase-)
-- [Share Testimonials 📣](#share-testimonials-)
-- [Publishing to New Package Managers](#publishing-to-new-package-managers)
-- [Stay in touch 🌐](#stay-in-touch-)
-- [Trademark](#trademark)
-- [Contribute 👩‍💻🧑‍💻](#contribute-%E2%80%8D%E2%80%8D)
-- [Authors](#authors)
-- [License 📄](#license-)
-
-## Installation
-
-Bruno is available as binary download [on our website](https://www.usebruno.com/downloads) for Mac, Windows and Linux.
-
-You can also install Bruno via package managers like Homebrew, Chocolatey, Scoop, Snap, Flatpak and Apt.
-
-```sh
-# On Mac via Homebrew
-brew install bruno
-
-# On Windows via Chocolatey
-choco install bruno
-
-# On Windows via Scoop
-scoop bucket add extras
-scoop install bruno
-
-# On Windows via winget
-winget install Bruno.Bruno
-
-# On Linux via Snap
-snap install bruno
-
-# On Linux via Flatpak
-flatpak install com.usebruno.Bruno
-
-# On Arch Linux via AUR
-yay -S bruno
-
-# On Linux via Apt
-sudo mkdir -p /etc/apt/keyrings
-sudo apt update && sudo apt install gpg curl
-curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x9FA6017ECABE0266" \
-  | gpg --dearmor \
-  | sudo tee /etc/apt/keyrings/bruno.gpg > /dev/null
-sudo chmod 644 /etc/apt/keyrings/bruno.gpg
-echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/bruno.gpg] http://debian.usebruno.com/ bruno stable" \
-  | sudo tee /etc/apt/sources.list.d/bruno.list
-sudo apt update && sudo apt install bruno
+```bash
+NARADO_GITHUB_TOKEN=$(gh auth token) node packages/bruno-web-server/src/server.js
 ```
 
-## Bruno CLI
-
-The **Bruno CLI** lets you run your API collections from the command line, which is ideal for automated testing and CI/CD pipelines. Install it from npm using the package manager of your choice:
-
-```sh
-npm install -g @usebruno/cli
+```bash
+npm run dev:web
 ```
 
-Navigate to the directory containing your collection and run it:
+Open http://localhost:3000. Without sign-in configured, narado is a single-user tool and only listens on `127.0.0.1`. To try sign-in locally, start the Keycloak realm in [`packages/bruno-web-server/dev/keycloak`](packages/bruno-web-server/dev/keycloak) and follow its README.
 
-```sh
-# Run every request in the collection
-bru run
+Configuration, Git hosts, sign-in, the MCP server and known limits are documented in [`packages/bruno-web-server/README.md`](packages/bruno-web-server/README.md).
 
-# Run a single request
-bru run request.bru
+## How it fits together
 
-# Run a folder against a specific environment
-bru run folder --env Local
-```
+| Part | Where |
+|---|---|
+| Server: runs Bruno's main-process code in Node.js and relays its IPC to the browser over a WebSocket | [`packages/bruno-web-server`](packages/bruno-web-server) |
+| Git workspaces, GitHub and GitLab, OpenAPI storage, MCP, sign-in | [`packages/bruno-web-server/src/narado`](packages/bruno-web-server/src/narado) |
+| Browser bridge and narado's interface additions | [`packages/bruno-app/src/web-bridge.js`](packages/bruno-app/src/web-bridge.js), [`packages/bruno-app/src/components/Narado`](packages/bruno-app/src/components/Narado) |
+| Logo, colours, icons and themes | [`branding`](branding) |
 
-For the full command reference, see the [Bruno CLI documentation](https://docs.usebruno.com/bru-cli/overview).
+The Electron desktop app in this repository is unchanged and is still Bruno.
 
-## Run with Docker
+## Status
 
-Official Docker images for the **Bruno CLI** let you run API collections in CI/CD pipelines and locally without installing Node.js or npm on the host. Images are published to both [Docker Hub](https://hub.docker.com/r/usebruno/cli) and the [GitHub Container Registry](https://ghcr.io/usebruno/cli) on every CLI release, with `alpine` and `debian` variants for `linux/amd64` and `linux/arm64`.
+narado is in active development and not production-ready yet.
 
-```sh
-# Pull from Docker Hub
-docker pull usebruno/cli:latest
+| | |
+|---|---|
+| Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · branding |
+| Next | Signed-in people share one Bruno process, so they are not yet isolated from each other (Phase 4d). After that: per-person Git accounts through a GitHub App and GitLab OAuth (4c), a pluggable secrets store with Vault and cloud secret managers (4e), and request-safety rules for every send (4a) |
 
-# Or pull from the GitHub Container Registry
-docker pull ghcr.io/usebruno/cli:latest
+GitLab support has been tested against unit-test fakes only so far, not a real GitLab instance.
 
-# Run a collection by mounting the current directory
-docker run -v $(pwd):/bruno usebruno/cli run
-```
+## Built on Bruno
 
-For variants, tag matrix, environment files, and CI examples (GitHub Actions, GitLab CI, Jenkins), see the full [Bruno CLI Docker documentation](https://docs.usebruno.com/bru-cli/docker).
+narado is a fork of [Bruno](https://github.com/usebruno/bruno), the open-source, Git-friendly API client by Anoop M D, Anusree P S and contributors. Bruno does the hard part; narado adds the server, Git hosting, sign-in and MCP around it. Bruno's own readme is kept in [README.bruno.md](README.bruno.md).
 
-## Features
+## License
 
-### Run across multiple platforms 🖥️
-
-![bruno](assets/images/run-anywhere.png) <br /><br />
-
-### Collaborate via Git 👩‍💻🧑‍💻
-
-Or any version control system of your choice
-
-![bruno](assets/images/version-control.png) <br /><br />
-
-## Important Links 📌
-
-- [Our Long Term Vision](https://github.com/usebruno/bruno/discussions/269)
-- [Roadmap](https://www.usebruno.com/roadmap)
-- [Documentation](https://docs.usebruno.com)
-- [Stack Overflow](https://stackoverflow.com/questions/tagged/bruno)
-- [Website](https://www.usebruno.com)
-- [Pricing](https://www.usebruno.com/pricing)
-- [Download](https://www.usebruno.com/downloads)
-
-## Showcase 🎥
-
-- [Testimonials](https://github.com/usebruno/bruno/discussions/343)
-- [Knowledge Hub](https://github.com/usebruno/bruno/discussions/386)
-- [Scriptmania](https://github.com/usebruno/bruno/discussions/385)
-
-## Share Testimonials 📣
-
-If Bruno has helped you at work and your teams, please don't forget to share your [testimonials on our GitHub discussion](https://github.com/usebruno/bruno/discussions/343)
-
-## Publishing to New Package Managers
-
-Please see [here](publishing.md) for more information.
-
-## Stay in touch 🌐
-
-[𝕏 (Twitter)](https://twitter.com/use_bruno) <br />
-[Website](https://www.usebruno.com) <br />
-[Discord](https://discord.com/invite/KgcZUncpjq) <br />
-[LinkedIn](https://www.linkedin.com/company/usebruno)
-
-## Trademark
-
-**Name**
-
-`Bruno` is a trademark held by [Anoop M D](https://www.helloanoop.com/)
-
-**Logo**
-
-The logo is sourced from [OpenMoji](https://openmoji.org/library/emoji-1F436/). License: CC [BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
-
-## Contribute 👩‍💻🧑‍💻
-
-I am happy that you are looking to improve bruno. Please check out the [contributing guide](contributing.md)
-
-Even if you are not able to make contributions via code, please don't hesitate to file bugs and feature requests that needs to be implemented to solve your use case.
-
-## Authors
-
-<div align="center">
-    <a href="https://github.com/usebruno/bruno/graphs/contributors">
-        <img src="https://contrib.rocks/image?repo=usebruno/bruno" />
-    </a>
-</div>
-
-## License 📄
-
-[MIT](license.md)
+MIT, as Bruno is. See [license.md](license.md), which keeps Bruno's copyright notice.

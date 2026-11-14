@@ -23,5 +23,116 @@ export const NaradoVeena = ({ size = 24, ...rest }) => (
   </svg>
 );
 
-/** The product name shown in the interface. */
-export const productName = () => (isNaradoAvailable() ? 'narado' : 'Bruno');
+/** The veena loader: rings ripple out from the plucked veena (stills with reduced motion). */
+export const NaradoLoader = ({ size = 64 }) => {
+  const { displayedTheme } = useTheme();
+  const src = displayedTheme === 'dark' ? '/narado/narado-loader-dark.svg' : '/narado/narado-loader-light.svg';
+  return <img src={src} width={size} height={size} alt="" aria-hidden="true" style={{ display: 'block' }} />;
+};
+
+/**
+ * The full logo illustration. Its figure is cream, so it sits on a night-indigo disc that
+ * keeps it readable in light mode too (branding/README.md, "Using the logo").
+ */
+export const NaradoIllustration = ({ size = 160 }) => (
+  <div
+    aria-hidden="true"
+    style={{
+      width: size,
+      height: size,
+      borderRadius: '50%',
+      background: 'radial-gradient(circle at 50% 40%, #3A0F5E 0%, #21004B 62%, #17062E 100%)',
+      boxShadow: '0 10px 30px rgba(33, 0, 75, 0.25)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0
+    }}
+  >
+    <img
+      src="/narado/narado-illustration-256.png"
+      srcSet="/narado/narado-illustration-512.png 2x"
+      width={Math.round(size * 0.84)}
+      height={Math.round(size * 0.84)}
+      alt=""
+    />
+  </div>
+);
+
+/** What the main area shows when no tab is open: the logo, name and where to start. */
+export const NaradoHome = () => (
+  <div className="flex flex-col items-center justify-center h-full gap-2 px-4 text-center" data-testid="narado-home">
+    <NaradoIllustration size={180} />
+    <div style={{ fontSize: 28, fontWeight: 700, marginTop: 14, letterSpacing: 0.2 }}>narado</div>
+    <div className="text-muted" style={{ fontSize: 14 }}>API collections in Git, for your whole team.</div>
+    <div className="text-muted" style={{ fontSize: 13, marginTop: 14, maxWidth: 420, lineHeight: 1.5 }}>
+      Open a request from the sidebar, or open a repository from the <strong>Git</strong> section at the bottom of the sidebar.
+    </div>
+  </div>
+);
+
+/** The veena as a sidebar section icon (same props as the Tabler icons it sits beside). */
+export const VeenaIcon = ({ size = 16, className }) => <NaradoVeena size={size} className={className} />;
+
+const greeting = () => {
+  const h = new Date().getHours();
+  return h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+};
+
+/**
+ * The banner at the top of a workspace's Overview: the logo on night indigo with the
+ * orbit from the artwork, a greeting to the signed-in person and the workspace name.
+ */
+export const NaradoBanner = ({ workspaceName }) => {
+  const user = typeof window !== 'undefined' && window.naradoAuth ? window.naradoAuth.user : null;
+  const first = user && user.name ? String(user.name).split(/\s+/)[0] : null;
+  return (
+    <div
+      data-testid="narado-banner"
+      style={{
+        position: 'relative',
+        overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 20,
+        padding: '18px 22px',
+        marginBottom: 20,
+        borderRadius: 14,
+        color: '#FDEED2',
+        background: 'linear-gradient(115deg, #21004B 0%, #3A0A52 55%, #650748 85%, #8E1B3F 100%)'
+      }}
+    >
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 400 140"
+        preserveAspectRatio="none"
+        style={{ position: 'absolute', right: -40, top: 0, width: 420, height: '100%', opacity: 0.9, pointerEvents: 'none' }}
+      >
+        <defs>
+          <linearGradient id="narado-orbit" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0" stopColor="#FD6E15" stopOpacity="0" />
+            <stop offset="0.5" stopColor="#FD6E15" stopOpacity="0.8" />
+            <stop offset="1" stopColor="#FB9B1A" />
+          </linearGradient>
+        </defs>
+        <path d="M10 130 C 150 150, 330 110, 380 20" fill="none" stroke="url(#narado-orbit)" strokeWidth="2.5" strokeLinecap="round" />
+        <circle cx="380" cy="20" r="6" fill="#FB9B1A" />
+      </svg>
+      <NaradoIllustration size={84} />
+      <div style={{ position: 'relative', minWidth: 0 }}>
+        <div style={{ fontSize: 20, fontWeight: 700, color: '#FDEED2' }}>
+          {first ? `${greeting()}, ${first}` : 'Welcome to narado'}
+        </div>
+        <div style={{ fontSize: 13, color: '#E3D3E6', marginTop: 4 }}>
+          {workspaceName ? <strong style={{ color: '#FCE3BB' }}>{workspaceName}</strong> : null}
+          {workspaceName ? ' · ' : ''}API collections in Git, for your whole team.
+        </div>
+        <div style={{ fontSize: 12, color: '#C9B6CF', marginTop: 8 }}>
+          Open a repository from <strong style={{ color: '#FB9B1A' }}>Git</strong> in the sidebar to work on its collection and propose changes.
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export { productName } from 'utils/common/product';

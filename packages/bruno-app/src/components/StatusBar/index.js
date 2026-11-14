@@ -13,6 +13,8 @@ import { openConsole } from 'providers/ReduxStore/slices/logs';
 import { addTab } from 'providers/ReduxStore/slices/tabs';
 import { useApp } from 'providers/App';
 import StyledWrapper from './StyledWrapper';
+import { repoUrl, isNarado } from 'utils/common/product';
+import { NaradoMark } from 'components/Narado/Brand';
 
 const StatusBar = () => {
   const dispatch = useDispatch();
@@ -103,7 +105,7 @@ const StatusBar = () => {
               <button
                 className="status-bar-button"
                 onClick={() => {
-                  window?.ipcRenderer?.openExternal('https://github.com/usebruno/bruno');
+                  window?.ipcRenderer?.openExternal(repoUrl());
                 }}
                 tabIndex={0}
                 aria-label="Open GitHub Repository"
@@ -160,8 +162,16 @@ const StatusBar = () => {
 
             <div className="status-bar-divider"></div>
 
-            <div className="status-bar-version">
-              v{version}
+            <div className="status-bar-version" style={isNarado() ? { display: 'flex', alignItems: 'center', gap: 6 } : undefined}>
+              {isNarado() ? (
+                <>
+                  <NaradoMark size={14} />
+                  <span style={{ fontWeight: 600 }}>narado</span>
+                  <span className="opacity-60">on Bruno v{version}</span>
+                </>
+              ) : (
+                <>v{version}</>
+              )}
             </div>
           </div>
         </div>

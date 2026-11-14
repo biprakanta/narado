@@ -1,12 +1,13 @@
 import React from 'react';
 import StyledWrapper from './StyledWrapper';
+import { isNarado } from 'utils/common/product';
 
 const StorageStep = ({ collectionLocation, onBrowse }) => (
   <StyledWrapper className="step-body">
     <div className="step-label">Storage</div>
     <div className="step-title">Where should we store your collections?</div>
     <div className="step-description">
-      Bruno saves collections as plain files on your filesystem, perfect for version control with Git.
+      {isNarado() ? 'narado keeps collections as plain files in folders on the server. Collections from Git repositories are opened from the Git section.' : 'Bruno saves collections as plain files on your filesystem, perfect for version control with Git.'}
     </div>
 
     <div className="location-input-group">

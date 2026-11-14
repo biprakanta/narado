@@ -8,6 +8,7 @@ import Button from 'ui/Button';
 import StatusBadge from 'ui/StatusBadge';
 import Help from 'components/Help';
 import { requestNameSourceLabels } from 'components/Sidebar/ImportSettings/RequestNameSourceOption';
+import { productName } from 'utils/common/product';
 
 const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : str;
 
@@ -103,8 +104,8 @@ const OverviewSection = ({ collection, storedSpec, collectionDrift, specDrift, r
           rightSection={(
             <Help icon="info" size={11} placement="left" width={220}>
               {autoCheckEnabled
-                ? `Bruno checks the spec for changes every ${autoCheckInterval} minutes. You can change this in Edit connection settings.`
-                : 'Bruno does not check the spec for changes on its own. Use Check for updates, or turn it on in Edit connection settings.'}
+                ? `${productName()} checks the spec for changes every ${autoCheckInterval} minutes. You can change this in Edit connection settings.`
+                : `${productName()} does not check the spec for changes on its own. Use Check for updates, or turn it on in Edit connection settings.`}
             </Help>
           )}
         >
@@ -115,7 +116,7 @@ const OverviewSection = ({ collection, storedSpec, collectionDrift, specDrift, r
     { label: 'Folder Grouping', value: capitalize(groupBy) },
     requestNameSource && {
       label: 'Naming Requests',
-      labelTooltip: 'The field from the spec used to name each request. If an endpoint does not have it, Bruno falls back to summary, operationId, description, then method and path.',
+      labelTooltip: `The field from the spec used to name each request. If an endpoint does not have it, ${productName()} falls back to summary, operationId, description, then method and path.`,
       value: requestNameSourceLabels[requestNameSource] || requestNameSource
     },
     authPlacement && {

@@ -12,6 +12,8 @@ import ThemeStep from './ThemeStep';
 import StorageStep from './StorageStep';
 import GetStartedStep from './GetStartedStep';
 import StyledWrapper from './StyledWrapper';
+import { productName, isNarado } from 'utils/common/product';
+import { NaradoIllustration } from 'components/Narado/Brand';
 
 const TOTAL_STEPS = 4;
 
@@ -104,14 +106,14 @@ const WelcomeModal = ({ onDismiss, onImportCollection, onCreateCollection, onOpe
       <div className="welcome-card">
         <div className="welcome-header">
           <div className="logo-container">
-            <Bruno width={48} />
+            {isNarado() ? <NaradoIllustration size={96} /> : <Bruno width={48} />}
           </div>
           <h1 className="welcome-heading">
-            {step === 1 ? 'Welcome to Bruno' : step === 4 ? 'Ready to go!' : 'Set up Bruno'}
+            {step === 1 ? `Welcome to ${productName()}` : step === 4 ? 'Ready to go!' : `Set up ${productName()}`}
           </h1>
           {step === 1 && (
             <p className="welcome-tagline">
-              A fast, Git-friendly, and open-source API client.
+              {isNarado() ? 'API collections in Git, for your whole team.' : 'A fast, Git-friendly, and open-source API client.'}
             </p>
           )}
         </div>

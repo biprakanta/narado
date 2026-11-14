@@ -1,3 +1,5 @@
+import { productName } from 'utils/common/product';
+
 const inputsConfig = [
   {
     key: 'authorizationUrl',
@@ -23,7 +25,7 @@ const inputsConfig = [
   {
     key: 'state',
     label: 'State',
-    tooltip: 'If left empty, Bruno automatically generates a secure random value to help protect against CSRF attacks.'
+    tooltip: `If left empty, ${productName()} automatically generates a secure random value to help protect against CSRF attacks.`
   }
 ];
 

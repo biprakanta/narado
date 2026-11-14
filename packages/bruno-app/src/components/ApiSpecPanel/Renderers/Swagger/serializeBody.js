@@ -1,3 +1,5 @@
+import { productName } from 'utils/common/product';
+
 // Serializes a SwaggerUI fetch body for transport across the renderer ↔ main
 // IPC bridge in `renderer:swagger-fetch`. Only types that survive Electron's
 // structured-clone serialization (and that our axios bridge knows how to send
@@ -39,9 +41,9 @@ const mapBodyTypeToLabel = (typeName) => {
 };
 
 export const UNSUPPORTED_BODY_MESSAGE = (typeName) =>
-  `${mapBodyTypeToLabel(typeName)} via the Swagger Try-it-out panel isn't supported in Bruno yet. `
+  `${mapBodyTypeToLabel(typeName)} via the Swagger Try-it-out panel isn't supported in ${productName()} yet. `
   + `Supported body types: JSON, URL-encoded forms, plain text. `
-  + `Create a Bruno request to test this endpoint.`;
+  + `Create a ${productName()} request to test this endpoint.`;
 
 // Build a TypeError that carries the detected type as a property so downstream
 // catchers can branch on `err.code` / `err.bodyType` instead of regex-parsing

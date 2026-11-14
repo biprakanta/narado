@@ -15,6 +15,8 @@ import Button from 'ui/Button';
 import CollectionsList from './CollectionsList';
 import WorkspaceDocs from '../WorkspaceDocs';
 import StyledWrapper from './StyledWrapper';
+import { NaradoBanner } from 'components/Narado/Brand';
+import { isNaradoAvailable } from 'components/Narado/api';
 
 const WorkspaceOverview = ({ workspace }) => {
   const dispatch = useDispatch();
@@ -140,6 +142,7 @@ const WorkspaceOverview = ({ workspace }) => {
 
       <div className="overview-layout">
         <div className="overview-main">
+          {isNaradoAvailable() && <NaradoBanner workspaceName={workspace?.name} />}
           <div className="stats-row">
             <div className="stat-item">
               <span className="stat-value">{workspaceCollectionsCount}</span>

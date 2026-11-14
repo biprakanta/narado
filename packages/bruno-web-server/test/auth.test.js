@@ -93,7 +93,7 @@ const startNarado = async (extraEnv = {}) => {
 
 /** Walk the redirects of a sign-in like a browser, returning the session cookie and final location. */
 const signIn = async (base, returnTo = '/workspace') => {
-  const start = await fetch(`${base}/auth/login?return=${encodeURIComponent(returnTo)}`, { redirect: 'manual' });
+  const start = await fetch(`${base}/auth/login/start?return=${encodeURIComponent(returnTo)}`, { redirect: 'manual' });
   assert.equal(start.status, 302);
   const atIdp = await fetch(start.headers.get('location'), { redirect: 'manual' });
   assert.equal(atIdp.status, 302);
@@ -116,7 +116,7 @@ test('signs in with PKCE, sets a safe session cookie, and signs out', async () =
   const n = await startNarado();
   assert.equal((await fetch(`${n.base}/auth/me`)).status, 401);
 
-  const start = await fetch(`${n.base}/auth/login?return=/x`, { redirect: 'manual' });
+  const start = await fetch(`${n.base}/auth/login/start?return=/x`, { redirect: 'manual' });
   const authorize = new URL(start.headers.get('location'));
   assert.equal(authorize.searchParams.get('code_challenge_method'), 'S256');
   assert.ok(authorize.searchParams.get('state') && authorize.searchParams.get('nonce'));
@@ -228,4 +228,38 @@ test('without a provider, sign-in is off and /auth/me says so', async () => {
   await auth.handle({ url: '/auth/me', method: 'GET', headers: {} }, res);
   assert.equal(res.status, 200);
   assert.deepEqual(JSON.parse(res.body), { mode: 'local', user: null });
+});
+
+test('the sign-in page is narado\'s own, escapes what it shows, and serves only its own images', async () => {
+  const n = await startNarado({ NARADO_OIDC_PROVIDER_NAME: 'Acme SSO' });
+  try {
+    const res = await fetch(`${n.base}/auth/login?return=${encodeURIComponent('/x"><script>alert(1)</script>')}`, { redirect: 'manual' });
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /Sign in with Acme SSO/);
+    assert.match(html, /href="\/auth\/login\/start\?return=/);
+    assert.doesNotMatch(html, /<script>alert/);
+
+    const out = await (await fetch(`${n.base}/auth/login?signedout=1`)).text();
+    assert.match(out, /You have signed out\./);
+
+    const img = await fetch(`${n.base}/auth/assets/narado-loader-dark.svg`);
+    assert.equal(img.status, 200);
+    assert.equal(img.headers.get('content-type'), 'image/svg+xml');
+    assert.equal((await fetch(`${n.base}/auth/assets/..%2F..%2Fpackage.json`)).status, 404);
+    assert.equal((await fetch(`${n.base}/auth/assets/index.html`)).status, 404);
+  } finally {
+    n.close();
+  }
+});
+
+test('NARADO_OIDC_AUTO_REDIRECT=1 skips the sign-in page', async () => {
+  const n = await startNarado({ NARADO_OIDC_AUTO_REDIRECT: '1' });
+  try {
+    const res = await fetch(`${n.base}/auth/login?return=/x`, { redirect: 'manual' });
+    assert.equal(res.status, 302);
+    assert.match(res.headers.get('location'), /\/authorize\?/);
+  } finally {
+    n.close();
+  }
 });
