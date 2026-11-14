@@ -19,7 +19,8 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [filter, setFilter] = useState('');
   const [repoPath, setRepoPath] = useState('');
-  const [mode, setMode] = useState('change'); // change | branch | browse
+  // browse = open the default branch: edit locally, then save as a branch or fork.
+  const [mode, setMode] = useState('browse'); // browse | change | branch
   const [via, setVia] = useState('branch'); // branch | fork
   const [topic, setTopic] = useState('');
   const [branch, setBranch] = useState('');
@@ -230,7 +231,7 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
                 )}
                 <label className="flex items-center gap-2">
                   <input type="radio" checked={mode === 'browse'} onChange={() => setMode('browse')} />
-                  Browse {selected.defaultBranch} (read-only)
+                  Open {selected.defaultBranch} (edit, then save as a branch or fork)
                 </label>
 
                 {mode !== 'browse' && (

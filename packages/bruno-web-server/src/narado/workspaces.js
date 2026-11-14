@@ -305,8 +305,22 @@ class WorkspaceManager {
         }
       }
 
+      // The default branch is only ever read from the host, so bring it up to date
+      // (fast-forward only, and never over uncommitted edits).
+      if (branch === defaultBranch) await this.fastForward(wt, `origin/${defaultBranch}`);
+
       return { path: wt, branch, via: await this.viaFor(wt, branch), collections: findCollections(wt) };
     });
+  }
+
+  /** Fast-forward a clean working copy to `ref`. Returns true if it moved. */
+  async fastForward(wt, ref) {
+    const st = parseStatus((await runGit(['status', '--porcelain=v1', '-b', '-z'], { cwd: wt })).stdout);
+    if (st.files.length) return false;
+    const before = (await runGit(['rev-parse', 'HEAD'], { cwd: wt })).stdout.trim();
+    const { code } = await runGit(['merge', '--ff-only', '--quiet', ref], { cwd: wt, allowExit: [1, 128] });
+    if (code !== 0) return false;
+    return (await runGit(['rev-parse', 'HEAD'], { cwd: wt })).stdout.trim() !== before;
   }
 
   async viaFor(wt, branch) {
@@ -391,6 +405,56 @@ class WorkspaceManager {
     }
     await runGit(['commit', '--quiet', '-m', message.trim()], { cwd: wt, env: identityEnv(user) });
     return (await runGit(['rev-parse', '--short', 'HEAD'], { cwd: wt })).stdout.trim();
+  }
+
+  /**
+   * Turn uncommitted edits in a default-branch working copy into a change: a new branch
+   * (in the repo, or in the person's fork) starting from the same commit, carrying the
+   * edits, committed as the person. The default-branch copy is left clean.
+   * Returns the new branch's workspace.
+   */
+  async saveAsChange({ hostId, repoPath, fromPath, branch, via = 'branch', forkCloneUrl, authHeader, message, user }) {
+    await this.checkBranchName(branch);
+    if (!message || !message.trim()) throw new Error('A commit message is required');
+    if (via === 'fork' && !forkCloneUrl) throw new Error('A fork is needed to save through a fork');
+
+    return this.withLock(`${hostId}/${repoPath}`, async () => {
+      const base = this.basePath(hostId, repoPath);
+      const st = parseStatus((await runGit(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'], { cwd: fromPath })).stdout);
+      if (!st.files.length) throw new Error('There are no changes to save');
+      if (st.conflicts.length) throw new Error(`Resolve conflicts first: ${st.conflicts.join(', ')}`);
+      if (await this.localBranchExists(base, branch)) throw new Error(`Branch "${branch}" already exists. Pick another name.`);
+
+      if (via === 'fork') {
+        await this.setForkRemote(base, forkCloneUrl);
+        await runGit(['fetch', '--prune', '--quiet', 'fork'], { cwd: base, env: authEnv(authHeader) });
+      }
+
+      const head = (await runGit(['rev-parse', 'HEAD'], { cwd: fromPath })).stdout.trim();
+      const wt = this.worktreePath(hostId, repoPath, branch);
+      fs.mkdirSync(path.dirname(wt), { recursive: true });
+      await runGit(['worktree', 'prune'], { cwd: base });
+      await runGit(['worktree', 'add', '--quiet', '--no-track', '-b', branch, wt, head], { cwd: base });
+      if (via === 'fork') await runGit(['config', `branch.${branch}.pushRemote`, 'fork'], { cwd: base });
+
+      // The stash is shared by all worktrees of a repo: stash here, apply in the new branch.
+      const label = `narado-save-${Date.now()}`;
+      await runGit(['stash', 'push', '--include-untracked', '--quiet', '-m', label], { cwd: fromPath, env: identityEnv(user) });
+      try {
+        await runGit(['stash', 'pop', '--quiet'], { cwd: wt });
+      } catch (err) {
+        // Put the edits back where they came from rather than lose them.
+        await runGit(['stash', 'pop', '--quiet'], { cwd: fromPath }).catch(() => {});
+        await runGit(['worktree', 'remove', '--force', wt], { cwd: base }).catch(() => {});
+        await runGit(['branch', '-D', branch], { cwd: base }).catch(() => {});
+        throw err;
+      }
+
+      await runGit(['add', '--all'], { cwd: wt });
+      await runGit(['commit', '--quiet', '-m', message.trim()], { cwd: wt, env: identityEnv(user) });
+      const sha = (await runGit(['rev-parse', '--short', 'HEAD'], { cwd: wt })).stdout.trim();
+      return { path: wt, branch, via, sha, collections: findCollections(wt) };
+    });
   }
 
   /** Push the branch to where it belongs: the repo, or the fork for fork changes. */

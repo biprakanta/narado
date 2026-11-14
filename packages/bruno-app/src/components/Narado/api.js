@@ -20,6 +20,7 @@ export const naradoApi = {
   reopen: (path) => invoke('narado:reopen', { path }),
   status: (path) => invoke('narado:status', { path }),
   commit: (path, message) => invoke('narado:commit', { path, message }),
+  saveAsChange: (args) => invoke('narado:save-as-change', args),
   push: (path) => invoke('narado:push', { path }),
   createMergeRequest: (path, title, description) => invoke('narado:create-merge-request', { path, title, description }),
   updateFromDefault: (path) => invoke('narado:update-from-default', { path }),

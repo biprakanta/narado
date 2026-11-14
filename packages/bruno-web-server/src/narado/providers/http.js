@@ -10,12 +10,32 @@ class HostApiError extends Error {
   }
 }
 
-const requestJson = async (url, { method = 'GET', headers = {}, body, fetchImpl = globalThis.fetch } = {}) => {
-  const res = await fetchImpl(url, {
+const TIMEOUT_MS = 30 * 1000;
+const RETRY_DELAYS_MS = [500, 2000]; // for reads only
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const requestJson = async (url, { method = 'GET', headers = {}, body, fetchImpl = globalThis.fetch, retryDelays = RETRY_DELAYS_MS } = {}) => {
+  const init = {
     method,
     headers: { accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}), ...headers },
     body: body ? JSON.stringify(body) : undefined
-  });
+  };
+  // Reads are safe to repeat after a network failure; writes are not (a POST may have landed).
+  const attempts = method === 'GET' ? retryDelays.length + 1 : 1;
+  let res;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+      break;
+    } catch (err) {
+      if (attempt === attempts - 1) {
+        const reason = err && err.cause && err.cause.code ? err.cause.code : err && err.name === 'TimeoutError' ? 'timed out' : err.message;
+        throw new HostApiError(`Could not reach ${new URL(url).host} (${reason}). Check the server's network and try again.`, 0);
+      }
+      await sleep(retryDelays[attempt]);
+    }
+  }
 
   const text = await res.text();
   let data = null;

@@ -57,9 +57,14 @@ const GitSection = () => {
       )}
       {panelPath && (
         <GitPanelModal
+          key={panelPath}
           path={panelPath}
           onClose={() => {
             setPanelPath(null);
+            load();
+          }}
+          onSwitch={(nextPath) => {
+            setPanelPath(nextPath);
             load();
           }}
         />

@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import Modal from 'components/Modal';
 import Button from 'ui/Button';
 import { naradoApi, errorText } from './api';
+import SaveChanges from './SaveChanges';
 
 const STATUS_LABEL = { 'M': 'modified', 'A': 'added', 'D': 'deleted', 'R': 'renamed', '??': 'new', 'UU': 'conflict' };
 const REVIEW_LABEL = { approved: 'approved', changes_requested: 'changes requested', pending: 'awaiting review' };
@@ -11,7 +12,7 @@ const REVIEW_LABEL = { approved: 'approved', changes_requested: 'changes request
  * Git panel for one working copy: changes, commit, push, merge request,
  * update from the default branch and conflict resolution (design §7).
  */
-const GitPanelModal = ({ path, onClose }) => {
+const GitPanelModal = ({ path, onClose, onSwitch }) => {
   const [status, setStatus] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
@@ -51,6 +52,16 @@ const GitPanelModal = ({ path, onClose }) => {
     return (
       <Modal size="md" title="Git" hideFooter handleCancel={onClose}>
         <div className="text-sm">{error || 'Loading…'}</div>
+      </Modal>
+    );
+  }
+
+  if (status.onDefaultBranch) {
+    return (
+      <Modal size="lg" title={`${status.repoPath} · ${status.branch}`} hideFooter handleCancel={onClose} dataTestId="narado-git-panel">
+        <div className="text-sm" data-testid="narado-git">
+          <SaveChanges status={status} path={path} onRefresh={refresh} onSaved={(res) => (onSwitch ? onSwitch(res.path) : onClose())} />
+        </div>
       </Modal>
     );
   }

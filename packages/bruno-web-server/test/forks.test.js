@@ -234,3 +234,76 @@ test('GitLab: forks, waits for the import, and opens the merge request on the fo
   const found = await gl.findMergeRequest('acme/api', 'narado/rita/fix', { sourceRepoPath: 'rita/api' });
   assert.equal(found.title, 'from-fork', 'picks the merge request whose source is the fork');
 });
+
+/* ------------------------------------------------- saving edits made on main */
+
+test('edits made on main are saved as a new branch, and main is left clean', async () => {
+  const main = await mgr.open({ ...repo(), branch: 'main' });
+  fs.writeFileSync(path.join(main.path, 'a.bru'), 'edited on main\n');
+  fs.writeFileSync(path.join(main.path, 'new.bru'), 'brand new\n');
+
+  const saved = await mgr.saveAsChange({ ...repo(), fromPath: main.path, branch: 'narado/rita/from-main', message: 'Edit on main', user });
+  assert.equal(saved.via, 'branch');
+  assert.equal(fs.readFileSync(path.join(saved.path, 'a.bru'), 'utf8'), 'edited on main\n');
+  assert.ok(fs.existsSync(path.join(saved.path, 'new.bru')));
+
+  const mainStatus = await mgr.status({ path: main.path, defaultBranch: 'main' });
+  assert.equal(mainStatus.files.length, 0, 'main working copy is clean');
+  assert.ok(!fs.existsSync(path.join(main.path, 'new.bru')));
+
+  const st = await mgr.status({ path: saved.path, defaultBranch: 'main' });
+  assert.equal(st.files.length, 0, 'everything committed');
+  assert.equal(st.aheadOfDefault, 1);
+  const author = (await runGit(['log', '-1', '--format=%an'], { cwd: saved.path })).stdout.trim();
+  assert.equal(author, 'Rita Reader');
+
+  const { remote } = await mgr.push({ ...repo(), path: saved.path, branch: 'narado/rita/from-main' });
+  assert.equal(remote, 'origin');
+  assert.ok(await branchHead(originUrl, 'narado/rita/from-main'));
+});
+
+test('edits made on main can be saved to the fork instead', async () => {
+  const main = await mgr.open({ ...repo(), branch: 'main' });
+  fs.writeFileSync(path.join(main.path, 'a.bru'), 'fork edit\n');
+  const saved = await mgr.saveAsChange({
+    ...repo(),
+    fromPath: main.path,
+    branch: 'narado/rita/fork-save',
+    via: 'fork',
+    forkCloneUrl: forkUrl,
+    message: 'Edit via fork',
+    user
+  });
+  assert.equal(saved.via, 'fork');
+  const { remote } = await mgr.push({ ...repo(), path: saved.path, branch: 'narado/rita/fork-save' });
+  assert.equal(remote, 'fork');
+  assert.ok(await branchHead(forkUrl, 'narado/rita/fork-save'));
+  assert.equal(await branchHead(originUrl, 'narado/rita/fork-save'), null);
+});
+
+test('saving needs changes, and a taken branch name keeps the edits on main', async () => {
+  const main = await mgr.open({ ...repo(), branch: 'main' });
+  await assert.rejects(mgr.saveAsChange({ ...repo(), fromPath: main.path, branch: 'narado/rita/empty', message: 'x', user }), /no changes/);
+
+  fs.writeFileSync(path.join(main.path, 'a.bru'), 'keep me\n');
+  await assert.rejects(
+    mgr.saveAsChange({ ...repo(), fromPath: main.path, branch: 'narado/rita/from-main', message: 'x', user }),
+    /already exists/
+  );
+  assert.equal(fs.readFileSync(path.join(main.path, 'a.bru'), 'utf8'), 'keep me\n');
+  await runGit(['checkout', '--', 'a.bru'], { cwd: main.path });
+});
+
+test('opening main catches up with the host, but never over local edits', async () => {
+  const main = await mgr.open({ ...repo(), branch: 'main' });
+  await commitTo(originUrl, 'main', { 'later.bru': 'later on main\n' }, 'later upstream commit');
+  await mgr.open({ ...repo(), branch: 'main' });
+  assert.ok(fs.existsSync(path.join(main.path, 'later.bru')), 'fast-forwarded to the host');
+
+  await commitTo(originUrl, 'main', { 'even-later.bru': 'x\n' }, 'even later');
+  fs.writeFileSync(path.join(main.path, 'a.bru'), 'local edit\n');
+  await mgr.open({ ...repo(), branch: 'main' });
+  assert.ok(!fs.existsSync(path.join(main.path, 'even-later.bru')), 'left alone while edits are pending');
+  assert.equal(fs.readFileSync(path.join(main.path, 'a.bru'), 'utf8'), 'local edit\n');
+  await runGit(['checkout', '--', 'a.bru'], { cwd: main.path });
+});

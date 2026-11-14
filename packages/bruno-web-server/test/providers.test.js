@@ -134,3 +134,27 @@ test('registry: defaults, tokens only from the environment', () => {
   assert.throws(() => new ProviderRegistry({ dataDir: dir }), /environment variables/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('reads retry after a network failure; writes do not; errors name the host', async () => {
+  const { requestJson } = require('../src/narado/providers/http');
+  let calls = 0;
+  const flaky = async () => {
+    calls++;
+    if (calls < 3) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+    return new Response('{"ok":true}', { status: 200 });
+  };
+  const { data } = await requestJson('https://api.github.com/user', { fetchImpl: flaky, retryDelays: [0, 0] });
+  assert.deepEqual(data, { ok: true });
+  assert.equal(calls, 3);
+
+  calls = 0;
+  const down = async () => {
+    calls++;
+    throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+  };
+  await assert.rejects(
+    requestJson('https://api.github.com/repos/a/b/pulls', { method: 'POST', body: {}, fetchImpl: down, retryDelays: [0, 0] }),
+    /Could not reach api\.github\.com \(ECONNRESET\)/
+  );
+  assert.equal(calls, 1, 'a POST is never repeated');
+});

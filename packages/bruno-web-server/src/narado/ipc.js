@@ -124,8 +124,74 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       defaultBranch: repo.defaultBranch,
       forkPath: fork ? fork.path : null,
       forkCreated,
-      readOnly: target === repo.defaultBranch || (repo.access === 'read' && ws.via !== 'fork')
+      ...saveOptions(repo, target, ws.via)
     };
+  });
+
+  /**
+   * What a person can do with a working copy.
+   * On the default branch, edits are local until saved as a change (branch or fork).
+   */
+  const saveOptions = (repo, branch, via) => {
+    const canWrite = ['write', 'admin'].includes(repo.access);
+    const canFork = repo.allowForking !== false;
+    const onDefaultBranch = branch === repo.defaultBranch;
+    const saveVia = [...(canWrite ? ['branch'] : []), ...(canFork ? ['fork'] : [])];
+    return {
+      onDefaultBranch,
+      saveVia: onDefaultBranch ? saveVia : [],
+      readOnly: onDefaultBranch ? saveVia.length === 0 : repo.access === 'read' && via !== 'fork'
+    };
+  };
+
+  /**
+   * Save edits made on the default branch as a change: a new branch in the repo or the
+   * person's fork, committed, pushed, and optionally a merge request into the default branch.
+   */
+  ipcMain.handle('narado:save-as-change', async (_e, { path: folder, topic, via = 'branch', message, openMergeRequest = true, title }) => {
+    const ws = await workspaceFor(folder);
+    const st = await workspaces.status({ path: ws.path });
+    if (st.branch !== ws.repo.defaultBranch) throw new Error('Saving as a change starts from the default branch');
+    const { saveVia } = saveOptions(ws.repo, st.branch, st.via);
+    if (!saveVia.includes(via)) {
+      throw new Error(via === 'branch' ? `You have read-only access to ${ws.repoPath}. Save to your fork instead.` : `Forking is turned off for ${ws.repoPath}`);
+    }
+
+    const branch = branchFor((await me(ws.hostId)).login, topic);
+    let fork = null;
+    let forkCreated = false;
+    if (via === 'fork') ({ fork, created: forkCreated } = await forkOf(ws.hostId, ws.repoPath, { create: true }));
+
+    const saved = await workspaces.saveAsChange({
+      hostId: ws.hostId,
+      repoPath: ws.repoPath,
+      fromPath: ws.path,
+      branch,
+      via,
+      forkCloneUrl: fork ? fork.cloneUrl : undefined,
+      authHeader: ws.provider.gitAuthHeader(),
+      message,
+      user: await me(ws.hostId)
+    });
+    await workspaces.push({ hostId: ws.hostId, repoPath: ws.repoPath, path: saved.path, branch, authHeader: ws.provider.gitAuthHeader() });
+
+    let mergeRequest = null;
+    let mergeRequestError = null;
+    if (openMergeRequest) {
+      try {
+        mergeRequest = await ws.provider.createMergeRequest(ws.repoPath, {
+          sourceBranch: branch,
+          targetBranch: ws.repo.defaultBranch,
+          title: title && title.trim() ? title.trim() : message.trim().split('\n')[0],
+          description: 'Opened from narado.',
+          sourceRepoPath: fork ? fork.path : undefined
+        });
+      } catch (err) {
+        mergeRequestError = err.message;
+      }
+    }
+    await openCollections(saved.collections);
+    return { ...saved, forkPath: fork ? fork.path : null, forkCreated, mergeRequest, mergeRequestError };
   });
 
   /** Create a collection in a working copy that has none, then open it. */
@@ -190,7 +256,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       access: ws.repo.access,
       path: ws.path,
       forkPath,
-      readOnly: status.branch === ws.repo.defaultBranch || (ws.repo.access === 'read' && status.via !== 'fork'),
+      ...saveOptions(ws.repo, status.branch, status.via),
       mergeRequest,
       mergeRequestError
     };
