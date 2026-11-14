@@ -140,7 +140,8 @@ const allowedHostsFor = ({ repoPath, collectionRoot }) => {
  * @param {object}   deps.workspaces      WorkspaceManager
  * @param {Function} deps.collectionsFor  (worktreePath) => [collection folders]
  */
-const createMcpHandler = ({ call, ipcMain, workspaces, collectionsFor, dataDir, port, env = process.env, log = console }) => {
+const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, workspaces, collectionsFor, dataDir, port, env = process.env, log = console }) => {
+  const signInOn = !!(auth && auth.enabled);
   const tokens = new TokenStore({ dataDir });
   // Server-wide ceiling: NARADO_MCP_ALLOW_WRITE=0 turns write tools off for every token.
   const serverAllowsWrite = env.NARADO_MCP_ALLOW_WRITE !== '0';
@@ -150,9 +151,9 @@ const createMcpHandler = ({ call, ipcMain, workspaces, collectionsFor, dataDir, 
   const currentOwner = async () => {
     const hosts = {};
     let name = null;
-    for (const h of (await call('narado:hosts')).filter((x) => x.connected)) {
+    for (const h of (await baseCall('narado:hosts')).filter((x) => x.connected)) {
       try {
-        const me = await call('narado:me', { hostId: h.id });
+        const me = await baseCall('narado:me', { hostId: h.id });
         hosts[h.id] = me.login;
         name = name || me.name;
       } catch (err) {
@@ -177,12 +178,27 @@ const createMcpHandler = ({ call, ipcMain, workspaces, collectionsFor, dataDir, 
   // Token management for the interface (the person signed in to narado manages their own tokens).
   if (ipcMain) {
     ipcMain.handle('narado:mcp-info', async () => ({ url, writeAllowed: serverAllowsWrite }));
-    ipcMain.handle('narado:mcp-tokens', async () => tokens.list());
-    ipcMain.handle('narado:mcp-tokens:create', async (_e, { name, scope }) => {
+    // With sign-in on, people see, create and revoke only their own tokens.
+    const signedIn = (e) => {
+      const user = e && e.narado && e.narado.user;
+      if (signInOn && !user) throw new Error('Sign in to manage MCP tokens');
+      return user;
+    };
+    const mine = (e) => {
+      const user = signedIn(e);
+      return (t) => !signInOn || (t.owner && t.owner.userId === user.id);
+    };
+    ipcMain.handle('narado:mcp-tokens', async (e) => tokens.list().filter(mine(e)));
+    ipcMain.handle('narado:mcp-tokens:create', async (e, { name, scope }) => {
+      const user = signedIn(e);
       if (scope === 'write' && !serverAllowsWrite) throw new Error('Write tokens are turned off on this server (NARADO_MCP_ALLOW_WRITE=0)');
-      return tokens.create({ name, scope, owner: await currentOwner() });
+      const owner = await currentOwner();
+      if (user) Object.assign(owner, { userId: user.id, name: user.name || owner.name, email: user.email || null });
+      return tokens.create({ name, scope, owner });
     });
-    ipcMain.handle('narado:mcp-tokens:revoke', async (_e, { id }) => {
+    ipcMain.handle('narado:mcp-tokens:revoke', async (e, { id }) => {
+      const t = tokens.list().find((x) => x.id === id);
+      if (!t || !mine(e)(t)) throw new Error('No such token');
       tokens.revoke(id);
       return true;
     });
@@ -198,7 +214,9 @@ const createMcpHandler = ({ call, ipcMain, workspaces, collectionsFor, dataDir, 
     return { ...loc, collectionRoot: collections[0] };
   };
 
-  const buildServer = (record) => {
+  const buildServer = (record, user) => {
+    // Every call an assistant makes runs as the token's owner.
+    const call = callAs ? callAs(user) : baseCall;
     const allowWrite = serverAllowsWrite && record.scope === 'write';
     const madeBy = `Opened from narado by ${record.owner.name || 'its owner'} through the MCP token "${record.name}".`;
     const server = new McpServer(
@@ -495,11 +513,19 @@ const createMcpHandler = ({ call, ipcMain, workspaces, collectionsFor, dataDir, 
     };
     // Browsers send an Origin; MCP clients do not. Refuse pages trying to reach narado.
     if (req.headers.origin) return deny(403, 'Browser origins may not use the MCP endpoint');
-    const auth = String(req.headers.authorization || '');
-    const record = auth.startsWith('Bearer ') ? tokens.verify(auth.slice(7).trim()) : null;
+    const authorization = String(req.headers.authorization || '');
+    const record = authorization.startsWith('Bearer ') ? tokens.verify(authorization.slice(7).trim()) : null;
     if (!record) {
       res.setHeader('www-authenticate', 'Bearer');
       return deny(401, 'A valid narado MCP token is required. Create one in narado: Git section, MCP tokens.');
+    }
+    let user = null;
+    if (signInOn) {
+      user = record.owner.userId ? auth.users.getUser(record.owner.userId) : null;
+      if (!user) {
+        res.setHeader('www-authenticate', 'Bearer error="invalid_token"');
+        return deny(401, `Token "${record.name}" does not belong to a narado user. Create a new one after signing in.`);
+      }
     }
     const mismatch = ownerMismatch(record.owner, await currentOwner());
     if (mismatch) {
@@ -520,7 +546,7 @@ const createMcpHandler = ({ call, ipcMain, workspaces, collectionsFor, dataDir, 
     }
 
     // Stateless: a fresh server and transport per request.
-    const server = buildServer(record);
+    const server = buildServer(record, user);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

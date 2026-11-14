@@ -240,7 +240,9 @@ const main = async () => {
     });
   };
 
-  const event = () => ({
+  // `user` is the signed-in narado user behind the call (null in single-user local mode).
+  const event = (user = null) => ({
+    narado: { user },
     sender: mainWindow.webContents,
     senderFrame: mainWindow.webContents.mainFrame,
     frameId: 1,
@@ -249,6 +251,14 @@ const main = async () => {
     reply: (ch, ...args) => mainWindow.webContents.send(ch, ...args)
   });
 
+  // Sign-in (Phase 4b). Without a provider, narado is a single-user local tool and may
+  // only listen on a loopback address.
+  const auth = require('./narado/auth').createAuth({ dataDir: DATA_DIR, port: PORT });
+  if (!auth.enabled && !['127.0.0.1', '::1', 'localhost'].includes(HOST)) {
+    throw new Error(`Refusing to listen on ${HOST} without sign-in. Configure NARADO_OIDC_ISSUER, or use 127.0.0.1.`);
+  }
+  ALLOWED_ORIGINS.add(auth.publicUrl);
+
   // narado's MCP server at /mcp (token-protected; see src/narado/mcp.js).
   const mcp = require('./narado/mcp').createMcpHandler({
     call: (channel, ...args) => {
@@ -256,6 +266,12 @@ const main = async () => {
       if (!handler) throw new Error(`No handler for ${channel}`);
       return handler(event(), ...args);
     },
+    callAs: (user) => (channel, ...args) => {
+      const handler = ipcMain.getHandler(channel);
+      if (!handler) throw new Error(`No handler for ${channel}`);
+      return handler(event(user), ...args);
+    },
+    auth,
     ipcMain,
     workspaces: narado.workspaces,
     collectionsFor: narado.collectionsFor,
@@ -264,7 +280,14 @@ const main = async () => {
   });
 
   const server = http.createServer(async (req, res) => {
+    if (await auth.handle(req, res)) return;
     if (await mcp.handle(req, res)) return;
+    if (auth.enabled && !auth.userFor(req)) {
+      const { pathname, search } = new URL(req.url, 'http://x');
+      res.writeHead(302, { location: `/auth/login?return=${encodeURIComponent(pathname + search)}`, 'cache-control': 'no-store' });
+      res.end();
+      return;
+    }
     serveStatic(req, res);
   });
   const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 * 1024 });
@@ -278,7 +301,16 @@ const main = async () => {
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    const user = auth.enabled ? auth.userFor(req) : null;
+    if (auth.enabled && !user) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws.naradoUser = user;
+      wss.emit('connection', ws, req);
+    });
   });
 
   wss.on('connection', (ws) => {
@@ -308,7 +340,7 @@ const main = async () => {
       }
 
       if (msg.t === 'send') {
-        ipcMain.emit(msg.ch, event(), ...decodeArgs(msg.args, msg.u));
+        ipcMain.emit(msg.ch, event(ws.naradoUser), ...decodeArgs(msg.args, msg.u));
         return;
       }
 
@@ -320,7 +352,7 @@ const main = async () => {
           console.warn(`[bruno-web] no handler: ${msg.ch}`);
         } else {
           try {
-            const value = await handler(event(), ...decodeArgs(msg.args, msg.u));
+            const value = await handler(event(ws.naradoUser), ...decodeArgs(msg.args, msg.u));
             reply = { t: 'res', id: msg.id, ok: true, value };
           } catch (err) {
             console.error(`[bruno-web] ${msg.ch} failed:`, err && err.stack ? err.stack : err);
@@ -344,6 +376,7 @@ const main = async () => {
   });
 
   server.listen(PORT, HOST, () => {
+    console.log(`[bruno-web] sign-in: ${auth.enabled ? `OIDC (${process.env.NARADO_OIDC_ISSUER}), public URL ${auth.publicUrl}` : 'off (single-user local mode)'}`);
     console.log(`[bruno-web] MCP server at ${mcp.url}; create personal tokens in narado (Git section, MCP tokens)${mcp.writeAllowed ? '' : '; write tokens turned off'}`);
     console.log(`[bruno-web] listening on http://${HOST}:${PORT} (data: ${DATA_DIR})`);
     console.log(`[bruno-web] ${ipcMain._handlers.size} IPC handlers registered`);

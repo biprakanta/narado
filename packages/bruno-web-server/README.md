@@ -56,6 +56,26 @@ These server-wide tokens stand in for per-person sign-in, which comes in Phase 4
 - **Tokens:** the token reaches Git as an HTTP header through `GIT_CONFIG_*` environment variables, per command. It is never written to remote URLs, Git config or disk. Credential helpers are switched off for these commands.
 - **Timeouts:** network commands time out after 2 minutes, and stalled transfers abort after 30 seconds.
 
+## Sign-in
+
+narado signs people in with any OpenID Connect provider (Keycloak, Okta, Google Workspace, Microsoft Entra ID and others). Register narado with the provider as a confidential web application with the redirect URI `<public URL>/auth/callback`, then set:
+
+| Variable | Meaning |
+|---|---|
+| `NARADO_OIDC_ISSUER` | The provider's issuer URL, for example `https://login.acme.com/realms/acme` |
+| `NARADO_OIDC_CLIENT_ID`, `NARADO_OIDC_CLIENT_SECRET` | narado's client credentials at the provider |
+| `NARADO_PUBLIC_URL` | The address people open narado at, for example `https://narado.acme.com` |
+| `NARADO_ALLOWED_EMAIL_DOMAINS` | Optional: only these email domains may sign in, comma-separated |
+| `NARADO_OIDC_SCOPES` | Optional: default `openid profile email` |
+
+- **The flow:** authorization code with PKCE. ID tokens are checked for signature, issuer, audience, expiry and nonce.
+- **Sessions:** kept in `<data dir>/narado.db`, with only hashes of the session ids stored. A session ends after 12 hours idle or 7 days in total. The cookie is HttpOnly and SameSite=Lax, and also Secure on https.
+- **What sign-in protects:** the app, the IPC WebSocket and token management. MCP tokens belong to the person who created them.
+- **Without sign-in,** narado is a single-user local tool and refuses to listen on anything but a loopback address.
+- **Until Phase 4d,** signed-in people still share one Bruno process on the server, so they see the same open collections. Don't rely on separation between users yet.
+
+For local development, `dev/keycloak/` has a realm with two test users and the exact commands.
+
 ## MCP server
 
 AI assistants can use narado through MCP (Streamable HTTP) at `http://127.0.0.1:4100/mcp`.

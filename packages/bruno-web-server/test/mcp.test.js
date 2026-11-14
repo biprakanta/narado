@@ -202,3 +202,48 @@ test('maskItem hides auth details', () => {
   const masked = maskItem({ name: 'x', request: { method: 'GET', url: 'u', auth: { mode: 'bearer', bearer: { token: 'abc' } }, headers: [], params: [] } });
   assert.deepEqual(masked.auth, { mode: 'bearer', details: '••••••' });
 });
+
+test('with sign-in on, tokens belong to a narado user: own list, own revoke, gone user refused', async () => {
+  const users = new Map([['u-alice', { id: 'u-alice', name: 'Alice Example', email: 'alice@acme.test' }], ['u-bob', { id: 'u-bob', name: 'Bob', email: 'bob@acme.test' }]]);
+  const auth = { enabled: true, users: { getUser: (id) => users.get(id) || null } };
+  const handlers = {};
+  const ipcMain = { handle: (ch, fn) => (handlers[ch] = fn) };
+  const dataDir = fs.mkdtempSync(path.join(tmp, 'signed-'));
+  const call = async (channel) => {
+    if (channel === 'narado:hosts') return [{ id: 'github', connected: true }];
+    if (channel === 'narado:me') return { login: 'alice', name: 'Alice Example' };
+    if (channel === 'narado:workspaces') return [];
+    throw new Error(`unexpected ${channel}`);
+  };
+  let calledAs = null;
+  const callAs = (user) => async (channel, ...args) => {
+    calledAs = user;
+    return call(channel, ...args);
+  };
+  const server = http.createServer(async (req, res) => {
+    if (!(await handler.handle(req, res))) res.writeHead(404).end();
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const port = server.address().port;
+  const handler = createMcpHandler({ call, callAs, auth, ipcMain, workspaces: { locate: () => null }, collectionsFor: async () => [], dataDir, port, env: {}, log: { error() {}, warn() {} } });
+  const as = (id) => ({ narado: { user: users.get(id) } });
+
+  await assert.rejects(handlers['narado:mcp-tokens:create']({ narado: { user: null } }, { name: 'x', scope: 'read' }), /Sign in/);
+  const { token, record } = await handlers['narado:mcp-tokens:create'](as('u-alice'), { name: 'alice laptop', scope: 'read' });
+  assert.equal(record.owner.userId, 'u-alice');
+  assert.equal((await handlers['narado:mcp-tokens'](as('u-alice'))).length, 1);
+  assert.equal((await handlers['narado:mcp-tokens'](as('u-bob'))).length, 0, "bob cannot see alice's tokens");
+  await assert.rejects(handlers['narado:mcp-tokens:revoke'](as('u-bob'), { id: record.id }), /No such token/);
+
+  const c = await connect(`http://127.0.0.1:${port}/mcp`, token);
+  await c.callTool({ name: 'list_workspaces', arguments: {} });
+  await c.close();
+  assert.equal(calledAs && calledAs.id, 'u-alice', 'tools run as the token owner');
+
+  users.delete('u-alice');
+  const res = await fetch(`http://127.0.0.1:${port}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
+  assert.equal(res.status, 401);
+  assert.match((await res.json()).error.message, /does not belong to a narado user/);
+  server.closeAllConnections();
+  server.close();
+});

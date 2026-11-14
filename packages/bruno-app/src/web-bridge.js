@@ -123,7 +123,11 @@ const installWebBridge = () => {
       }
     });
 
-    socket.addEventListener('close', () => {
+    socket.addEventListener('close', async () => {
+      if (window.naradoAuth && window.naradoAuth.mode === 'oidc') {
+        const res = await fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' }).catch(() => null);
+        if (res && res.status === 401) return window.naradoAuth.signIn();
+      }
       // Calls in flight cannot complete; fail them so the UI does not hang.
       for (const [id, p] of pending) {
         p.reject(new Error('Lost connection to the Bruno server'));
@@ -166,7 +170,23 @@ const installWebBridge = () => {
   };
 
   window.isBrunoWeb = true;
-  connect();
+
+  // Sign-in (narado Phase 4b): without a session, go to the provider and come back here.
+  const signIn = () => {
+    const back = window.location.pathname + window.location.search;
+    window.location.assign(`/auth/login?return=${encodeURIComponent(back)}`);
+  };
+  window.naradoAuth = { mode: 'unknown', user: null, signIn };
+
+  fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' })
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) return signIn();
+      window.naradoAuth = { ...window.naradoAuth, mode: data.mode || 'local', user: data.user || null };
+      window.dispatchEvent(new CustomEvent('narado:auth', { detail: window.naradoAuth }));
+      connect();
+    })
+    .catch(() => connect()); // older servers without /auth: carry on in local mode
 };
 
 installWebBridge();

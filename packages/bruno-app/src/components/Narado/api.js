@@ -32,3 +32,10 @@ export const naradoApi = {
   createMcpToken: (name, scope) => invoke('narado:mcp-tokens:create', { name, scope }),
   revokeMcpToken: (id) => invoke('narado:mcp-tokens:revoke', { id })
 };
+
+/** Sign out of narado (and the identity provider, when it supports it). */
+export const signOut = async () => {
+  const res = await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  const data = await res.json().catch(() => ({}));
+  window.location.assign(data.redirect || '/');
+};

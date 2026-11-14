@@ -63,6 +63,10 @@ export default defineConfig({
       '/ipc': {
         target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100',
         ws: true
+      },
+      // Sign-in routes (narado Phase 4b).
+      '/auth': {
+        target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100'
       }
     }
   },

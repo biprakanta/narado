@@ -6,7 +6,7 @@ import ActionIcon from 'ui/ActionIcon';
 import OpenRepoModal from './OpenRepoModal';
 import GitPanelModal from './GitPanelModal';
 import McpTokensModal from './McpTokensModal';
-import { naradoApi, errorText } from './api';
+import { naradoApi, errorText, signOut } from './api';
 
 /** Sidebar section listing narado's Git working copies (one per repo and branch). */
 const GitSection = () => {
@@ -14,6 +14,13 @@ const GitSection = () => {
   const [openRepo, setOpenRepo] = useState(false);
   const [panelPath, setPanelPath] = useState(null);
   const [tokensOpen, setTokensOpen] = useState(false);
+  const [auth, setAuth] = useState(() => window.naradoAuth || { mode: 'unknown', user: null });
+
+  useEffect(() => {
+    const onAuth = (e) => setAuth(e.detail);
+    window.addEventListener('narado:auth', onAuth);
+    return () => window.removeEventListener('narado:auth', onAuth);
+  }, []);
 
   const load = useCallback(() => {
     naradoApi
@@ -77,6 +84,14 @@ const GitSection = () => {
       )}
       <SidebarSection id="narado-git" title="Git" icon={IconBrandGit} actions={actions} className="narado-git-section">
         <div className="flex flex-col py-1" data-testid="narado-workspaces">
+          {auth.mode === 'oidc' && auth.user && (
+            <div className="px-4 py-1 flex items-center justify-between gap-2 text-xs opacity-80" data-testid="narado-signed-in">
+              <span className="truncate" title={auth.user.email || ''}>Signed in as {auth.user.name || auth.user.email}</span>
+              <button type="button" className="underline shrink-0" onClick={signOut} data-testid="narado-sign-out">
+                Sign out
+              </button>
+            </div>
+          )}
           {workspaces.length === 0 && (
             <button type="button" className="text-left px-4 py-1 text-xs opacity-70" onClick={() => setOpenRepo(true)}>
               Open a repo from GitHub or GitLab
