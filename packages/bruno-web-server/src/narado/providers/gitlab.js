@@ -62,8 +62,39 @@ class GitLabProvider {
       webUrl: p.web_url,
       // Membership listing only returns projects the person is a member of.
       access: access === 'none' ? 'read' : access,
-      updatedAt: p.last_activity_at
+      updatedAt: p.last_activity_at,
+      id: p.id,
+      isFork: !!p.forked_from_project,
+      parentPath: p.forked_from_project ? p.forked_from_project.path_with_namespace : null,
+      allowForking: p.forking_access_level !== 'disabled',
+      importStatus: p.import_status || null
     };
+  }
+
+  /** The signed-in person's fork of `repoPath`, or null. */
+  async findFork(repoPath) {
+    const { data } = await this.api(`/projects/${encodeURIComponent(repoPath)}/forks?owned=true&per_page=100`);
+    return data.length ? GitLabProvider.toRepo(data[0], this) : null;
+  }
+
+  /** Find or create the person's fork, waiting while GitLab copies the repository. */
+  async ensureFork(repoPath, { pollMs = 2000, attempts = 30, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+    const existing = await this.findFork(repoPath);
+    if (existing && (!existing.importStatus || ['finished', 'none'].includes(existing.importStatus))) {
+      return { fork: existing, created: false };
+    }
+    let forkPath = existing && existing.path;
+    if (!existing) {
+      const { data } = await this.api(`/projects/${encodeURIComponent(repoPath)}/fork`, { method: 'POST', body: {} });
+      forkPath = data.path_with_namespace;
+    }
+    for (let i = 0; i < attempts; i++) {
+      const fork = await this.getRepo(forkPath);
+      if (fork.importStatus === 'failed') throw new Error(`GitLab could not create the fork ${forkPath}`);
+      if (!fork.importStatus || ['finished', 'none'].includes(fork.importStatus)) return { fork, created: !existing };
+      await sleep(pollMs);
+    }
+    throw new Error(`GitLab is still creating the fork ${forkPath}. Try again in a minute.`);
   }
 
   async listRepos() {
@@ -99,21 +130,37 @@ class GitLabProvider {
     };
   }
 
-  async createMergeRequest(repoPath, { sourceBranch, targetBranch, title, description = '' }) {
-    const { data } = await this.api(`/projects/${encodeURIComponent(repoPath)}/merge_requests`, {
+  /**
+   * Open a merge request into `repoPath`. With `sourceRepoPath` (a fork), it is created
+   * on the fork and targets the original project.
+   */
+  async createMergeRequest(repoPath, { sourceBranch, targetBranch, title, description = '', sourceRepoPath }) {
+    const fromFork = sourceRepoPath && sourceRepoPath !== repoPath;
+    const body = { source_branch: sourceBranch, target_branch: targetBranch, title, description, remove_source_branch: true };
+    if (fromFork) body.target_project_id = (await this.getRepo(repoPath)).id;
+    const { data } = await this.api(`/projects/${encodeURIComponent(fromFork ? sourceRepoPath : repoPath)}/merge_requests`, {
       method: 'POST',
-      body: { source_branch: sourceBranch, target_branch: targetBranch, title, description, remove_source_branch: true }
+      body
     });
     return GitLabProvider.toMergeRequest(data);
   }
 
-  async findMergeRequest(repoPath, sourceBranch) {
+  /** Most recent merge request into `repoPath` from this branch (of `sourceRepoPath` if given), or null. */
+  async findMergeRequest(repoPath, sourceBranch, { sourceRepoPath } = {}) {
     const { data } = await this.api(
-      `/projects/${encodeURIComponent(repoPath)}/merge_requests?source_branch=${encodeURIComponent(sourceBranch)}&order_by=updated_at&per_page=1`
+      `/projects/${encodeURIComponent(repoPath)}/merge_requests?source_branch=${encodeURIComponent(sourceBranch)}&order_by=updated_at&per_page=20`
     );
-    if (!data.length) return null;
-    const mr = GitLabProvider.toMergeRequest(data[0]);
-    return { ...mr, review: await this.getReviewState(repoPath, data[0].iid) };
+    let match = data[0];
+    if (sourceRepoPath && sourceRepoPath !== repoPath) {
+      const sourceId = (await this.getRepo(sourceRepoPath)).id;
+      match = data.find((mr) => mr.source_project_id === sourceId);
+    } else {
+      const targetId = data.length ? data[0].target_project_id : null;
+      match = data.find((mr) => mr.source_project_id === targetId);
+    }
+    if (!match) return null;
+    const mr = GitLabProvider.toMergeRequest(match);
+    return { ...mr, review: await this.getReviewState(repoPath, match.iid) };
   }
 
   async getReviewState(repoPath, iid) {

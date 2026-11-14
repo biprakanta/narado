@@ -4,6 +4,7 @@
   "workspaces": [
     "packages/bruno-app",
     "packages/bruno-electron",
+    "packages/bruno-web-server",
     "packages/bruno-cli",
     "packages/bruno-common",
     "packages/bruno-converters",

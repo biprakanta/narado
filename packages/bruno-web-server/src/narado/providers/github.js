@@ -65,7 +65,11 @@ class GitHubProvider {
       cloneUrl: r.clone_url,
       webUrl: r.html_url,
       access: fromGitHubPermissions(r.permissions),
-      updatedAt: r.pushed_at || r.updated_at
+      updatedAt: r.pushed_at || r.updated_at,
+      id: r.id,
+      isFork: !!r.fork,
+      parentPath: r.parent ? r.parent.full_name : null,
+      allowForking: r.allow_forking !== false
     };
   }
 
@@ -82,6 +86,50 @@ class GitHubProvider {
   async getRepo(repoPath) {
     const { data } = await this.api(`/repos/${repoPath}`);
     return GitHubProvider.toRepo(data, this);
+  }
+
+  /** The signed-in person's fork of `repoPath`, or null. */
+  async findFork(repoPath) {
+    const me = await this.getCurrentUser();
+    const name = repoPath.split('/')[1];
+    // Forks usually keep the repo's name; fall back to scanning the fork list.
+    try {
+      const { data } = await this.api(`/repos/${me.login}/${name}`);
+      if (data.fork && data.parent && data.parent.full_name.toLowerCase() === repoPath.toLowerCase()) {
+        return GitHubProvider.toRepo(data, this);
+      }
+    } catch (err) {
+      if (err.status !== 404) throw err;
+    }
+    for (let page = 1; page <= MAX_REPO_PAGES; page++) {
+      const { data } = await this.api(`/repos/${repoPath}/forks?per_page=100&page=${page}`);
+      const mine = data.find((f) => f.owner && f.owner.login.toLowerCase() === me.login.toLowerCase());
+      if (mine) return this.getRepo(mine.full_name);
+      if (data.length < 100) break;
+    }
+    return null;
+  }
+
+  /**
+   * Find or create the signed-in person's fork. GitHub creates forks in the background,
+   * so this waits until the fork answers (up to about a minute).
+   */
+  async ensureFork(repoPath, { pollMs = 2000, attempts = 30, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+    const existing = await this.findFork(repoPath);
+    if (existing) return { fork: existing, created: false };
+    const { data } = await this.api(`/repos/${repoPath}/forks`, { method: 'POST', body: { default_branch_only: false } });
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const fork = await this.getRepo(data.full_name);
+        // A fork is usable once its branches have been copied.
+        await this.api(`/repos/${data.full_name}/branches?per_page=1`);
+        return { fork, created: true };
+      } catch (err) {
+        if (err.status !== 404 && err.status !== 409) throw err;
+      }
+      await sleep(pollMs);
+    }
+    throw new Error(`GitHub is still creating the fork ${data.full_name}. Try again in a minute.`);
   }
 
   /** HTTP header value Git uses to authenticate over HTTPS. */
@@ -103,17 +151,22 @@ class GitHubProvider {
     };
   }
 
-  async createMergeRequest(repoPath, { sourceBranch, targetBranch, title, description = '' }) {
+  /**
+   * Open a pull request into `repoPath`. With `sourceRepoPath` (a fork), the head
+   * branch is taken from the fork.
+   */
+  async createMergeRequest(repoPath, { sourceBranch, targetBranch, title, description = '', sourceRepoPath }) {
+    const head = sourceRepoPath && sourceRepoPath !== repoPath ? `${sourceRepoPath.split('/')[0]}:${sourceBranch}` : sourceBranch;
     const { data } = await this.api(`/repos/${repoPath}/pulls`, {
       method: 'POST',
-      body: { head: sourceBranch, base: targetBranch, title, body: description }
+      body: { head, base: targetBranch, title, body: description }
     });
     return GitHubProvider.toMergeRequest(data);
   }
 
-  /** Most recent pull request whose head is this branch, or null. */
-  async findMergeRequest(repoPath, sourceBranch) {
-    const owner = repoPath.split('/')[0];
+  /** Most recent pull request into `repoPath` whose head is this branch (in `sourceRepoPath` if given), or null. */
+  async findMergeRequest(repoPath, sourceBranch, { sourceRepoPath } = {}) {
+    const owner = (sourceRepoPath || repoPath).split('/')[0];
     const { data } = await this.api(
       `/repos/${repoPath}/pulls?state=all&per_page=10&head=${encodeURIComponent(`${owner}:${sourceBranch}`)}`
     );

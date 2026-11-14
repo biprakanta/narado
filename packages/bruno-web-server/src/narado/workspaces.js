@@ -210,8 +210,11 @@ class WorkspaceManager {
     });
   }
 
-  /** Clone (bare) on first use, then fetch. Returns the bare repo path. */
-  async ensureBase({ hostId, repoPath, cloneUrl, authHeader }) {
+  /**
+   * Clone (bare) on first use, then fetch. With `forkCloneUrl`, also keep a `fork`
+   * remote pointing at the person's fork. Returns the bare repo path.
+   */
+  async ensureBase({ hostId, repoPath, cloneUrl, authHeader, forkCloneUrl }) {
     const base = this.basePath(hostId, repoPath);
     const env = authEnv(authHeader);
     if (!fs.existsSync(path.join(base, 'HEAD'))) {
@@ -221,12 +224,36 @@ class WorkspaceManager {
       await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*'], { cwd: base });
     }
     await runGit(['fetch', '--prune', '--quiet', 'origin'], { cwd: base, env });
+    if (forkCloneUrl) await this.setForkRemote(base, forkCloneUrl);
+    if (await this.hasRemote(base, 'fork')) {
+      await runGit(['fetch', '--prune', '--quiet', 'fork'], { cwd: base, env });
+    }
     return base;
   }
 
-  async remoteBranchExists(base, branch) {
-    const { code } = await runGit(['show-ref', '--verify', '--quiet', `refs/remotes/origin/${branch}`], { cwd: base, allowExit: [1] });
+  async hasRemote(base, name) {
+    const { stdout } = await runGit(['remote'], { cwd: base });
+    return stdout.split('\n').includes(name);
+  }
+
+  async setForkRemote(base, url) {
+    if (await this.hasRemote(base, 'fork')) {
+      await runGit(['remote', 'set-url', 'fork', url], { cwd: base });
+    } else {
+      await runGit(['remote', 'add', 'fork', url], { cwd: base });
+    }
+    await runGit(['config', 'remote.fork.fetch', '+refs/heads/*:refs/remotes/fork/*'], { cwd: base });
+  }
+
+  async remoteBranchExists(base, branch, remote = 'origin') {
+    const { code } = await runGit(['show-ref', '--verify', '--quiet', `refs/remotes/${remote}/${branch}`], { cwd: base, allowExit: [1] });
     return code === 0;
+  }
+
+  /** Where a branch pushes: 'fork' for changes made through a fork, otherwise 'origin'. */
+  async pushRemoteFor(cwd, branch) {
+    const { stdout, code } = await runGit(['config', '--get', `branch.${branch}.pushRemote`], { cwd, allowExit: [1] });
+    return code === 0 && stdout.trim() ? stdout.trim() : 'origin';
   }
 
   async localBranchExists(base, branch) {
@@ -236,31 +263,54 @@ class WorkspaceManager {
 
   /**
    * Open a branch's working copy, creating it if needed.
+   *
+   * `via: 'branch'` (default) works on a branch in the repo itself. `via: 'fork'` works on
+   * a branch in the person's fork (`forkCloneUrl`): the branch is read from and pushed to the
+   * fork, while updates still come from the repo's default branch.
    * A branch that exists on the host is checked out; a new one starts from `defaultBranch`.
    */
-  async open({ hostId, repoPath, cloneUrl, authHeader, branch, defaultBranch }) {
+  async open({ hostId, repoPath, cloneUrl, authHeader, branch, defaultBranch, via = 'branch', forkCloneUrl }) {
     await this.checkBranchName(branch);
+    if (!['branch', 'fork'].includes(via)) throw new Error('via must be "branch" or "fork"');
+    if (via === 'fork' && !forkCloneUrl) throw new Error('A fork is needed to work through a fork');
+    const remote = via === 'fork' ? 'fork' : 'origin';
+
     return this.withLock(`${hostId}/${repoPath}`, async () => {
-      const base = await this.ensureBase({ hostId, repoPath, cloneUrl, authHeader });
+      const base = await this.ensureBase({ hostId, repoPath, cloneUrl, authHeader, forkCloneUrl: via === 'fork' ? forkCloneUrl : undefined });
       const wt = this.worktreePath(hostId, repoPath, branch);
+
+      // A branch belongs to one route (the repo or the fork); never switch it silently.
+      if (await this.localBranchExists(base, branch)) {
+        const current = await this.pushRemoteFor(base, branch);
+        if (current !== remote) {
+          throw new Error(`Branch "${branch}" is already open through ${current === 'fork' ? 'your fork' : 'the repo'}`);
+        }
+      }
 
       if (!fs.existsSync(path.join(wt, '.git'))) {
         fs.mkdirSync(path.dirname(wt), { recursive: true });
         await runGit(['worktree', 'prune'], { cwd: base });
         if (await this.localBranchExists(base, branch)) {
           await runGit(['worktree', 'add', '--quiet', wt, branch], { cwd: base });
-        } else if (await this.remoteBranchExists(base, branch)) {
-          await runGit(['worktree', 'add', '--quiet', '--track', '-b', branch, wt, `origin/${branch}`], { cwd: base });
+        } else if (await this.remoteBranchExists(base, branch, remote)) {
+          await runGit(['worktree', 'add', '--quiet', '--track', '-b', branch, wt, `${remote}/${branch}`], { cwd: base });
         } else {
           if (!(await this.remoteBranchExists(base, defaultBranch))) {
             throw new Error(`The repo has no "${defaultBranch}" branch to start from. Is it empty?`);
           }
           await runGit(['worktree', 'add', '--quiet', '--no-track', '-b', branch, wt, `origin/${defaultBranch}`], { cwd: base });
         }
+        if (via === 'fork') {
+          await runGit(['config', `branch.${branch}.pushRemote`, 'fork'], { cwd: base });
+        }
       }
 
-      return { path: wt, branch, collections: findCollections(wt) };
+      return { path: wt, branch, via: await this.viaFor(wt, branch), collections: findCollections(wt) };
     });
+  }
+
+  async viaFor(wt, branch) {
+    return (await this.pushRemoteFor(wt, branch)) === 'fork' ? 'fork' : 'branch';
   }
 
   /** Working copies that exist on disk, for reopening after a restart. */
@@ -309,6 +359,7 @@ class WorkspaceManager {
     const status = parseStatus(stdout);
     const gitDir = (await runGit(['rev-parse', '--git-dir'], { cwd: wt })).stdout.trim();
     status.merging = fs.existsSync(path.resolve(wt, gitDir, 'MERGE_HEAD'));
+    status.via = status.branch ? await this.viaFor(wt, status.branch) : 'branch';
     status.behindDefault = 0;
     status.aheadOfDefault = 0;
     if (defaultBranch) {
@@ -342,9 +393,12 @@ class WorkspaceManager {
     return (await runGit(['rev-parse', '--short', 'HEAD'], { cwd: wt })).stdout.trim();
   }
 
+  /** Push the branch to where it belongs: the repo, or the fork for fork changes. */
   async push({ hostId, repoPath, path: wt, branch, authHeader }) {
     return this.withLock(`${hostId}/${repoPath}`, async () => {
-      await runGit(['push', '--quiet', '--set-upstream', 'origin', `${branch}:${branch}`], { cwd: wt, env: authEnv(authHeader) });
+      const remote = await this.pushRemoteFor(wt, branch);
+      await runGit(['push', '--quiet', '--set-upstream', remote, `${branch}:${branch}`], { cwd: wt, env: authEnv(authHeader) });
+      return { remote };
     });
   }
 

@@ -65,6 +65,9 @@ const GitPanelModal = ({ path, onClose }) => {
         <div className="flex flex-wrap gap-x-4 gap-y-1 opacity-80">
           <span>{status.hostName}</span>
           <span>Access: {status.access}</span>
+          {status.via === 'fork' && (
+            <span data-testid="narado-via-fork-label">Working in your fork{status.forkPath ? ` ${status.forkPath}` : ''}</span>
+          )}
           {status.readOnly ? (
             <span>Read-only: {status.branch === status.defaultBranch ? `browsing ${status.defaultBranch}` : 'no write access'}</span>
           ) : (
@@ -158,6 +161,7 @@ const GitPanelModal = ({ path, onClose }) => {
                 <a href={mr.webUrl} target="_blank" rel="noreferrer">
                   {status.hostType === 'github' ? 'Pull request' : 'Merge request'} #{mr.number}: {mr.title}
                 </a>{' '}
+                {status.via === 'fork' && <span className="opacity-70">from your fork into {status.repoPath} </span>}
                 <span className="opacity-70">
                   · {mr.state}
                   {mr.state === 'open' && mr.review ? ` · ${REVIEW_LABEL[mr.review] || mr.review}` : ''}
@@ -189,7 +193,7 @@ const GitPanelModal = ({ path, onClose }) => {
         <div className="flex flex-wrap gap-2">
           {canWrite && (
             <>
-              <Button size="sm" variant="ghost" disabled={!!busy || changed.length > 0 || status.merging} onClick={() => run('push', () => naradoApi.push(path), (r) => `Pushed ${r.pushed}`)} data-testid="narado-push">
+              <Button size="sm" variant="ghost" disabled={!!busy || changed.length > 0 || status.merging} onClick={() => run('push', () => naradoApi.push(path), (r) => `Pushed ${r.pushed} to ${r.to === 'fork' ? 'your fork' : status.repoPath}`)} data-testid="narado-push">
                 {busy === 'push' ? 'Pushing…' : 'Push'}
               </Button>
               <Button

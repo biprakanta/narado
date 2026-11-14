@@ -56,19 +56,54 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
 
   ipcMain.handle('narado:me', async (_e, { hostId }) => me(hostId));
 
+  /** Look up one repo by path, including public repos the person is not a member of. */
+  ipcMain.handle('narado:repo', async (_e, { hostId, repoPath }) => {
+    if (typeof repoPath !== 'string' || !/^[^/\s]+(\/[^/\s]+)+$/.test(repoPath.trim())) {
+      throw new Error('Enter the repo as owner/name');
+    }
+    return repoInfo(hostId, repoPath.trim(), { fresh: true });
+  });
+
+  const forks = new Map(); // hostId/repoPath -> fork repo
+
+  /** The person's fork of a repo, created on first use. */
+  const forkOf = async (hostId, repoPath, { create = false } = {}) => {
+    const key = `${hostId}/${repoPath}`;
+    if (forks.has(key)) return { fork: forks.get(key), created: false };
+    const provider = registry.get(hostId);
+    const result = create ? await provider.ensureFork(repoPath) : { fork: await provider.findFork(repoPath), created: false };
+    if (result.fork) forks.set(key, result.fork);
+    return result;
+  };
+
   /**
-   * Open a repo. `topic` starts a new change on narado/<login>/<topic>; `branch` opens an
-   * existing branch; neither opens the default branch for browsing.
+   * Open a repo.
+   * - `topic` starts a new change on narado/<login>/<topic>; `branch` opens an existing
+   *   branch; neither opens the default branch for browsing.
+   * - `via: 'branch'` (default) works on a branch in the repo; `via: 'fork'` works on a
+   *   branch in the person's fork, creating the fork if needed. People with read-only
+   *   access can only change a repo through a fork.
    */
-  ipcMain.handle('narado:open', async (_e, { hostId, repoPath, branch, topic }) => {
+  ipcMain.handle('narado:open', async (_e, { hostId, repoPath, branch, topic, via = 'branch' }) => {
     const provider = registry.get(hostId);
     const repo = await repoInfo(hostId, repoPath, { fresh: true });
     if (repo.access === 'none') throw new Error(`You do not have access to ${repoPath}`);
+    if (!['branch', 'fork'].includes(via)) throw new Error('via must be "branch" or "fork"');
 
     let target = branch || repo.defaultBranch;
-    if (topic) {
-      if (repo.access === 'read') throw new Error(`You have read-only access to ${repoPath}, so you cannot start a change`);
-      target = branchFor((await me(hostId)).login, topic);
+    if (topic) target = branchFor((await me(hostId)).login, topic);
+    const changing = target !== repo.defaultBranch;
+
+    if (changing && via === 'branch' && repo.access === 'read' && topic) {
+      throw new Error(`You have read-only access to ${repoPath}. Start the change in your fork instead.`);
+    }
+
+    let fork = null;
+    let forkCreated = false;
+    if (via === 'fork') {
+      if (!changing) throw new Error('Choose a change or a branch to work on in your fork');
+      if (repo.allowForking === false) throw new Error(`Forking is turned off for ${repoPath}`);
+      ({ fork, created: forkCreated } = await forkOf(hostId, repoPath, { create: true }));
     }
 
     const ws = await workspaces.open({
@@ -77,7 +112,9 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       cloneUrl: repo.cloneUrl,
       authHeader: provider.gitAuthHeader(),
       branch: target,
-      defaultBranch: repo.defaultBranch
+      defaultBranch: repo.defaultBranch,
+      via,
+      forkCloneUrl: fork ? fork.cloneUrl : undefined
     });
     await openCollections(ws.collections);
     return {
@@ -85,7 +122,9 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       hostId,
       repoPath,
       defaultBranch: repo.defaultBranch,
-      readOnly: target === repo.defaultBranch || repo.access === 'read'
+      forkPath: fork ? fork.path : null,
+      forkCreated,
+      readOnly: target === repo.defaultBranch || (repo.access === 'read' && ws.via !== 'fork')
     };
   });
 
@@ -126,9 +165,17 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     const status = await workspaces.status({ path: ws.path, defaultBranch: ws.repo.defaultBranch });
     let mergeRequest = null;
     let mergeRequestError = null;
+    let forkPath = null;
+    if (status.via === 'fork') {
+      try {
+        forkPath = (await forkOf(ws.hostId, ws.repoPath)).fork?.path || null;
+      } catch (err) {
+        mergeRequestError = err.message;
+      }
+    }
     if (status.branch && status.branch !== ws.repo.defaultBranch && status.upstream) {
       try {
-        mergeRequest = await ws.provider.findMergeRequest(ws.repoPath, status.branch);
+        mergeRequest = await ws.provider.findMergeRequest(ws.repoPath, status.branch, { sourceRepoPath: forkPath || undefined });
       } catch (err) {
         mergeRequestError = err.message;
       }
@@ -142,18 +189,22 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       repoUrl: ws.repo.webUrl,
       access: ws.repo.access,
       path: ws.path,
-      readOnly: status.branch === ws.repo.defaultBranch || ws.repo.access === 'read',
+      forkPath,
+      readOnly: status.branch === ws.repo.defaultBranch || (ws.repo.access === 'read' && status.via !== 'fork'),
       mergeRequest,
       mergeRequestError
     };
   });
 
+  /** Writes are allowed on a change branch, in the repo (write access) or in the person's fork. */
   const refuseDefaultBranch = async (ws) => {
     const st = await workspaces.status({ path: ws.path });
     if (st.branch === ws.repo.defaultBranch) {
       throw new Error(`Changes to ${ws.repo.defaultBranch} go through a merge request. Start a change first.`);
     }
-    if (ws.repo.access === 'read') throw new Error(`You have read-only access to ${ws.repoPath}`);
+    if (ws.repo.access === 'read' && st.via !== 'fork') {
+      throw new Error(`You have read-only access to ${ws.repoPath}. Start the change in your fork instead.`);
+    }
     return st;
   };
 
@@ -167,23 +218,29 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
   ipcMain.handle('narado:push', async (_e, { path: folder }) => {
     const ws = await workspaceFor(folder);
     const st = await refuseDefaultBranch(ws);
-    await workspaces.push({ ...ws, branch: st.branch, authHeader: ws.provider.gitAuthHeader() });
-    return { pushed: st.branch };
+    const { remote } = await workspaces.push({ ...ws, branch: st.branch, authHeader: ws.provider.gitAuthHeader() });
+    return { pushed: st.branch, to: remote === 'fork' ? 'fork' : 'repo' };
   });
 
-  /** Push, then open a merge request into the default branch (or return the existing one). */
+  /**
+   * Push, then open a merge request into the default branch (or return the existing one).
+   * For a fork change, the merge request goes from the fork's branch into the original repo.
+   */
   ipcMain.handle('narado:create-merge-request', async (_e, { path: folder, title, description }) => {
     const ws = await workspaceFor(folder);
     const st = await refuseDefaultBranch(ws);
     if (st.files.length) throw new Error('Commit your changes before opening a merge request');
     await workspaces.push({ ...ws, branch: st.branch, authHeader: ws.provider.gitAuthHeader() });
-    const existing = await ws.provider.findMergeRequest(ws.repoPath, st.branch);
+    const sourceRepoPath = st.via === 'fork' ? (await forkOf(ws.hostId, ws.repoPath)).fork?.path : undefined;
+    if (st.via === 'fork' && !sourceRepoPath) throw new Error('Could not find your fork of this repo');
+    const existing = await ws.provider.findMergeRequest(ws.repoPath, st.branch, { sourceRepoPath });
     if (existing && existing.state === 'open') return existing;
     return ws.provider.createMergeRequest(ws.repoPath, {
       sourceBranch: st.branch,
       targetBranch: ws.repo.defaultBranch,
       title: title && title.trim() ? title.trim() : st.branch,
-      description: description || 'Opened from narado.'
+      description: description || 'Opened from narado.',
+      sourceRepoPath
     });
   });
 

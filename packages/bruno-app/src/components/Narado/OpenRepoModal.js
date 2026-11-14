@@ -5,9 +5,12 @@ import { naradoApi, errorText } from './api';
 
 const ACCESS_LABEL = { read: 'Read', write: 'Write', admin: 'Admin', none: 'No access' };
 
+const REPO_PATH_RE = /^[^/\s]+(\/[^/\s]+)+$/;
+
 /**
  * Pick a Git host and repo, then either start a change (new branch), open an
- * existing branch, or browse the default branch read-only.
+ * existing branch, or browse the default branch read-only. Changes are made on a
+ * branch in the repo or in the person's fork; read-only access means fork only.
  */
 const OpenRepoModal = ({ onClose, onOpened }) => {
   const [hosts, setHosts] = useState([]);
@@ -17,9 +20,11 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
   const [filter, setFilter] = useState('');
   const [repoPath, setRepoPath] = useState('');
   const [mode, setMode] = useState('change'); // change | branch | browse
+  const [via, setVia] = useState('branch'); // branch | fork
   const [topic, setTopic] = useState('');
   const [branch, setBranch] = useState('');
   const [busy, setBusy] = useState(false);
+  const [lookingUp, setLookingUp] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -53,7 +58,28 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
 
   const selected = repos.find((r) => r.path === repoPath);
   const canEdit = selected && ['write', 'admin'].includes(selected.access);
-  const effectiveMode = canEdit ? mode : 'browse';
+  const canFork = selected && selected.allowForking !== false;
+  // Without write access, changes can only go through a fork.
+  const effectiveVia = canEdit ? via : 'fork';
+  const canChange = canEdit || canFork;
+  const effectiveMode = canChange ? mode : 'browse';
+
+  const typed = filter.trim();
+  const canLookUp = REPO_PATH_RE.test(typed) && !repos.some((r) => r.path.toLowerCase() === typed.toLowerCase());
+
+  const lookUp = async () => {
+    setLookingUp(true);
+    setError('');
+    try {
+      const repo = await naradoApi.repo(hostId, typed);
+      setRepos((list) => [repo, ...list.filter((r) => r.path !== repo.path)]);
+      setRepoPath(repo.path);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setLookingUp(false);
+    }
+  };
 
   const ready
     = selected
@@ -68,7 +94,9 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
       const args = { hostId, repoPath };
       if (effectiveMode === 'change') args.topic = topic.trim();
       if (effectiveMode === 'branch') args.branch = branch.trim();
+      if (effectiveMode !== 'browse') args.via = effectiveVia;
       let ws = await naradoApi.open(args);
+      if (ws.forkCreated) toast.success(`Created your fork ${ws.forkPath}`);
       if (!ws.collections.length && !ws.readOnly) {
         const ok = window.confirm(`${repoPath} has no collection yet. Create one at the root of the repo?`);
         if (ok) {
@@ -76,10 +104,11 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
           ws = { ...ws, collections: res.collections };
         }
       }
+      const where = ws.via === 'fork' ? ` in your fork ${ws.forkPath}` : '';
       if (!ws.collections.length) {
-        toast(`Opened ${repoPath} on ${ws.branch}, but it has no collection.`);
+        toast(`Opened ${repoPath} on ${ws.branch}${where}, but it has no collection.`);
       } else {
-        toast.success(`Opened ${repoPath} on ${ws.branch}`);
+        toast.success(`Opened ${repoPath} on ${ws.branch}${where}`);
       }
       onOpened && onOpened(ws);
       onClose();
@@ -157,14 +186,20 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
                   </span>
                 </button>
               ))}
-              {!loadingRepos && !shown.length && <div className="px-2 py-1 opacity-70">No repositories found</div>}
+              {!loadingRepos && !shown.length && !canLookUp && <div className="px-2 py-1 opacity-70">No repositories found</div>}
             </div>
+            {canLookUp && (
+              <button type="button" className="text-left text-xs underline" onClick={lookUp} disabled={lookingUp} data-testid="narado-repo-lookup">
+                {lookingUp ? `Looking up ${typed}…` : `Open ${typed}, which is not in your list`}
+              </button>
+            )}
+            {!canLookUp && <span className="text-xs opacity-70">Not in your list? Type it as owner/name.</span>}
           </div>
         )}
 
         {selected && (
           <div className="flex flex-col gap-2 text-sm">
-            {canEdit ? (
+            {canChange ? (
               <>
                 <label className="flex items-center gap-2">
                   <input type="radio" checked={mode === 'change'} onChange={() => setMode('change')} />
@@ -197,9 +232,34 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
                   <input type="radio" checked={mode === 'browse'} onChange={() => setMode('browse')} />
                   Browse {selected.defaultBranch} (read-only)
                 </label>
+
+                {mode !== 'browse' && (
+                  <div className="flex flex-col gap-1 pt-1" data-testid="narado-via">
+                    <span className="font-medium">Work in</span>
+                    {canEdit ? (
+                      <>
+                        <label className="flex items-center gap-2">
+                          <input type="radio" checked={via === 'branch'} onChange={() => setVia('branch')} data-testid="narado-via-branch" />
+                          A branch in {selected.path}
+                        </label>
+                        <label className="flex items-center gap-2" style={{ opacity: canFork ? 1 : 0.5 }}>
+                          <input type="radio" checked={via === 'fork'} disabled={!canFork} onChange={() => setVia('fork')} data-testid="narado-via-fork" />
+                          My fork{canFork ? ' (created if I do not have one)' : ' (forking is turned off for this repo)'}
+                        </label>
+                      </>
+                    ) : (
+                      <span className="opacity-80">
+                        Your fork. You have read-only access to {selected.path}, so the branch goes to your fork (created if needed) and
+                        the merge request comes back here.
+                      </span>
+                    )}
+                  </div>
+                )}
               </>
             ) : (
-              <div className="opacity-80">You have read-only access, so {selected.defaultBranch} opens for browsing.</div>
+              <div className="opacity-80">
+                You have read-only access and forking is turned off, so {selected.defaultBranch} opens for browsing.
+              </div>
             )}
           </div>
         )}
