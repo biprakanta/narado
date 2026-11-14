@@ -119,6 +119,15 @@ const startBruno = async () => {
   reg('ipc/app-document', appDocuments, mainWindow);
   brunoRequire('ipc/wsdl').registerWsdlIpc();
 
+  // narado: Git-backed workspaces (Phase 2).
+  require('./narado/ipc').registerNaradoIpc({
+    ipcMain,
+    mainWindow,
+    collectionWatcher,
+    openCollection: brunoRequire('app/collections').openCollection,
+    dataDir: DATA_DIR
+  });
+
   ipcMain.handle('main:cache-clear', async () => {
     ipcMain.emit('internal:snapshot:reset');
   });

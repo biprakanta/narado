@@ -9,6 +9,8 @@ import { setLocalStorageValue, SIDEBAR_WIDTH_KEY } from 'utils/common/localStora
 import CollectionsSection from './Sections/CollectionsSection/index';
 import ApiSpecsSection from './Sections/ApiSpecsSection/index';
 import MockServersSection from './Sections/MockServersSection/index';
+import NaradoGitSection from 'components/Narado/GitSection';
+import { isNaradoAvailable } from 'components/Narado/api';
 import useKeybinding from 'hooks/useKeybinding';
 import useClearSidebarSelectionOnEscape from 'hooks/useClearSidebarSelectionOnEscape';
 import { useBetaFeature, BETA_FEATURES } from 'utils/beta-features';
@@ -34,6 +36,14 @@ const Sidebar = () => {
       sections.push({
         id: 'mock-servers',
         component: MockServersSection
+      });
+    }
+
+    // narado: Git workspaces, only in the web build (needs the narado server).
+    if (isNaradoAvailable()) {
+      sections.push({
+        id: 'narado-git',
+        component: NaradoGitSection
       });
     }
 

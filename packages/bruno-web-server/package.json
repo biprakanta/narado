@@ -6,7 +6,8 @@
   "main": "src/server.js",
   "license": "MIT",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node --test test/"
   },
   "dependencies": {
     "ws": "^8.18.0"

@@ -1,0 +1,399 @@
+/**
+ * Git-backed workspaces (design §7).
+ *
+ * Layout under <data dir>/git:
+ *   <hostId>/<owner>/<repo>.git                     one bare clone per repo, shared by its branches
+ *   <hostId>/<owner>/<repo>/worktrees/<branch>/     one working copy per branch (git worktree)
+ *
+ * Authentication: the host's HTTP header is passed to Git through GIT_CONFIG_* environment
+ * variables for each command. Tokens are never written to remote URLs, Git config or disk.
+ */
+const { execFile } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const REPO_PATH_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-Za-z0-9._-]*)+$/;
+const HOST_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+class GitError extends Error {
+  constructor(message, { code, stdout, stderr } = {}) {
+    super(message);
+    this.name = 'GitError';
+    this.code = code;
+    this.stdout = stdout;
+    this.stderr = stderr;
+  }
+}
+
+const NETWORK_COMMANDS = new Set(['clone', 'fetch', 'push', 'pull', 'ls-remote']);
+const NETWORK_TIMEOUT_MS = 2 * 60 * 1000;
+const LOCAL_TIMEOUT_MS = 60 * 1000;
+
+/** Run git and return stdout. Rejects with GitError on a non-zero exit or a timeout. */
+const runGit = (args, { cwd, env = {}, allowExit = [] } = {}) =>
+  new Promise((resolve, reject) => {
+    const timeout = NETWORK_COMMANDS.has(args[0]) ? NETWORK_TIMEOUT_MS : LOCAL_TIMEOUT_MS;
+    const child = execFile(
+      'git',
+      args,
+      {
+        cwd,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'echo', SSH_ASKPASS: 'echo', LC_ALL: 'C', ...env },
+        maxBuffer: 64 * 1024 * 1024,
+        timeout,
+        killSignal: 'SIGKILL'
+      },
+      (err, stdout, stderr) => {
+        if (err && err.killed) {
+          reject(new GitError(`git ${args[0]} timed out after ${Math.round(timeout / 1000)}s`, { code: 'ETIMEDOUT', stdout, stderr }));
+          return;
+        }
+        if (err && !allowExit.includes(err.code)) {
+          // Strip anything that looks like an auth header from the message.
+          const clean = String(stderr || err.message).replace(/Authorization: \S+ \S+/gi, 'Authorization: [hidden]');
+          reject(new GitError(`git ${args[0]} failed: ${clean.trim()}`, { code: err.code, stdout, stderr: clean }));
+          return;
+        }
+        resolve({ stdout: String(stdout), stderr: String(stderr), code: err ? err.code : 0 });
+      }
+    );
+    // Git never needs input from us; an open stdin can leave helpers waiting.
+    if (child.stdin) child.stdin.end();
+  });
+
+/**
+ * Per-command Git config through environment variables: the host's auth header,
+ * and aborting transfers that stall (under 1 KB/s for 30 s).
+ */
+const authEnv = (authHeader) => {
+  const entries = [
+    // An empty helper clears inherited ones (for example the macOS keychain), so a
+    // rejected token fails at once instead of waiting on a prompt nobody can see.
+    ['credential.helper', ''],
+    ['http.lowSpeedLimit', '1000'],
+    ['http.lowSpeedTime', '30']
+  ];
+  if (authHeader) entries.push(['http.extraHeader', authHeader]);
+  const env = { GIT_CONFIG_COUNT: String(entries.length) };
+  entries.forEach(([k, v], i) => {
+    env[`GIT_CONFIG_KEY_${i}`] = k;
+    env[`GIT_CONFIG_VALUE_${i}`] = v;
+  });
+  return env;
+};
+
+const identityEnv = (user) =>
+  user
+    ? {
+        GIT_AUTHOR_NAME: user.name,
+        GIT_AUTHOR_EMAIL: user.email,
+        GIT_COMMITTER_NAME: user.name,
+        GIT_COMMITTER_EMAIL: user.email
+      }
+    : {};
+
+/** Turn free text into a safe branch topic: "Add payments API!" -> "add-payments-api". */
+const slugify = (text) =>
+  String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50);
+
+/** Branch name for a person's change, design §7: narado/<login>/<topic>. */
+const branchFor = (login, topic) => {
+  const t = slugify(topic);
+  if (!t) throw new Error('Give the change a short name');
+  return `narado/${slugify(login) || 'user'}/${t}`;
+};
+
+/** Folder name for a branch's working copy. */
+const branchDir = (branch) => branch.replace(/[^A-Za-z0-9._-]+/g, '__');
+
+/** Parse `git status --porcelain=v1 -b -z` output. */
+const parseStatus = (out) => {
+  const entries = out.split('\0').filter(Boolean);
+  const result = { branch: null, upstream: null, ahead: 0, behind: 0, files: [], conflicts: [] };
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    if (e.startsWith('## ')) {
+      // "## <branch>[...<upstream>][ [ahead N, behind M]]". Branch names cannot contain "..".
+      let head = e.slice(3).replace(/^No commits yet on /, '');
+      const bracket = head.indexOf(' [');
+      const counts = bracket >= 0 ? head.slice(bracket + 2, -1) : '';
+      if (bracket >= 0) head = head.slice(0, bracket);
+      const [branch, upstream] = head.split('...');
+      result.branch = branch;
+      result.upstream = upstream || null;
+      const ahead = /ahead (\d+)/.exec(counts);
+      const behind = /behind (\d+)/.exec(counts);
+      result.ahead = ahead ? Number(ahead[1]) : 0;
+      result.behind = behind ? Number(behind[1]) : 0;
+      continue;
+    }
+    const xy = e.slice(0, 2);
+    const file = e.slice(3);
+    if (xy[0] === 'R' || xy[0] === 'C') i++; // rename/copy: next entry is the old path
+    const conflicted = ['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'].includes(xy);
+    if (conflicted) result.conflicts.push(file);
+    result.files.push({ path: file, status: xy.trim() || xy, conflicted });
+  }
+  return result;
+};
+
+const COLLECTION_MARKERS = ['bruno.json', 'opencollection.yml'];
+
+/** Collection folders in a working copy: the root, or folders up to two levels down. */
+const findCollections = (root) => {
+  const found = [];
+  const isCollection = (dir) => COLLECTION_MARKERS.some((m) => fs.existsSync(path.join(dir, m)));
+  if (isCollection(root)) return [root];
+  const walk = (dir, depth) => {
+    if (depth > 2) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const p = path.join(dir, entry.name);
+      if (isCollection(p)) found.push(p);
+      else walk(p, depth + 1);
+    }
+  };
+  walk(root, 1);
+  return found;
+};
+
+class WorkspaceManager {
+  /**
+   * @param {object} opts
+   * @param {string} opts.dataDir
+   */
+  constructor({ dataDir }) {
+    this.root = path.join(dataDir, 'git');
+    fs.mkdirSync(this.root, { recursive: true });
+    this.locks = new Map();
+  }
+
+  /** Serialise operations per repo, so two requests never run git on one clone at once. */
+  async withLock(key, fn) {
+    const prev = this.locks.get(key) || Promise.resolve();
+    let release;
+    const next = new Promise((r) => (release = r));
+    this.locks.set(key, prev.then(() => next));
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+      if (this.locks.get(key) === next) this.locks.delete(key);
+    }
+  }
+
+  checkIds(hostId, repoPath) {
+    if (!HOST_ID_RE.test(hostId)) throw new Error(`Invalid host id "${hostId}"`);
+    if (!REPO_PATH_RE.test(repoPath) || repoPath.split('/').some((s) => s === '..' || s === '.')) {
+      throw new Error(`Invalid repo path "${repoPath}"`);
+    }
+  }
+
+  basePath(hostId, repoPath) {
+    this.checkIds(hostId, repoPath);
+    return path.join(this.root, hostId, `${repoPath}.git`);
+  }
+
+  worktreePath(hostId, repoPath, branch) {
+    this.checkIds(hostId, repoPath);
+    return path.join(this.root, hostId, repoPath, 'worktrees', branchDir(branch));
+  }
+
+  async checkBranchName(branch) {
+    await runGit(['check-ref-format', '--branch', branch]).catch(() => {
+      throw new Error(`"${branch}" is not a valid branch name`);
+    });
+  }
+
+  /** Clone (bare) on first use, then fetch. Returns the bare repo path. */
+  async ensureBase({ hostId, repoPath, cloneUrl, authHeader }) {
+    const base = this.basePath(hostId, repoPath);
+    const env = authEnv(authHeader);
+    if (!fs.existsSync(path.join(base, 'HEAD'))) {
+      fs.mkdirSync(path.dirname(base), { recursive: true });
+      await runGit(['clone', '--bare', '--quiet', cloneUrl, base], { env });
+      // Bare clones map remote branches straight onto local ones; track them as origin/* instead.
+      await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*'], { cwd: base });
+    }
+    await runGit(['fetch', '--prune', '--quiet', 'origin'], { cwd: base, env });
+    return base;
+  }
+
+  async remoteBranchExists(base, branch) {
+    const { code } = await runGit(['show-ref', '--verify', '--quiet', `refs/remotes/origin/${branch}`], { cwd: base, allowExit: [1] });
+    return code === 0;
+  }
+
+  async localBranchExists(base, branch) {
+    const { code } = await runGit(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: base, allowExit: [1] });
+    return code === 0;
+  }
+
+  /**
+   * Open a branch's working copy, creating it if needed.
+   * A branch that exists on the host is checked out; a new one starts from `defaultBranch`.
+   */
+  async open({ hostId, repoPath, cloneUrl, authHeader, branch, defaultBranch }) {
+    await this.checkBranchName(branch);
+    return this.withLock(`${hostId}/${repoPath}`, async () => {
+      const base = await this.ensureBase({ hostId, repoPath, cloneUrl, authHeader });
+      const wt = this.worktreePath(hostId, repoPath, branch);
+
+      if (!fs.existsSync(path.join(wt, '.git'))) {
+        fs.mkdirSync(path.dirname(wt), { recursive: true });
+        await runGit(['worktree', 'prune'], { cwd: base });
+        if (await this.localBranchExists(base, branch)) {
+          await runGit(['worktree', 'add', '--quiet', wt, branch], { cwd: base });
+        } else if (await this.remoteBranchExists(base, branch)) {
+          await runGit(['worktree', 'add', '--quiet', '--track', '-b', branch, wt, `origin/${branch}`], { cwd: base });
+        } else {
+          if (!(await this.remoteBranchExists(base, defaultBranch))) {
+            throw new Error(`The repo has no "${defaultBranch}" branch to start from. Is it empty?`);
+          }
+          await runGit(['worktree', 'add', '--quiet', '--no-track', '-b', branch, wt, `origin/${defaultBranch}`], { cwd: base });
+        }
+      }
+
+      return { path: wt, branch, collections: findCollections(wt) };
+    });
+  }
+
+  /** Working copies that exist on disk, for reopening after a restart. */
+  listOpen() {
+    const out = [];
+    if (!fs.existsSync(this.root)) return out;
+    for (const hostId of fs.readdirSync(this.root)) {
+      const hostDir = path.join(this.root, hostId);
+      const walk = (dir, parts) => {
+        if (parts.length > 4) return;
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          const p = path.join(dir, entry.name);
+          if (entry.name === 'worktrees' && parts.length >= 2) {
+            for (const b of fs.readdirSync(p)) {
+              if (fs.existsSync(path.join(p, b, '.git'))) {
+                out.push({ hostId, repoPath: parts.join('/'), path: path.join(p, b) });
+              }
+            }
+          } else if (!entry.name.endsWith('.git')) {
+            walk(p, [...parts, entry.name]);
+          }
+        }
+      };
+      walk(hostDir, []);
+    }
+    return out;
+  }
+
+  /** Which workspace a folder (for example a collection path) belongs to, or null. */
+  locate(somePath) {
+    const rel = path.relative(this.root, path.resolve(somePath));
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
+    const parts = rel.split(path.sep);
+    const i = parts.indexOf('worktrees');
+    if (i < 3 || parts.length < i + 2) return null;
+    return {
+      hostId: parts[0],
+      repoPath: parts.slice(1, i).join('/'),
+      path: path.join(this.root, ...parts.slice(0, i + 2))
+    };
+  }
+
+  async status({ path: wt, defaultBranch }) {
+    const { stdout } = await runGit(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'], { cwd: wt });
+    const status = parseStatus(stdout);
+    const gitDir = (await runGit(['rev-parse', '--git-dir'], { cwd: wt })).stdout.trim();
+    status.merging = fs.existsSync(path.resolve(wt, gitDir, 'MERGE_HEAD'));
+    status.behindDefault = 0;
+    status.aheadOfDefault = 0;
+    if (defaultBranch) {
+      const { stdout: counts, code } = await runGit(
+        ['rev-list', '--left-right', '--count', `HEAD...origin/${defaultBranch}`],
+        { cwd: wt, allowExit: [128] }
+      );
+      if (code === 0) {
+        const [ahead, behind] = counts.trim().split(/\s+/).map(Number);
+        status.aheadOfDefault = ahead;
+        status.behindDefault = behind;
+      }
+    }
+    status.defaultBranch = defaultBranch || null;
+    return status;
+  }
+
+  /** Stage everything and commit. Returns the new commit's short hash, or null when nothing changed. */
+  async commit({ path: wt, message, user }) {
+    if (!message || !message.trim()) throw new Error('A commit message is required');
+    const st = parseStatus((await runGit(['status', '--porcelain=v1', '-b', '-z'], { cwd: wt })).stdout);
+    if (st.conflicts.length) throw new Error(`Resolve conflicts first: ${st.conflicts.join(', ')}`);
+    await runGit(['add', '--all'], { cwd: wt });
+    const { code } = await runGit(['diff', '--cached', '--quiet'], { cwd: wt, allowExit: [1] });
+    if (code === 0) {
+      // Nothing staged. Still allow finishing a merge whose conflicts were resolved.
+      const gitDir = (await runGit(['rev-parse', '--git-dir'], { cwd: wt })).stdout.trim();
+      if (!fs.existsSync(path.resolve(wt, gitDir, 'MERGE_HEAD'))) return null;
+    }
+    await runGit(['commit', '--quiet', '-m', message.trim()], { cwd: wt, env: identityEnv(user) });
+    return (await runGit(['rev-parse', '--short', 'HEAD'], { cwd: wt })).stdout.trim();
+  }
+
+  async push({ hostId, repoPath, path: wt, branch, authHeader }) {
+    return this.withLock(`${hostId}/${repoPath}`, async () => {
+      await runGit(['push', '--quiet', '--set-upstream', 'origin', `${branch}:${branch}`], { cwd: wt, env: authEnv(authHeader) });
+    });
+  }
+
+  /**
+   * Bring the default branch into this branch (design §7, "Staying current").
+   * Returns { merged: true } or { merged: false, conflicts: [...] } with the merge left in progress.
+   */
+  async updateFromDefault({ hostId, repoPath, path: wt, defaultBranch, authHeader, user }) {
+    return this.withLock(`${hostId}/${repoPath}`, async () => {
+      const st = parseStatus((await runGit(['status', '--porcelain=v1', '-b', '-z'], { cwd: wt })).stdout);
+      if (st.files.length) throw new Error('Commit or discard your changes before updating');
+      await runGit(['fetch', '--prune', '--quiet', 'origin'], { cwd: wt, env: authEnv(authHeader) });
+      const { code } = await runGit(['merge', '--no-edit', '--quiet', `origin/${defaultBranch}`], {
+        cwd: wt,
+        env: identityEnv(user),
+        allowExit: [1]
+      });
+      if (code === 0) return { merged: true, conflicts: [] };
+      const conflicts = (await runGit(['diff', '--name-only', '--diff-filter=U', '-z'], { cwd: wt })).stdout.split('\0').filter(Boolean);
+      return { merged: false, conflicts };
+    });
+  }
+
+  /** Resolve one conflicted file by keeping one side: 'mine' (this branch) or 'theirs' (default branch). */
+  async resolve({ path: wt, file, side }) {
+    if (!['mine', 'theirs'].includes(side)) throw new Error('side must be "mine" or "theirs"');
+    const full = path.resolve(wt, file);
+    if (!full.startsWith(path.resolve(wt) + path.sep)) throw new Error('File is outside the workspace');
+    const flag = side === 'mine' ? '--ours' : '--theirs';
+    const { code } = await runGit(['checkout', flag, '--', file], { cwd: wt, allowExit: [1] });
+    if (code !== 0) {
+      // The chosen side deleted the file.
+      await runGit(['rm', '--quiet', '--', file], { cwd: wt });
+      return;
+    }
+    await runGit(['add', '--', file], { cwd: wt });
+  }
+
+  async abortMerge({ path: wt }) {
+    await runGit(['merge', '--abort'], { cwd: wt });
+  }
+
+  /** Write a minimal Bruno collection at the root of an empty working copy. */
+  initCollection({ path: wt, name }) {
+    const file = path.join(wt, 'bruno.json');
+    if (fs.existsSync(file)) return wt;
+    fs.writeFileSync(file, JSON.stringify({ version: '1', name, type: 'collection', ignore: ['node_modules', '.git'] }, null, 2) + '\n');
+    return wt;
+  }
+}
+
+module.exports = { WorkspaceManager, GitError, runGit, parseStatus, branchFor, slugify, branchDir, findCollections };
