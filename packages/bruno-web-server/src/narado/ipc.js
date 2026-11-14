@@ -12,8 +12,9 @@ const { findSpec } = require('./openapi/spec');
 
 const REPO_TTL_MS = 5 * 60 * 1000;
 
-const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollection, dataDir, env = process.env }) => {
-  const registry = new ProviderRegistry({ dataDir, env });
+const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollection, dataDir, configDir = dataDir, env = process.env }) => {
+  // Host settings (narado.json) are server-wide; each person's workspaces are under their own dataDir.
+  const registry = new ProviderRegistry({ dataDir: configDir, env });
   const workspaces = new WorkspaceManager({ dataDir });
   const users = new Map(); // hostId -> current user
   const repos = new Map(); // hostId/repoPath -> { repo, at }

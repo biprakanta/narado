@@ -197,8 +197,12 @@ for (const name of ['show', 'hide', 'focus', 'restore', 'minimize', 'maximize', 
  * app
  * ------------------------------------------------------------------------- */
 const brunoElectronPkg = require('../../bruno-electron/package.json');
+// With several people on one server (narado Phase 4d), each worker's "home" folders are
+// inside its own data folder rather than the server account's.
+const PERSONAL = process.env.NARADO_MULTI_USER === '1';
+const HOME = PERSONAL ? DATA_DIR : os.homedir();
 const paths = {
-  home: os.homedir(),
+  home: HOME,
   appData: DATA_DIR,
   userData: DATA_DIR,
   sessionData: DATA_DIR,
@@ -206,9 +210,9 @@ const paths = {
   logs: path.join(DATA_DIR, 'logs'),
   crashDumps: path.join(DATA_DIR, 'crashes'),
   cache: path.join(DATA_DIR, 'cache'),
-  documents: path.join(os.homedir(), 'Documents'),
-  downloads: path.join(os.homedir(), 'Downloads'),
-  desktop: path.join(os.homedir(), 'Desktop'),
+  documents: path.join(HOME, PERSONAL ? 'collections' : 'Documents'),
+  downloads: path.join(HOME, 'Downloads'),
+  desktop: path.join(HOME, 'Desktop'),
   exe: process.execPath,
   module: process.execPath
 };

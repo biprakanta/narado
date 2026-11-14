@@ -19,6 +19,7 @@ const installWebBridge = () => {
   let socket;
   let nextId = 1;
   let reconnectDelay = 500;
+  let instanceId = null; // the server worker this page is talking to
 
   // JSON turns `undefined` in an array into `null`, but Electron's IPC keeps it,
   // and Bruno's handlers rely on that (default parameters only apply to undefined).
@@ -112,6 +113,13 @@ const installWebBridge = () => {
       try {
         msg = JSON.parse(event.data);
       } catch {
+        return;
+      }
+      if (msg.t === 'instance') {
+        // A different id after reconnecting means a new worker on the server (restarted, or
+        // stopped while idle): its state starts fresh, so reload to match it.
+        if (instanceId && msg.id !== instanceId) return window.location.reload();
+        instanceId = msg.id;
         return;
       }
       if (msg.t === 'res') {

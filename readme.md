@@ -44,7 +44,7 @@ Configuration, Git hosts, sign-in, the MCP server and known limits are documente
 
 | Part | Where |
 |---|---|
-| Server: runs Bruno's main-process code in Node.js and relays its IPC to the browser over a WebSocket | [`packages/bruno-web-server`](packages/bruno-web-server) |
+| Server: a front process for sign-in and routing, and one sandboxed Bruno process per person whose IPC is relayed to the browser over a WebSocket | [`packages/bruno-web-server`](packages/bruno-web-server) |
 | Git workspaces, GitHub and GitLab, OpenAPI storage, MCP, sign-in | [`packages/bruno-web-server/src/narado`](packages/bruno-web-server/src/narado) |
 | Browser bridge and narado's interface additions | [`packages/bruno-app/src/web-bridge.js`](packages/bruno-app/src/web-bridge.js), [`packages/bruno-app/src/components/Narado`](packages/bruno-app/src/components/Narado) |
 | Logo, colours, icons and themes | [`branding`](branding) |
@@ -57,8 +57,8 @@ narado is in active development and not production-ready yet.
 
 | | |
 |---|---|
-| Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · branding |
-| Next | Signed-in people share one Bruno process, so they are not yet isolated from each other (Phase 4d). After that: per-person Git accounts through a GitHub App and GitLab OAuth (4c), a pluggable secrets store with Vault and cloud secret managers (4e), and request-safety rules for every send (4a) |
+| Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · a separate, sandboxed Bruno process per person · branding |
+| Next | Per-person Git accounts through a GitHub App and GitLab OAuth (4c); until then everyone uses the server's Git token. Then a pluggable secrets store with Vault and cloud secret managers (4e), and request-safety rules for every send (4a) |
 
 GitLab support has been tested against unit-test fakes only so far, not a real GitLab instance.
 

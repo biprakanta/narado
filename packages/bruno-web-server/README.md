@@ -1,11 +1,18 @@
 # bruno-web-server
 
-The server half of narado. It runs Bruno in a browser: it loads Bruno's main-process code (`packages/bruno-electron/src`) in plain Node.js, with the `electron` module replaced by `src/electron-stub.js`, and relays IPC between the browser and Bruno's handlers over a WebSocket at `/ipc`. In the browser, `packages/bruno-app/src/web-bridge.js` provides `window.ipcRenderer` when Electron is not present.
+The server half of narado. It runs Bruno in a browser, one Bruno process per person.
 
-- **Phase 1:** Bruno in the browser, single user, collections in folders on the server's disk.
+- **The front** (`src/server.js`) handles sign-in, serves the interface, checks origins, sessions and MCP tokens, and relays each person's traffic to their own worker. It does not load Bruno.
+- **Workers** (`src/worker.js`, managed by `src/narado/workers.js`) each run Bruno's main-process code (`packages/bruno-electron/src`) in plain Node.js, with the `electron` module replaced by `src/electron-stub.js`. They relay IPC between the browser and Bruno's handlers over a WebSocket at `/ipc`, and serve MCP at `/mcp`.
+- **In the browser,** `packages/bruno-app/src/web-bridge.js` provides `window.ipcRenderer` when Electron is not present.
+
+What each phase added:
+
+- **Phase 1:** Bruno in the browser, collections in folders on the server's disk.
 - **Phase 2:** Git-backed workspaces on GitHub and GitLab (`src/narado/`, and the **Git** section in the sidebar from `packages/bruno-app/src/components/Narado/`).
-
-There is no sign-in yet, so the server listens on `127.0.0.1` only and accepts WebSocket connections only from allowed origins.
+- **Phase 3:** OpenAPI storage and the MCP server.
+- **Phase 4b:** sign-in with OpenID Connect.
+- **Phase 4d:** a separate, sandboxed Bruno process for each person.
 
 ## Run
 
@@ -76,9 +83,20 @@ People first see narado's own sign-in page (`src/narado/pages.js`). Sign-out and
 - **Sessions:** kept in `<data dir>/narado.db`, with only hashes of the session ids stored. A session ends after 12 hours idle or 7 days in total. The cookie is HttpOnly and SameSite=Lax, and also Secure on https.
 - **What sign-in protects:** the app, the IPC WebSocket and token management. MCP tokens belong to the person who created them.
 - **Without sign-in,** narado is a single-user local tool and refuses to listen on anything but a loopback address.
-- **Until Phase 4d,** signed-in people still share one Bruno process on the server, so they see the same open collections. Don't rely on separation between users yet.
 
 For local development, `dev/keycloak/` has a realm with two test users and the exact commands.
+
+## One Bruno process per person
+
+With sign-in on, each person gets their own worker the first time they connect, with their own data folder at `<data dir>/users/<user id>`: open collections, preferences, Git clones and Bruno's encrypted secrets. Without sign-in there is one worker, using the data folder itself, as before.
+
+- **Relaying.** A worker listens on a random loopback port and accepts only requests carrying a secret the front gave it. The front passes on that person's WebSocket and MCP requests without their cookies.
+- **Sandbox.** Workers run under Node's permission model. A worker may read narado's code, its own folder and the shared `narado.json`, and write only its own folder. Another person's files, and the sign-in database, are refused.
+- **Scripts** only run in Bruno's Safe Mode (QuickJS); Developer Mode is refused, because Node's `vm` can be escaped.
+- **Turned off in a worker:** installing npm packages (install scripts run code) and Bruno's own Git clone and branch listing (any path, any URL). narado's Git section replaces the latter.
+- **Secrets stay in the front.** Sign-in settings (`NARADO_OIDC_*`) are not passed to workers. MCP tokens are stored only by the front; a worker can list, create, revoke and check only its own person's tokens.
+- **Lifecycle.** Idle workers stop after 30 minutes without a connection. A crashed or stopped worker starts again on the next request, and open pages reload to match it.
+- **Size.** About 60 to 170 MB of memory per active person.
 
 ## MCP server
 
@@ -111,10 +129,13 @@ claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Autho
 | `BRUNO_WEB_PORT` | `4100` | Server port |
 | `BRUNO_WEB_HOST` | `127.0.0.1` | Address to listen on |
 | `BRUNO_WEB_ORIGINS` | `http://localhost:3000`, `http://127.0.0.1:3000` and the server's own origin | Browser origins allowed to connect, comma-separated |
-| `BRUNO_WEB_DATA_DIR` | `~/.bruno-web` | Preferences, app data, Git workspaces and the local encryption key |
+| `BRUNO_WEB_DATA_DIR` | `~/.bruno-web` | Sign-in database, MCP tokens, `narado.json`; with sign-in, each person's folder under `users/` |
 | `BRUNO_WEB_SERVER` | `http://127.0.0.1:4100` | Where the rsbuild dev server forwards `/ipc` |
 | `NARADO_<HOST ID>_TOKEN` | none | Token for a Git host (see above) |
 | `NARADO_MCP_ALLOW_WRITE` | on | `0` turns MCP write tools off for every token |
+| `NARADO_WORKER_IDLE_MINUTES` | `30` | Stop a person's worker after this long without a connection |
+| `NARADO_MAX_WORKERS` | `50` | Most workers at once; when full, the longest-idle one makes room, or new people get 503 |
+| `NARADO_WORKER_SANDBOX` | on with sign-in | `0` runs workers without Node's permission model. Only for debugging |
 
 ## Tests
 
@@ -126,10 +147,20 @@ The workspace tests run real Git against a local repo standing in for the host, 
 
 ## Known limits
 
+- **Git access is still the server's.** Until Phase 4c, every person's worker uses the server-wide host tokens, so everyone acts as the same Git account. Per-person Git accounts come with the GitHub App and GitLab OAuth.
+- **The sandbox has gaps.**
+  - Workers run as the same operating-system account as the front.
+  - Child processes (git, and the shell Bruno reads its environment from) are not covered by Node's permission model; narado builds their arguments itself.
+  - Native add-ons are allowed, for file watching.
+  - Network access is open until Phase 4a adds rules for where requests may go.
+  - For a hosted service, run each worker in its own container or OS user as well.
+- **Data from before Phase 4d** at the top of the data folder is not moved into anyone's `users/` folder; people re-open their repositories.
+- **fsync** is skipped inside sandboxed workers, because Node's permission model refuses it, so a power cut can lose the last settings write.
+
 - **Folder and file pickers** are a browser prompt asking for a path on the server.
 - **Drag-and-drop file paths** are not available, because browsers don't expose them.
 - **Turned off:** the built-in terminal (it would give a shell on the server), window controls and native menus.
-- **Secrets** saved by Bruno are encrypted with a key file in the data folder. The design replaces this with a server-side secrets store in Phase 4.
+- **Secrets** saved by Bruno are encrypted with a key file in each person's folder. The design replaces this with a server-side secrets store in Phase 4e.
 - **During a conflict**, the affected request shows as unreadable in the sidebar until a side is chosen, because the file holds Git's conflict markers.
 - **No webhooks yet:** merge request status is read when the Git panel opens or is refreshed.
 - **GitLab** is covered by unit tests only so far; it has not been run against a real GitLab instance.
