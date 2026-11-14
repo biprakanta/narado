@@ -94,6 +94,11 @@ const Wrapper = styled.div`
       color: ${(props) => props.theme.text};
       letter-spacing: 0.5px;
     }
+
+    .narado-wordmark {
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
   }
 
   /* Right section */

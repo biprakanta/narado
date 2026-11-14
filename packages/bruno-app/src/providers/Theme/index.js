@@ -26,12 +26,17 @@ const applyThemeToRoot = (theme) => {
   root.classList.add(theme);
 };
 
+// narado (the web build) defaults to its brand themes; the Electron app keeps Bruno's.
+const isWeb = typeof window !== 'undefined' && !!window.isBrunoWeb;
+const DEFAULT_LIGHT = isWeb ? 'narado-light' : 'light';
+const DEFAULT_DARK = isWeb ? 'narado-dark' : 'dark';
+
 export const ThemeContext = createContext();
 export const ThemeProvider = (props) => {
   const [storedTheme, setStoredTheme] = useLocalStorage('bruno.theme', 'system');
   const [displayedTheme, setDisplayedTheme] = useState(() => getEffectiveTheme(storedTheme));
-  const [themeVariantLight, setThemeVariantLight] = useLocalStorage('bruno.themeVariantLight', 'light');
-  const [themeVariantDark, setThemeVariantDark] = useLocalStorage('bruno.themeVariantDark', 'dark');
+  const [themeVariantLight, setThemeVariantLight] = useLocalStorage('bruno.themeVariantLight', DEFAULT_LIGHT);
+  const [themeVariantDark, setThemeVariantDark] = useLocalStorage('bruno.themeVariantDark', DEFAULT_DARK);
 
   // Listen for system theme changes (only affects 'system' mode)
   useEffect(() => {

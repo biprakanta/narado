@@ -13,6 +13,8 @@ import { focusTab } from 'providers/ReduxStore/slices/tabs';
 import get from 'lodash/get';
 
 import Bruno from 'components/Bruno';
+import { NaradoMark } from 'components/Narado/Brand';
+import { isNaradoAvailable } from 'components/Narado/api';
 import MenuDropdown from 'ui/MenuDropdown';
 import ActionIcon from 'ui/ActionIcon';
 import IconSidebarToggle from 'components/Icons/IconSidebarToggle';
@@ -297,8 +299,17 @@ const AppTitleBar = () => {
 
         {/* Center section: Bruno logo + text */}
         <div className="titlebar-center">
-          <Bruno width={18} />
-          <span className="bruno-text">Bruno</span>
+          {isNaradoAvailable() ? (
+            <>
+              <NaradoMark size={18} />
+              <span className="bruno-text narado-wordmark">narado</span>
+            </>
+          ) : (
+            <>
+              <Bruno width={18} />
+              <span className="bruno-text">Bruno</span>
+            </>
+          )}
         </div>
 
         {/* Right section: Action buttons */}

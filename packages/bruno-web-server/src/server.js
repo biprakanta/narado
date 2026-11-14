@@ -27,6 +27,11 @@ Module._resolveFilename = function (request, ...rest) {
   return originalResolve.call(this, request, ...rest);
 };
 
+// Run Bruno as a packaged app. In dev mode Bruno answers 'main:renderer-ready' only once per
+// process (a guard for React strict mode in its one Electron window); here every page
+// load is a new renderer, so a reload would never get its workspaces back.
+if (!('ELECTRON_IS_DEV' in process.env)) process.env.ELECTRON_IS_DEV = '0';
+
 const electron = require('electron');
 const { app, ipcMain, BrowserWindow } = electron;
 const { hooks, DATA_DIR } = electron.__web;

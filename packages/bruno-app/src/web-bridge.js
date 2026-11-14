@@ -33,9 +33,18 @@ const installWebBridge = () => {
     return out;
   };
 
+  // Events that arrive before the app has registered a listener for them (the server
+  // sends startup events as soon as the socket opens, which can beat React's first
+  // effects) are held briefly and replayed when a listener registers.
+  const early = []; // { channel, args, at }
+  const EARLY_MS = 30 * 1000;
+
   const deliver = (channel, args) => {
     const handlers = listeners.get(channel);
-    if (!handlers) return;
+    if (!handlers || !handlers.size) {
+      if (early.length < 1000) early.push({ channel, args, at: Date.now() });
+      return;
+    }
     for (const handler of [...handlers]) {
       try {
         handler(...(args || []));
@@ -152,6 +161,15 @@ const installWebBridge = () => {
     on(channel, handler) {
       if (!listeners.has(channel)) listeners.set(channel, new Set());
       listeners.get(channel).add(handler);
+      const now = Date.now();
+      for (let i = 0; i < early.length;) {
+        const ev = early[i];
+        if (now - ev.at > EARLY_MS) early.splice(i, 1);
+        else if (ev.channel === channel) {
+          early.splice(i, 1);
+          setTimeout(() => deliver(channel, ev.args), 0);
+        } else i++;
+      }
       return () => listeners.get(channel)?.delete(handler);
     },
     removeAllListeners(channel) {
@@ -170,6 +188,33 @@ const installWebBridge = () => {
   };
 
   window.isBrunoWeb = true;
+
+  // narado branding: page title and icons (assets in public/narado, from branding/icons).
+  document.title = 'narado';
+  const icon = (rel, href, extra = {}) => {
+    const link = document.createElement('link');
+    Object.assign(link, { rel, href }, extra);
+    document.head.appendChild(link);
+  };
+  document.querySelectorAll('link[rel~="icon"]').forEach((l) => l.remove());
+  icon('icon', '/narado/narado-favicon.svg', { type: 'image/svg+xml' });
+  icon('alternate icon', '/narado/favicon.ico', { sizes: '16x16 32x32 48x48' });
+  icon('apple-touch-icon', '/narado/favicon-180.png');
+
+  // Move browsers still on Bruno's default themes to narado's, once. A theme someone
+  // picked themselves (anything but the old defaults) is left alone.
+  try {
+    if (!localStorage.getItem('narado.themesMigrated')) {
+      for (const [key, oldDefault, naradoTheme] of [
+        ['bruno.themeVariantLight', 'light', 'narado-light'],
+        ['bruno.themeVariantDark', 'dark', 'narado-dark']
+      ]) {
+        const current = localStorage.getItem(key);
+        if (current === null || current === JSON.stringify(oldDefault)) localStorage.setItem(key, JSON.stringify(naradoTheme));
+      }
+      localStorage.setItem('narado.themesMigrated', '1');
+    }
+  } catch {}
 
   // Sign-in (narado Phase 4b): without a session, go to the provider and come back here.
   const signIn = () => {

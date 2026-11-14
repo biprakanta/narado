@@ -16,8 +16,12 @@ import nord from './dark/nord';
 import dracula from './dark/dracula';
 import vscodeDark from './dark/vscode';
 import cyberdreamDark from './dark/cyberdream-dark';
+import naradoLight from './narado/narado-light';
+import naradoDark from './narado/narado-dark';
 
 const themes = {
+  'narado-light': naradoLight,
+  'narado-dark': naradoDark,
   light,
   dark,
   'light-monochrome': lightMonochrome,
@@ -44,6 +48,16 @@ const themes = {
 
 // Theme metadata for UI display
 export const themeRegistry = {
+  'narado-light': {
+    id: 'narado-light',
+    name: 'narado Light',
+    mode: 'light'
+  },
+  'narado-dark': {
+    id: 'narado-dark',
+    name: 'narado Dark',
+    mode: 'dark'
+  },
   'light': {
     id: 'light',
     name: 'Light',

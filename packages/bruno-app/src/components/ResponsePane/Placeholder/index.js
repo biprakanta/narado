@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import { IconSend } from '@tabler/icons';
 import { useSelector } from 'react-redux';
 import StyledWrapper from './StyledWrapper';
+import { NaradoVeena } from 'components/Narado/Brand';
+import { isNaradoAvailable } from 'components/Narado/api';
 import { getKeyBindingDisplayTextByOS, getKeyBindingDisplayOS } from 'providers/Hotkeys/keyMappings';
 
 const KEY_BINDING_ACTIONS = [
@@ -30,7 +32,7 @@ const Placeholder = () => {
       data-testid="response-pane-shortcut-placeholder"
     >
       <div className="send-icon flex justify-center" style={{ fontSize: isVerticalLayout ? 100 : 200 }}>
-        <IconSend size={iconSize} strokeWidth={1} />
+        {isNaradoAvailable() ? <NaradoVeena size={iconSize} /> : <IconSend size={iconSize} strokeWidth={1} />}
       </div>
       <div className={`flex ${isVerticalLayout ? 'mt-2' : 'mt-4'}`}>
         <div className="flex flex-1 flex-col items-end px-1">
