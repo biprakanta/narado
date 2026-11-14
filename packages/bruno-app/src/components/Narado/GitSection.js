@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { IconBrandGit, IconPlus, IconRefresh } from '@tabler/icons';
+import { IconBrandGit, IconKey, IconPlus, IconRefresh } from '@tabler/icons';
 import toast from 'react-hot-toast';
 import SidebarSection from 'components/Sidebar/SidebarSection';
 import ActionIcon from 'ui/ActionIcon';
 import OpenRepoModal from './OpenRepoModal';
 import GitPanelModal from './GitPanelModal';
+import McpTokensModal from './McpTokensModal';
 import { naradoApi, errorText } from './api';
 
 /** Sidebar section listing narado's Git working copies (one per repo and branch). */
@@ -12,6 +13,7 @@ const GitSection = () => {
   const [workspaces, setWorkspaces] = useState([]);
   const [openRepo, setOpenRepo] = useState(false);
   const [panelPath, setPanelPath] = useState(null);
+  const [tokensOpen, setTokensOpen] = useState(false);
 
   const load = useCallback(() => {
     naradoApi
@@ -26,6 +28,9 @@ const GitSection = () => {
 
   const actions = (
     <>
+      <ActionIcon label="MCP tokens" onClick={() => setTokensOpen(true)} data-testid="narado-mcp-btn">
+        <IconKey size={14} stroke={1.5} aria-hidden="true" />
+      </ActionIcon>
       <ActionIcon label="Refresh" onClick={load} data-testid="narado-refresh">
         <IconRefresh size={14} stroke={1.5} aria-hidden="true" />
       </ActionIcon>
@@ -46,6 +51,7 @@ const GitSection = () => {
 
   return (
     <>
+      {tokensOpen && <McpTokensModal onClose={() => setTokensOpen(false)} />}
       {openRepo && (
         <OpenRepoModal
           onClose={() => setOpenRepo(false)}

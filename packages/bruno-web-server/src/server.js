@@ -120,7 +120,7 @@ const startBruno = async () => {
   brunoRequire('ipc/wsdl').registerWsdlIpc();
 
   // narado: Git-backed workspaces (Phase 2).
-  require('./narado/ipc').registerNaradoIpc({
+  const narado = require('./narado/ipc').registerNaradoIpc({
     ipcMain,
     mainWindow,
     collectionWatcher,
@@ -159,7 +159,7 @@ const startBruno = async () => {
     mainWindow.webContents.send('main:app-loaded', { isRunningInRosetta: getIsRunningInRosetta() });
   };
 
-  return { mainWindow, onBrowserConnected };
+  return { mainWindow, onBrowserConnected, narado };
 };
 
 /* ---------------------------------------------------------------------------
@@ -217,7 +217,7 @@ const errorMessage = (channel, err) => {
 
 const main = async () => {
   const { WebSocketServer } = require('ws');
-  const { mainWindow, onBrowserConnected } = await startBruno();
+  const { mainWindow, onBrowserConnected, narado } = await startBruno();
 
   const sockets = new Set();
   const pending = new Map(); // server -> browser requests awaiting a reply
@@ -249,7 +249,24 @@ const main = async () => {
     reply: (ch, ...args) => mainWindow.webContents.send(ch, ...args)
   });
 
-  const server = http.createServer(serveStatic);
+  // narado's MCP server at /mcp (token-protected; see src/narado/mcp.js).
+  const mcp = require('./narado/mcp').createMcpHandler({
+    call: (channel, ...args) => {
+      const handler = ipcMain.getHandler(channel);
+      if (!handler) throw new Error(`No handler for ${channel}`);
+      return handler(event(), ...args);
+    },
+    ipcMain,
+    workspaces: narado.workspaces,
+    collectionsFor: narado.collectionsFor,
+    dataDir: DATA_DIR,
+    port: PORT
+  });
+
+  const server = http.createServer(async (req, res) => {
+    if (await mcp.handle(req, res)) return;
+    serveStatic(req, res);
+  });
   const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 * 1024 });
 
   server.on('upgrade', (req, socket, head) => {
@@ -327,6 +344,7 @@ const main = async () => {
   });
 
   server.listen(PORT, HOST, () => {
+    console.log(`[bruno-web] MCP server at ${mcp.url}; create personal tokens in narado (Git section, MCP tokens)${mcp.writeAllowed ? '' : '; write tokens turned off'}`);
     console.log(`[bruno-web] listening on http://${HOST}:${PORT} (data: ${DATA_DIR})`);
     console.log(`[bruno-web] ${ipcMain._handlers.size} IPC handlers registered`);
   });

@@ -56,6 +56,30 @@ These server-wide tokens stand in for per-person sign-in, which comes in Phase 4
 - **Tokens:** the token reaches Git as an HTTP header through `GIT_CONFIG_*` environment variables, per command. It is never written to remote URLs, Git config or disk. Credential helpers are switched off for these commands.
 - **Timeouts:** network commands time out after 2 minutes, and stalled transfers abort after 30 seconds.
 
+## MCP server
+
+AI assistants can use narado through MCP (Streamable HTTP) at `http://127.0.0.1:4100/mcp`.
+
+**Tokens.** Each person creates their own tokens in narado: Git section, key button, **MCP tokens**. A token acts as the person who made it:
+
+- It records their account on each connected Git host when it is created. If narado is later connected to a different account, the token is refused.
+- **Read** tokens can list hosts, repos, workspaces, requests and environments, read requests and OpenAPI specs, and send requests.
+- **Read and write** tokens can also edit requests (`update_request`) and save changes (`save_changes`: a new branch or fork plus a merge request, or a commit on a change branch). Merge requests opened this way name the person and the token.
+- The token is shown once; only its SHA-256 hash is stored, in `<data dir>/mcp-tokens.json`. Tokens can be revoked from the same dialog.
+- `NARADO_MCP_ALLOW_WRITE=0` turns write tools off for every token.
+
+**Sending requests.** `send_request` only reaches hosts the workspace names itself: URLs in its environments, the spec's `servers`, and `.client/allowed-hosts.yml` (`hosts: [...]`). Pre- and post-request scripts and tests do not run for MCP sends, because they could change the target or make their own calls. Secrets are masked in tool results.
+
+**Other protections.** Requests with a browser `Origin` are refused, and the `Host` header must be the server's own address.
+
+To add narado to Claude Code (the dialog shows this command with your token filled in):
+
+```bash
+claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Authorization: Bearer <token>"
+```
+
+`scripts/mcp-smoke.js` exercises the endpoint with the MCP SDK's client.
+
 ## Settings
 
 | Variable | Default | Meaning |
@@ -66,6 +90,7 @@ These server-wide tokens stand in for per-person sign-in, which comes in Phase 4
 | `BRUNO_WEB_DATA_DIR` | `~/.bruno-web` | Preferences, app data, Git workspaces and the local encryption key |
 | `BRUNO_WEB_SERVER` | `http://127.0.0.1:4100` | Where the rsbuild dev server forwards `/ipc` |
 | `NARADO_<HOST ID>_TOKEN` | none | Token for a Git host (see above) |
+| `NARADO_MCP_ALLOW_WRITE` | on | `0` turns MCP write tools off for every token |
 
 ## Tests
 

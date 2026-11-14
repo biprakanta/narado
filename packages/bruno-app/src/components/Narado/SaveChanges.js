@@ -31,6 +31,7 @@ const SaveChanges = ({ status, path, onSaved, onRefresh }) => {
       if (res.mergeRequest) {
         toast.success(`${status.hostType === 'github' ? 'Pull request' : 'Merge request'} #${res.mergeRequest.number} opened into ${main}`);
       }
+      if (res.pushError) toast.error(`Saved on ${res.branch}, but the push failed: ${res.pushError}`, { duration: 10000 });
       if (res.mergeRequestError) toast.error(`Saved, but the merge request failed: ${res.mergeRequestError}`);
       onSaved(res);
     } catch (err) {

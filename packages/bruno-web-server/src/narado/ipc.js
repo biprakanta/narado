@@ -181,7 +181,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
    * Save edits made on the default branch as a change: a new branch in the repo or the
    * person's fork, committed, pushed, and optionally a merge request into the default branch.
    */
-  ipcMain.handle('narado:save-as-change', async (_e, { path: folder, topic, via = 'branch', message, openMergeRequest = true, title }) => {
+  ipcMain.handle('narado:save-as-change', async (_e, { path: folder, topic, via = 'branch', message, openMergeRequest = true, title, description }) => {
     const ws = await workspaceFor(folder);
     const st = await workspaces.status({ path: ws.path });
     if (st.branch !== ws.repo.defaultBranch) throw new Error('Saving as a change starts from the default branch');
@@ -206,17 +206,23 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       message,
       user: await me(ws.hostId)
     });
-    await workspaces.push({ hostId: ws.hostId, repoPath: ws.repoPath, path: saved.path, branch, authHeader: ws.provider.gitAuthHeader() });
+    // The change is committed on its branch from here on; a failed push must not hide that.
+    let pushError = null;
+    try {
+      await workspaces.push({ hostId: ws.hostId, repoPath: ws.repoPath, path: saved.path, branch, authHeader: ws.provider.gitAuthHeader() });
+    } catch (err) {
+      pushError = `${err.message}. The change is committed on ${branch}; push it again from its Git panel.`;
+    }
 
     let mergeRequest = null;
     let mergeRequestError = null;
-    if (openMergeRequest) {
+    if (openMergeRequest && !pushError) {
       try {
         mergeRequest = await ws.provider.createMergeRequest(ws.repoPath, {
           sourceBranch: branch,
           targetBranch: ws.repo.defaultBranch,
           title: title && title.trim() ? title.trim() : message.trim().split('\n')[0],
-          description: 'Opened from narado.',
+          description: description || 'Opened from narado.',
           sourceRepoPath: fork ? fork.path : undefined
         });
       } catch (err) {
@@ -226,7 +232,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     await refreshView(ws.path);
     saved.collections = await collectionsFor(saved.path, saved.collections);
     await openCollections(saved.collections);
-    return { ...saved, forkPath: fork ? fork.path : null, forkCreated, mergeRequest, mergeRequestError };
+    return { ...saved, forkPath: fork ? fork.path : null, forkCreated, pushError, mergeRequest, mergeRequestError };
   });
 
   /** Create a collection in a working copy that has none, then open it. */
@@ -388,7 +394,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     return true;
   });
 
-  return { registry, workspaces };
+  return { registry, workspaces, collectionsFor };
 };
 
 module.exports = { registerNaradoIpc };
