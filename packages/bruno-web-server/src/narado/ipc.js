@@ -6,7 +6,9 @@
  */
 const path = require('node:path');
 const { ProviderRegistry } = require('./providers');
-const { WorkspaceManager, branchFor } = require('./workspaces');
+const { WorkspaceManager, branchFor, findCollections } = require('./workspaces');
+const { Projection } = require('./openapi/projection');
+const { findSpec } = require('./openapi/spec');
 
 const REPO_TTL_MS = 5 * 60 * 1000;
 
@@ -30,6 +32,35 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     return repo;
   };
 
+  /* OpenAPI repos (Phase 3): Bruno works on a generated view kept in sync with the repo. */
+  const projections = new Map(); // worktree path -> Projection
+
+  /** Collections to open for a working copy: its OpenAPI view, or its Bruno collections. */
+  const collectionsFor = async (wtPath, found) => {
+    if (!findSpec(wtPath)) return found || findCollections(wtPath);
+    let p = projections.get(wtPath);
+    if (!p) {
+      p = new Projection({ repoDir: wtPath, viewDir: workspaces.viewPath(wtPath) });
+      await p.start();
+      projections.set(wtPath, p);
+    } else {
+      await p.run(() => p.project());
+    }
+    return [p.viewDir];
+  };
+
+  /** Write pending view edits into the repo before Git looks at it. */
+  const settle = async (wtPath) => {
+    const p = projections.get(wtPath);
+    if (p) await p.settle();
+  };
+
+  /** Regenerate a view after Git changed the repo files. */
+  const refreshView = async (wtPath) => {
+    const p = projections.get(wtPath);
+    if (p) await p.run(() => p.project());
+  };
+
   /** Resolve a folder from the browser to its workspace, or throw. */
   const workspaceFor = async (folder) => {
     if (typeof folder !== 'string') throw new Error('A workspace path is required');
@@ -37,6 +68,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     if (!loc) throw new Error('That folder is not a narado Git workspace');
     const provider = registry.get(loc.hostId);
     const repo = await repoInfo(loc.hostId, loc.repoPath);
+    await settle(loc.path);
     return { ...loc, provider, repo };
   };
 
@@ -116,6 +148,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       via,
       forkCloneUrl: fork ? fork.cloneUrl : undefined
     });
+    ws.collections = await collectionsFor(ws.path, ws.collections);
     await openCollections(ws.collections);
     return {
       ...ws,
@@ -190,6 +223,8 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
         mergeRequestError = err.message;
       }
     }
+    await refreshView(ws.path);
+    saved.collections = await collectionsFor(saved.path, saved.collections);
     await openCollections(saved.collections);
     return { ...saved, forkPath: fork ? fork.path : null, forkCreated, mergeRequest, mergeRequestError };
   });
@@ -220,8 +255,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
   /** Reopen a working copy's collections, for example after a server restart. */
   ipcMain.handle('narado:reopen', async (_e, { path: folder }) => {
     const ws = await workspaceFor(folder);
-    const { findCollections } = require('./workspaces');
-    const collections = findCollections(ws.path);
+    const collections = await collectionsFor(ws.path);
     await openCollections(collections);
     return { collections };
   });
@@ -313,12 +347,15 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
   ipcMain.handle('narado:update-from-default', async (_e, { path: folder }) => {
     const ws = await workspaceFor(folder);
     await refuseDefaultBranch(ws);
-    return workspaces.updateFromDefault({
+    const res = await workspaces.updateFromDefault({
       ...ws,
       defaultBranch: ws.repo.defaultBranch,
       authHeader: ws.provider.gitAuthHeader(),
       user: await me(ws.hostId)
     });
+    // While openapi.yaml holds conflict markers the view keeps its last good state.
+    if (res.merged) await refreshView(ws.path);
+    return res;
   });
 
   /** Refresh a read-only default-branch copy from the host. */
@@ -326,23 +363,28 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     const ws = await workspaceFor(folder);
     const st = await workspaces.status({ path: ws.path });
     if (st.branch !== ws.repo.defaultBranch) throw new Error('Use "Update from default branch" on a change branch');
-    return workspaces.updateFromDefault({
+    const res = await workspaces.updateFromDefault({
       ...ws,
       defaultBranch: ws.repo.defaultBranch,
       authHeader: ws.provider.gitAuthHeader(),
       user: await me(ws.hostId)
     });
+    if (res.merged) await refreshView(ws.path);
+    return res;
   });
 
   ipcMain.handle('narado:resolve', async (_e, { path: folder, file, side }) => {
     const ws = await workspaceFor(folder);
     await workspaces.resolve({ path: ws.path, file, side });
+    const st = await workspaces.status({ path: ws.path });
+    if (!st.conflicts.length) await refreshView(ws.path);
     return true;
   });
 
   ipcMain.handle('narado:abort-merge', async (_e, { path: folder }) => {
     const ws = await workspaceFor(folder);
     await workspaces.abortMerge({ path: ws.path });
+    await refreshView(ws.path);
     return true;
   });
 

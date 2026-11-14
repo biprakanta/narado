@@ -168,8 +168,15 @@ class WorkspaceManager {
    */
   constructor({ dataDir }) {
     this.root = path.join(dataDir, 'git');
+    // Generated Bruno collections for OpenAPI repos, mirroring the worktree layout.
+    this.viewsRoot = path.join(dataDir, 'views');
     fs.mkdirSync(this.root, { recursive: true });
     this.locks = new Map();
+  }
+
+  /** Where the Bruno view of a working copy lives (OpenAPI repos only). */
+  viewPath(worktreePath) {
+    return path.join(this.viewsRoot, path.relative(this.root, worktreePath));
   }
 
   /** Serialise operations per repo, so two requests never run git on one clone at once. */
@@ -354,9 +361,14 @@ class WorkspaceManager {
     return out;
   }
 
-  /** Which workspace a folder (for example a collection path) belongs to, or null. */
+  /** Which workspace a folder (a working copy, a collection in it, or its view) belongs to, or null. */
   locate(somePath) {
-    const rel = path.relative(this.root, path.resolve(somePath));
+    const resolved = path.resolve(somePath);
+    const viewRel = path.relative(this.viewsRoot, resolved);
+    if (!viewRel.startsWith('..') && !path.isAbsolute(viewRel)) {
+      return this.locate(path.join(this.root, viewRel));
+    }
+    const rel = path.relative(this.root, resolved);
     if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
     const parts = rel.split(path.sep);
     const i = parts.indexOf('worktrees');
