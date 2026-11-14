@@ -1,0 +1,14 @@
+{
+  "name": "@usebruno/web-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runs Bruno's main-process code on a server and bridges IPC to the browser over WebSocket",
+  "main": "src/server.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

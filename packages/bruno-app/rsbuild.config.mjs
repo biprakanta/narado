@@ -56,6 +56,16 @@ export default defineConfig({
   html: {
     title: 'Bruno'
   },
+  // Web build: forward the IPC WebSocket to packages/bruno-web-server.
+  // Unused by the Electron app, which talks to its main process directly.
+  server: {
+    proxy: {
+      '/ipc': {
+        target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100',
+        ws: true
+      }
+    }
+  },
   tools: {
     rspack: {
       module: {
