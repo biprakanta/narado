@@ -272,7 +272,7 @@ const ExploreModal = ({ onClose, onOpened, onMoreOptions, onSynced }) => {
           </div>
         )}
 
-        <div className="flex justify-between text-xs opacity-80">
+        <div className="flex justify-between items-start gap-4 text-xs opacity-80">
           <span>Open works on the repository (changes go through a pull request). Sync puts a copy in your workspace that's yours to use.</span>
           <button type="button" className="underline" onClick={() => onMoreOptions && onMoreOptions(hostId, '')} data-testid="narado-explore-more">
             Open another repository…

@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { IconGitBranch, IconKey, IconLock, IconPlus, IconRefresh } from '@tabler/icons';
+import { IconCloudDownload, IconCompass, IconDots, IconGitBranch, IconKey, IconLock, IconLogout, IconRefresh } from '@tabler/icons';
 import toast from 'react-hot-toast';
 import SidebarSection from 'components/Sidebar/SidebarSection';
 import ActionIcon from 'ui/ActionIcon';
+import MenuDropdown from 'ui/MenuDropdown';
+import GitSectionStyles from './GitSectionStyles';
+import { useStore } from 'react-redux';
+import { focusCollection } from './focusCollection';
 import OpenRepoModal from './OpenRepoModal';
 import ExploreModal, { syncSummary } from './ExploreModal';
 import GitPanelModal from './GitPanelModal';
@@ -12,10 +16,23 @@ import { naradoApi, errorText, signOut, connectGitAccount } from './api';
 
 const OFFERED_KEY = 'narado.git-connect-offered';
 
+/** "just now", "5m ago", "3h ago", "2d ago". */
+const ago = (ms) => {
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+};
+
+/** The repo's own name, without its owner: "acme/payments" -> "payments". */
+const repoName = (p) => String(p || '').split('/').pop();
+
 /** Sidebar section listing narado's Git working copies (one per repo and branch). */
 const GitSection = () => {
   const [workspaces, setWorkspaces] = useState([]);
   const [synced, setSynced] = useState([]);
+  const store = useStore();
   const [syncing, setSyncing] = useState(null);
   const [openRepo, setOpenRepo] = useState(false); // false, or { hostId, repoPath } to preselect
   const [explore, setExplore] = useState(false);
@@ -103,20 +120,25 @@ const GitSection = () => {
       .catch(() => {});
   }, []);
 
+  // Explore is the everyday action; the rest lives in one menu.
+  const menuItems = [
+    ...(auth.mode === 'oidc' && auth.user ? [{ id: 'who', type: 'label', label: auth.user.name || auth.user.email }] : []),
+    { id: 'secrets', label: 'Secrets', leftSection: IconLock, onClick: () => setSecretsOpen(true) },
+    { id: 'mcp', label: 'MCP tokens', leftSection: IconKey, onClick: () => setTokensOpen(true) },
+    { id: 'refresh', label: 'Refresh', leftSection: IconRefresh, onClick: load },
+    ...(auth.mode === 'oidc' && auth.user ? [{ id: 'd1', type: 'divider' }, { id: 'signout', label: 'Sign out', leftSection: IconLogout, onClick: signOut }] : [])
+  ];
+
   const actions = (
     <>
-      <ActionIcon label="Secrets" onClick={() => setSecretsOpen(true)} data-testid="narado-secrets-btn">
-        <IconLock size={14} stroke={1.5} aria-hidden="true" />
-      </ActionIcon>
-      <ActionIcon label="MCP tokens" onClick={() => setTokensOpen(true)} data-testid="narado-mcp-btn">
-        <IconKey size={14} stroke={1.5} aria-hidden="true" />
-      </ActionIcon>
-      <ActionIcon label="Refresh" onClick={load} data-testid="narado-refresh">
-        <IconRefresh size={14} stroke={1.5} aria-hidden="true" />
-      </ActionIcon>
       <ActionIcon label="Explore APIs" onClick={() => setExplore(true)} data-testid="narado-open-btn">
-        <IconPlus size={14} stroke={1.5} aria-hidden="true" />
+        <IconCompass size={14} stroke={1.5} aria-hidden="true" />
       </ActionIcon>
+      <MenuDropdown items={menuItems} placement="bottom-end" data-testid="narado-git-menu">
+        <ActionIcon label="More" data-testid="narado-git-more">
+          <IconDots size={14} stroke={1.5} aria-hidden="true" />
+        </ActionIcon>
+      </MenuDropdown>
     </>
   );
 
@@ -171,53 +193,63 @@ const GitSection = () => {
         />
       )}
       <SidebarSection id="narado-git" title="Git" icon={IconGitBranch} actions={actions} className="narado-git-section">
-        <div className="flex flex-col py-1" data-testid="narado-workspaces">
-          {auth.mode === 'oidc' && auth.user && (
-            <div className="px-4 py-1 flex items-center justify-between gap-2 text-xs opacity-80" data-testid="narado-signed-in">
-              <span className="truncate" title={auth.user.email || ''}>Signed in as {auth.user.name || auth.user.email}</span>
-              <button type="button" className="underline shrink-0" onClick={signOut} data-testid="narado-sign-out">
-                Sign out
-              </button>
-            </div>
-          )}
-          {workspaces.length === 0 && (
-            <button type="button" className="text-left px-4 py-1 text-xs opacity-70" onClick={() => setExplore(true)} data-testid="narado-explore-empty">
+        <GitSectionStyles className="flex flex-col pb-1" data-testid="narado-workspaces">
+          {workspaces.length === 0 && synced.length === 0 && (
+            <button type="button" className="narado-empty" onClick={() => setExplore(true)} data-testid="narado-explore-empty">
               Explore your team's APIs
             </button>
           )}
+
           {synced.length > 0 && (
-            <div className="px-4 pt-1 text-xs opacity-60" data-testid="narado-synced-title">
-              Synced to your workspace
+            <div className="narado-group" data-testid="narado-synced-title">
+              Synced copies
             </div>
           )}
           {synced.map((c) => (
-            <div key={c.path} className="px-4 py-1 flex items-center gap-2" data-testid="narado-synced">
-              <div className="flex flex-col min-w-0 flex-1" title={`${c.repoPath}${c.dir ? `/${c.dir}` : ''} · ${c.branch} at ${c.commit}`}>
-                <span className="truncate text-sm">{c.name}</span>
-                <span className="truncate text-xs opacity-70">
-                  {c.repoPath} · {c.commit}
-                </span>
-              </div>
-              <button type="button" className="text-xs underline shrink-0" onClick={() => syncAgain(c)} disabled={!!syncing} data-testid="narado-sync-again">
-                {syncing === c.path ? 'Syncing…' : 'Sync'}
-              </button>
+            <div
+              key={c.path}
+              className="narado-row"
+              role="button"
+              tabIndex={0}
+              onClick={() => focusCollection(store, c.path)}
+              onKeyDown={(e) => e.key === 'Enter' && focusCollection(store, c.path)}
+              title={`${c.name}: a copy of ${c.repoPath}${c.dir ? `/${c.dir}` : ''} (${c.branch} at ${c.commit}). Yours to use; Sync brings in updates.`}
+              data-testid="narado-synced"
+            >
+              <IconCloudDownload size={14} stroke={1.5} className="narado-row-icon" aria-hidden="true" />
+              <span className="narado-row-name">{c.name}</span>
+              <span className="narado-row-meta">{syncing === c.path ? 'syncing…' : ago(c.syncedAt)}</span>
+              <ActionIcon
+                label={`Sync ${c.name}`}
+                className="narado-row-actions"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  syncAgain(c);
+                }}
+                disabled={!!syncing}
+                data-testid="narado-sync-again"
+              >
+                <IconRefresh size={14} stroke={1.5} aria-hidden="true" />
+              </ActionIcon>
             </div>
           ))}
-          {synced.length > 0 && workspaces.length > 0 && <div className="px-4 pt-1 text-xs opacity-60">Working on</div>}
+
+          {workspaces.length > 0 && <div className="narado-group">Repositories</div>}
           {workspaces.map((w) => (
             <button
               type="button"
               key={w.path}
-              className="text-left px-4 py-1 flex flex-col hover:opacity-100 opacity-90"
+              className="narado-row"
               onClick={() => openWorkspace(w)}
-              title={`${w.hostName}: ${w.repoPath}`}
+              title={`${w.repoPath} on ${w.hostName}, branch ${w.branch || '?'}`}
               data-testid="narado-workspace"
             >
-              <span className="truncate text-sm">{w.repoPath}</span>
-              <span className="truncate text-xs opacity-70">{w.branch || '?'}</span>
+              <IconGitBranch size={14} stroke={1.5} className="narado-row-icon" aria-hidden="true" />
+              <span className="narado-row-name">{repoName(w.repoPath)}</span>
+              <span className="narado-row-meta">{(w.branch || '?').replace(/^narado\/[^/]+\//, '')}</span>
             </button>
           ))}
-        </div>
+        </GitSectionStyles>
       </SidebarSection>
     </>
   );
