@@ -38,6 +38,11 @@ const when = (ms) => (ms ? new Date(ms).toISOString().replace('T', ' ').slice(0,
 // Brand marks for the connector cards, used to name the services narado connects to.
 // GitHub's mark is from GitHub's Octicons (MIT); GitLab's is its tanuki.
 const LOGOS = {
+  // Secrets stores: simplified marks in each service's colours.
+  vault: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#FFD814" d="M2 3.5h20L12 21.5z"/><path fill="#000" d="M10.2 7.2h1.6v1.6h-1.6zm2 0h1.6v1.6h-1.6zm-2 2.2h1.6V11h-1.6zm2 0h1.6V11h-1.6zm-2 2.2h1.6v1.6h-1.6zm2 0h1.6v1.6h-1.6z"/></svg>',
+  aws: '<svg viewBox="0 0 48 30" aria-hidden="true"><text x="24" y="17" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="17" fill="#fff">aws</text><path d="M9 21.5c8.5 5 21.5 5 30 0" stroke="#FF9900" stroke-width="2.6" fill="none" stroke-linecap="round"/><path d="M36.2 19.6l3.6 1.6-1.3 3.6" stroke="#FF9900" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  gcp: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2.2" stroke-linecap="round"><path stroke="#4285F4" d="M6.657 18c-2.572 0-4.657-2.007-4.657-4.483 0-2.475 2.085-4.482 4.657-4.482"/><path stroke="#EA4335" d="M6.657 9.035c.393-1.762 1.794-3.2 3.675-3.773 1.88-.572 3.956-.193 5.444.996"/><path stroke="#FBBC05" d="M15.776 6.258c1.488 1.19 2.162 3.007 1.77 4.769h.99"/><path stroke="#34A853" d="M18.536 11.027c1.913 0 3.464 1.56 3.464 3.486 0 1.927-1.551 3.487-3.465 3.487H6.657"/></svg>',
+  azure: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16.555 3.843l3.602 3.602a2.877 2.877 0 0 1 0 4.069l-2.643 2.643a2.877 2.877 0 0 1 -4.069 0l-.301 -.301l-6.558 6.558a2 2 0 0 1 -1.239 .578l-.175 .008h-1.172a1 1 0 0 1 -.993 -.883l-.007 -.117v-1.172a2 2 0 0 1 .467 -1.284l.119 -.13l.414 -.414h2v-2h2v-2l2.144 -2.144l-.301 -.301a2.877 2.877 0 0 1 0 -4.069l2.643 -2.643a2.877 2.877 0 0 1 4.069 0z"/><path d="M15 9h.01"/></svg>',
   github: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>',
   gitlab: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#FC6D26" d="m23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z"/></svg>'
 };
@@ -93,6 +98,17 @@ code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);
 .logo svg{width:24px;height:24px}
 .logo.github{background:#F0EEF3;color:#1F2328}
 .logo.gitlab{background:#2B2133}
+.logo.vault{background:#000}
+.logo.aws{background:#232F3E}.logo.aws svg{width:30px}
+.logo.gcp{background:#F0EEF3}
+.logo.azure{background:#0078D4}
+.choices{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.choice{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;cursor:pointer;margin:0}
+.choice:has(input:checked){border-color:#FB9B1A;background:var(--card2)}
+.choice input{accent-color:#FB9B1A}
+.choice .logo{width:30px;height:30px;border-radius:8px}.choice .logo svg{width:18px;height:18px}.choice .logo.aws svg{width:24px}
+fieldset{border:0;padding:0;margin:0}
+textarea.mono{font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
 .conn-title{display:flex;flex-direction:column;min-width:0;flex:1}
 .conn-title strong{font-size:15px}
 .conn-title span{color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -120,11 +136,13 @@ const page = ({ title, who, body, nav = true, script = '' }) => `<!doctype html>
 <title>${esc(title)} · narado</title><link rel="icon" type="image/svg+xml" href="/auth/assets/narado-favicon.svg?v=2"><link rel="alternate icon" href="/auth/assets/favicon.ico?v=2">
 <style>${STYLE}</style></head><body>
 <header class="top"><img src="/auth/assets/narado-favicon.svg?v=2" alt=""><h1>narado</h1><span class="tag">${esc(title)}</span>${who ? `<span class="who">${esc(who)}</span>` : ''}</header>
-<div class="layout">${nav ? `<nav class="side" aria-label="Sections"><a href="#signin">Sign-in</a><a href="#admins">Admins</a><a href="#connectors">Connectors</a><a href="#desktop">Desktop</a><a href="#computers">Computers</a></nav>` : ''}
+<div class="layout">${nav ? `<nav class="side" aria-label="Sections"><a href="#signin">Sign-in</a><a href="#admins">Admins</a><a href="#connectors">Connectors</a><a href="#secrets">Secrets stores</a><a href="#desktop">Desktop</a><a href="#computers">Computers</a></nav>` : ''}
 <main>${body}</main></div>
 <script>
 function openDlg(id){var d=document.getElementById(id);if(d&&d.showModal)d.showModal();}
 document.querySelectorAll('dialog').forEach(function(d){d.addEventListener('click',function(e){if(e.target===d)d.close();});});
+var addStore=document.getElementById('add-store');
+if(addStore){var pick=function(){var t=(addStore.querySelector('input[name=type]:checked')||{}).value;addStore.querySelectorAll('fieldset[data-type]').forEach(function(f){var on=f.getAttribute('data-type')===t;f.hidden=!on;f.disabled=!on;});};addStore.addEventListener('change',pick);pick();}
 ${script}
 </script></body></html>`;
 
@@ -161,7 +179,7 @@ const cookieOf = (req, name) => {
  * @param env      the environment narado runs with (settings under the real environment)
  * @param realEnv  the server's own environment: what's set there can't be changed here
  */
-const createAdmin = ({ settings, env, realEnv = process.env, auth, desktop, gitAccounts, dataDir, localOnly, restart, fetchImpl = fetch, log = console }) => {
+const createAdmin = ({ settings, env, realEnv = process.env, auth, desktop, gitAccounts, secrets = null, dataDir, localOnly, restart, fetchImpl = fetch, log = console }) => {
   const publicUrl = auth.publicUrl;
   const admins = adminsFrom(env);
   const setupNeeded = !localOnly && (!admins.length || !auth.enabled);
@@ -294,7 +312,173 @@ ${h.type === 'github' ? field({ name: 'slug', label: 'App slug (for the install 
     return { card, dialog: dialog(dlg, title, logoOf(h, true), body) };
   };
 
+  /* -------------------------------------------------------- secrets stores */
+
+  /** A store's narado.json entry from a form (keeping what the form doesn't show). */
+  const storeFromForm = (type, id, form, prev = {}) => {
+    const st = { ...prev, id, type };
+    for (const [k, label, , req] of STORE_TYPES[type].fields) {
+      const v = String(form.get(k) || '').trim();
+      if (req && !v) throw new Error(`${label} is required`);
+      if (v) st[k] = v;
+      else delete st[k];
+    }
+    for (const k of ['url', 'vaultUrl', 'endpoint']) {
+      if (st[k] && !/^https?:\/\/[^\s]+$/.test(st[k])) throw new Error(`${k === 'endpoint' ? 'The endpoint' : 'The address'} must start with https://`);
+      if (st[k]) st[k] = st[k].replace(/\/+$/, '');
+    }
+    if (type === 'vault') {
+      const method = ['jwt', 'approle', 'token'].includes(form.get('authMethod')) ? form.get('authMethod') : 'jwt';
+      st.auth = { method };
+      if (method === 'jwt') {
+        st.auth.role = String(form.get('role') || '').trim() || 'narado';
+        const m = String(form.get('authMount') || '').trim();
+        if (m) st.auth.mount = m;
+      }
+    }
+    return st;
+  };
+
+  /** Credentials from a form, checked; empty fields keep what's there. Saved with saveCreds. */
+  const credsFromForm = (st, form) => {
+    const values = {};
+    for (const [name, label, , kind] of credsOf(st)) {
+      const envName = storeEnv(st.id, name);
+      if (settings.source(envName, realEnv) === 'env') continue;
+      const v = String(form.get(`cred_${name}`) || '').trim();
+      if (!v) continue;
+      if (kind === 'textarea') {
+        let key = null;
+        try {
+          key = JSON.parse(v);
+        } catch {}
+        if (!key || !key.client_email || !key.private_key) throw new Error(`${label}: paste the service account's JSON key file`);
+      }
+      values[envName] = v;
+    }
+    return values;
+  };
+  const saveCreds = (values, who) => {
+    if (Object.keys(values).length) settings.set(values, who.email || who.name);
+  };
+
+  // What each store type needs: settings kept in narado.json, credentials kept encrypted
+  // as settings under the names the stores read (secrets/*.js: NARADO_SECRETS_<ID>_<NAME>).
+  const STORE_TYPES = {
+    vault: {
+      name: 'HashiCorp Vault',
+      fields: [
+        ['url', 'Address', 'https://vault.acme.internal', true],
+        ['mount', 'KV v2 mount', 'secret', false],
+        ['namespace', 'Namespace (Vault Enterprise, optional)', 'payments', false]
+      ]
+    },
+    aws: { name: 'AWS Secrets Manager', fields: [['region', 'Region', 'ap-south-1', true], ['endpoint', 'Endpoint (optional: VPC endpoint, LocalStack)', '', false]], creds: [['ACCESS_KEY_ID', 'Access key ID', false], ['SECRET_ACCESS_KEY', 'Secret access key', true], ['SESSION_TOKEN', 'Session token (temporary credentials only)', true]] },
+    gcp: { name: 'Google Cloud Secret Manager', fields: [['project', 'Project ID', 'acme-payments', true]], creds: [['CREDENTIALS', 'Service account key (JSON)', true, 'textarea']] },
+    azure: { name: 'Azure Key Vault', fields: [['vaultUrl', 'Vault URL', 'https://acme.vault.azure.net', true], ['tenant', 'Tenant ID', '', true]], creds: [['CLIENT_ID', 'App (client) ID', false], ['CLIENT_SECRET', 'Client secret', true]] }
+  };
+  const VAULT_CREDS = { token: [['TOKEN', 'Token', true]], approle: [['ROLE_ID', 'Role ID', false], ['SECRET_ID', 'Secret ID', true]], jwt: [] };
+  const credsOf = (st) => (st.type === 'vault' ? VAULT_CREDS[(st.auth && st.auth.method) || 'token'] || [] : STORE_TYPES[st.type].creds);
+  const storeEnv = (id, name) => `NARADO_SECRETS_${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_${name}`;
+
+  const readSecretsCfg = () => {
+    const cfg = readConfigFile();
+    const sec = cfg.secrets || {};
+    return { cfg, stores: Array.isArray(sec.stores) ? sec.stores : [], access: Array.isArray(sec.access) ? sec.access : [] };
+  };
+  /** Write the stores (and rules); narado.json is checked as narado reads it, or left as it was. */
+  const writeSecretsCfg = (stores, access) => {
+    const before = fs.existsSync(hostsFile) ? fs.readFileSync(hostsFile, 'utf8') : null;
+    const cfg = readConfigFile();
+    cfg.secrets = { ...(cfg.secrets || {}), stores, access };
+    fs.writeFileSync(hostsFile, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+    try {
+      require('./secrets').loadSecretsConfig(dataDir);
+    } catch (err) {
+      if (before === null) fs.rmSync(hostsFile, { force: true });
+      else fs.writeFileSync(hostsFile, before, { mode: 0o600 });
+      throw err;
+    }
+  };
+  const whereOf = (st) => st.url || st.vaultUrl || (st.region ? `region ${st.region}` : '') || (st.project ? `project ${st.project}` : '');
+  const storeLogo = (type, small = false) => `<div class="logo ${type}"${small ? ' style="width:32px;height:32px;border-radius:9px"' : ''}>${LOGOS[type] || ''}</div>`;
+
+  /** Settings and credentials inputs for a store type (prefix keeps the add dialog's types apart). */
+  const storeFields = (type, st = {}, prefix = '') => {
+    const t = STORE_TYPES[type];
+    const fields = t.fields.map(([k, label, ph, req]) => `<label><span>${esc(label)}</span><input type="text" name="${prefix}${k}" value="${esc(st[k] || '')}" placeholder="${esc(ph)}"${req && !prefix ? ' required' : ''}></label>`).join('');
+    let auth = '';
+    if (type === 'vault') {
+      const m = (st.auth && st.auth.method) || 'jwt';
+      auth = `<label><span>How narado signs in</span><select name="${prefix}authMethod">
+<option value="jwt"${m === 'jwt' ? ' selected' : ''}>As each person (JWT): Vault's policies decide what they can read</option>
+<option value="approle"${m === 'approle' ? ' selected' : ''}>As narado (AppRole), with narado's access rules</option>
+<option value="token"${m === 'token' ? ' selected' : ''}>As narado (token), with narado's access rules</option></select></label>
+<div class="row"><label><span>JWT role (for "as each person")</span><input type="text" name="${prefix}role" value="${esc((st.auth && st.auth.role) || '')}" placeholder="narado"></label>
+<label><span>JWT auth mount</span><input type="text" name="${prefix}authMount" value="${esc((st.auth && st.auth.mount) || '')}" placeholder="jwt"></label></div>
+<p class="note">For "as each person", point Vault's JWT auth method at narado's public key: <code>${esc(publicUrl)}/auth/jwks.json</code>.</p>`;
+    }
+    return fields + auth;
+  };
+  const credFields = (id, list) =>
+    list
+      .map(([name, label, secret, kind]) => {
+        const envName = storeEnv(id, name);
+        const fromEnv = settings.source(envName, realEnv) === 'env';
+        if (kind === 'textarea') {
+          return `<label><span>${esc(label)}${fromEnv ? '<span class="tag">set in the server environment</span>' : ''}</span><textarea class="mono" name="cred_${name}" rows="4" placeholder="${env[envName] ? '•••••••• (kept; paste to replace)' : '{ \"type\": \"service_account\", … }'}"${fromEnv ? ' disabled' : ''}></textarea></label>`;
+        }
+        return field({ name: `cred_${name}`, label, value: env[envName], source: settings.source(envName, realEnv), secret });
+      })
+      .join('');
+
+  const storeCard = (st, rules) => {
+    const t = STORE_TYPES[st.type] || { name: st.type };
+    const id = esc(st.id);
+    const dlg = `dlg-store-${id}`;
+    const running = secrets && secrets.stores && secrets.stores.get(st.id);
+    const configured = running ? running.configured() : false;
+    const perPerson = !!(running && running.perPerson);
+    const myRules = rules.filter((r) => r.store === st.id || !r.store).length;
+    const card = `<div class="conn" data-testid="store-${id}">
+<div class="conn-top">${storeLogo(st.type)}<div class="conn-title"><strong>${esc(t.name)}</strong><span>${esc(st.id)} · ${esc(whereOf(st))}</span></div>
+<span class="pill${configured ? ' ok' : ''}">${configured ? 'Connected' : running ? 'Needs credentials' : 'Restart pending'}</span></div>
+<p class="conn-desc">${perPerson ? 'Signs in as each person; the store’s own policies decide what they can read.' : `narado signs in as itself; ${myRules ? `${myRules} access rule${myRules === 1 ? '' : 's'} in narado.json decide who reads what` : 'nobody can read from it until an access rule in narado.json allows it'}.`} Requests use <code>secret://${id}/…</code>.</p>
+<div class="conn-actions"><button type="button" class="secondary" onclick="openDlg('${dlg}')">Manage</button>
+<form method="post" action="/admin/secrets/${id}/test#secrets" style="display:inline">${keep('')}<button type="submit" class="secondary">Test connection</button></form></div></div>`;
+    const body = `<form method="post" action="/admin/secrets/${id}/save">${keep(dlg)}
+<h4>Settings</h4>${storeFields(st.type, st)}
+${credsOf(st).length ? `<h4>Credentials</h4><p class="note">Kept encrypted on the narado server; never sent to people's browsers or computers.</p>${credFields(st.id, credsOf(st))}` : ''}
+<div class="actions"><button type="submit">Save</button><button type="submit" class="danger" formaction="/admin/secrets/${id}/remove" onclick="return confirm('Remove ${esc(st.id)}? Requests using secret://${esc(st.id)}/… stop working, and its access rules are removed too.')">Remove</button></div></form>`;
+    return { card, dialog: dialog(dlg, `${t.name} · ${st.id}`, storeLogo(st.type, true), body) };
+  };
+
+  const addStoreDialog = () =>
+    dialog(
+      'dlg-add-store',
+      'Add a secrets store',
+      '',
+      `<form method="post" action="/admin/secrets/add" id="add-store">${keep('dlg-add-store')}
+<div class="choices">${Object.entries(STORE_TYPES)
+        .map(([k, t], i) => `<label class="choice"><input type="radio" name="type" value="${k}"${i === 0 ? ' checked' : ''}>${storeLogo(k)}<span>${esc(t.name)}</span></label>`)
+        .join('')}</div>
+<label><span>ID (used in references: secret://<em>id</em>/path)</span><input type="text" name="id" placeholder="vault" pattern="[A-Za-z0-9_-]+" required></label>
+${Object.keys(STORE_TYPES)
+        .map((k) => `<fieldset data-type="${k}"${k === 'vault' ? '' : ' hidden disabled'}>${storeFields(k, {}, '')}${k === 'vault' ? '<p class="note">For AppRole or a token, add the credentials under Manage once it\'s created.</p>' : `<h4>Credentials</h4>${STORE_TYPES[k].creds.map(([name, label, secret, kind]) => (kind === 'textarea' ? `<label><span>${esc(label)}</span><textarea class="mono" name="cred_${name}" rows="4"></textarea></label>` : `<label><span>${esc(label)}</span><input type="${secret ? 'password' : 'text'}" name="cred_${name}" autocomplete="off"></label>`)).join('')}`}</fieldset>`)
+        .join('')}
+<div class="actions"><button type="submit">Add store</button></div></form>`
+    );
+
   /* ------------------------------------------------------------------ page */
+
+  const secretsSection = () => {
+    const { stores, access } = readSecretsCfg();
+    const cards = stores.map((st) => storeCard(st, access));
+    return `<section id="secrets"><h2>Secrets stores</h2><p class="lead">Where requests get <code>secret://</code> values from, just before they're sent. Values and store credentials stay on the narado server.</p>
+<div class="grid">${cards.map((x) => x.card).join('\n')}
+<button type="button" class="conn add" onclick="openDlg('dlg-add-store')"><span class="plus">+</span><span>Add Vault, AWS, Google Cloud or Azure</span></button></div>
+${cards.map((x) => x.dialog).join('\n')}${addStoreDialog()}</section>`;
+  };
 
   const adminPage = (who, notice) => {
     const v = (name) => env[name];
@@ -342,6 +526,8 @@ ${field({ name: 'NARADO_ALLOWED_EMAIL_DOMAINS', label: 'Allowed email domains (o
 <button type="button" class="conn add" onclick="openDlg('dlg-add')"><span class="plus">+</span><span>Add GitHub Enterprise or self-managed GitLab</span></button></div>
 ${hosts.map((x) => x.dialog).join('\n')}${addDlg}</section>
 
+${secretsSection()}
+
 <section id="desktop"><h2>Desktop</h2><p class="lead">What narado desktop may send requests to from people's computers. Cloud metadata addresses are always refused.</p>
 <div class="card"><form method="post" action="/admin/desktop"><label><span>Sends allowed${envTag('NARADO_DESKTOP_SEND')}</span>
 <select name="NARADO_DESKTOP_SEND"${src('NARADO_DESKTOP_SEND') === 'env' ? ' disabled' : ''}>
@@ -354,7 +540,10 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
 <form method="post" action="/admin/devices/${esc(d.id)}/revoke" onsubmit="return confirm('Sign out ${esc(d.name).replace(/'/g, '')}?')"><button class="danger" type="submit">Sign out</button></form></div>`)
       .join('')}</div>` : '<p class="note" style="margin:0">No computers are signed in.</p>'}</div></section>` : ''}`;
     const reopen = notice && notice.open && /^dlg-[a-z0-9-]+$/.test(notice.open) ? `openDlg(${JSON.stringify(notice.open)});` : '';
-    return page({ title: who.setup ? 'Setup' : 'Admin', who: who.setup ? 'setup link' : who.name, body, script: reopen });
+    // Answers to a form (a test, an error) show at the form's address: put /admin back, so a
+    // reload doesn't send the form again.
+    const back = "if(location.pathname!=='/admin')history.replaceState(null,'','/admin'+location.hash);";
+    return page({ title: who.setup ? 'Setup' : 'Admin', who: who.setup ? 'setup link' : who.name, body, script: back + reopen });
   };
 
   /* ------------------------------------------------------------- handlers */
@@ -482,7 +671,7 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
     try {
       if (p === '/admin' && req.method === 'GET') {
         const saved = url.searchParams.get('saved');
-        const notice = saved ? { text: { signin: 'Sign-in saved.', admins: 'Admins saved.', git: 'Git settings saved.', desktop: 'Desktop settings saved.', device: 'Signed out.' }[saved] || 'Saved.' } : null;
+        const notice = saved ? { text: { signin: 'Sign-in saved.', admins: 'Admins saved.', git: 'Git settings saved.', desktop: 'Desktop settings saved.', device: 'Signed out.', secrets: 'Secrets store saved.' }[saved] || 'Saved.' } : null;
         return html(res, 200, adminPage(who, notice)), true;
       }
       const done = /^\/admin\/git\/([a-z0-9-]+)\/github-app-done$/.exec(p);
@@ -518,6 +707,55 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
         settings.set({ NARADO_DESKTOP_SEND: value === 'any' ? null : value }, who.email || who.name);
         log.log(`[narado] admin: ${who.name} set desktop sends to ${value}`);
         return savedAndRestart(res, '/admin?saved=desktop'), true;
+      }
+      if (p === '/admin/secrets/add') {
+        const type = form.get('type');
+        const id = String(form.get('id') || '').trim();
+        if (!STORE_TYPES[type]) throw new Error('Choose a type of store');
+        if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) throw new Error('The ID can use letters, digits, - and _');
+        const { stores, access } = readSecretsCfg();
+        if (stores.some((x) => x.id === id)) throw new Error(`There's already a store called ${id}`);
+        const st = storeFromForm(type, id, form);
+        const creds = credsFromForm(st, form); // checked before anything is saved
+        writeSecretsCfg([...stores, st], access);
+        saveCreds(creds, who);
+        log.log(`[narado] admin: ${who.name} added secrets store ${id} (${type})`);
+        return savedAndRestart(res, '/admin?saved=secrets#secrets'), true;
+      }
+      const sm = /^\/admin\/secrets\/([A-Za-z0-9_-]+)\/(save|remove|test)$/.exec(p);
+      if (sm) {
+        const { stores, access } = readSecretsCfg();
+        const st = stores.find((x) => x.id === sm[1]);
+        if (!st) throw new Error('Unknown secrets store');
+        if (sm[2] === 'save') {
+          const next = storeFromForm(st.type, st.id, form, st);
+          const creds = credsFromForm(next, form);
+          writeSecretsCfg(stores.map((x) => (x.id === st.id ? next : x)), access);
+          saveCreds(creds, who);
+          log.log(`[narado] admin: ${who.name} changed secrets store ${st.id}`);
+          return savedAndRestart(res, '/admin?saved=secrets#secrets'), true;
+        }
+        if (sm[2] === 'remove') {
+          writeSecretsCfg(stores.filter((x) => x.id !== st.id), access.filter((r) => r.store !== st.id));
+          const names = {};
+          for (const [name] of [...(STORE_TYPES[st.type].creds || []), ...Object.values(VAULT_CREDS).flat()]) names[storeEnv(st.id, name)] = null;
+          settings.set(names, who.email || who.name);
+          log.log(`[narado] admin: ${who.name} removed secrets store ${st.id} and its access rules`);
+          return savedAndRestart(res, '/admin?saved=secrets#secrets'), true;
+        }
+        // Test: list the top level as the store sees narado (or the admin, for per-person
+        // stores). Only a count is shown: no names, no values.
+        const store = secrets && secrets.stores && secrets.stores.get(st.id);
+        if (!store) throw new Error(`narado hasn't loaded ${st.id} yet; save it, then test`);
+        if (store.perPerson && !(who.user && who.user.id)) throw new Error(`${st.id} signs in as each person: sign in with SSO as an admin to test it`);
+        try {
+          const entries = await Promise.race([store.list('', { user: who.user || null }), new Promise((_, rej) => setTimeout(() => rej(new Error('No answer in 10 seconds')), 10000))]);
+          log.log(`[narado] admin: ${who.name} tested secrets store ${st.id}: ok`);
+          return html(res, 200, adminPage(who, { text: `${st.id} answered: ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} at the top level${store.perPerson ? ` (as ${who.name})` : ''}.` }) + ''), true;
+        } catch (err) {
+          log.warn(`[narado] admin: ${who.name} tested secrets store ${st.id}: ${err.message}`);
+          throw new Error(`${st.id} didn't answer: ${err.message}`);
+        }
       }
       const dev = /^\/admin\/devices\/([\w-]+)\/revoke$/.exec(p);
       if (dev) {

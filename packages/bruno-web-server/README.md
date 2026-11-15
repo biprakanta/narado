@@ -325,7 +325,8 @@ narado's own pages at `/setup` and `/admin` (`src/narado/admin.js`), served by t
   - sign-in and admins;
   - Git hosts: add GitHub Enterprise or self-managed GitLab, and set where Explore looks by default;
   - the desktop send policy;
-  - every person's signed-in computers, with sign-out.
+  - every person's signed-in computers, with sign-out;
+  - secrets stores (Vault, AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault) as connector cards. An admin can add or remove a store, or change its settings and credentials. Credentials are encrypted as settings under the names the stores read (`NARADO_SECRETS_<ID>_*`), and the store's location goes in `narado.json`. *Test connection* lists the store's top level and shows only a count: as narado for service-identity stores, as the admin for per-person ones. Removing a store removes its access rules. The access rules themselves are still edited in `narado.json`.
 - **Git apps, created by narado:**
   - **GitHub and GitHub Enterprise:** *Create the GitHub App* uses GitHub's app-manifest flow. GitHub creates a private app in the given organisation (or the admin's account) with the needed permissions and callback, then narado exchanges the one-time code for its credentials and offers the install link.
   - **Self-managed GitLab:** an administrator access token creates the OAuth application through the API. narado doesn't keep the token.

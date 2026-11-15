@@ -131,7 +131,7 @@ const start = async ({ settings, restart }) => {
   const pool = new WorkerPool({ dataDir: DATA_DIR, multiUser: auth.enabled, publicPort: PORT, rpc, privateEnv: gitAccounts.tokenEnvNames(), env: { ...env, NARADO_OAUTH2_CALLBACK_URL: oauth2Callback } });
   const oauth2 = createOauth2Callback({ auth, pool, allowedOrigins: ALLOWED_ORIGINS });
   // Setup and admin pages (narado/admin.js).
-  const admin = createAdmin({ settings, env, realEnv: process.env, auth, desktop, gitAccounts, dataDir: DATA_DIR, localOnly, restart });
+  const admin = createAdmin({ settings, env, realEnv: process.env, auth, desktop, gitAccounts, secrets, dataDir: DATA_DIR, localOnly, restart });
 
   const fail = (res, err) => {
     const status = err instanceof WorkerError ? err.status : 500;

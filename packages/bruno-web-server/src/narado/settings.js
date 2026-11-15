@@ -15,7 +15,8 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { TokenBox } = require('./git-accounts');
 
-const SECRET = /(SECRET|PRIVATE_KEY|_PEM)$/;
+// Encrypted: secrets and keys, and every secrets-store credential (NARADO_SECRETS_<ID>_*).
+const SECRET = /(SECRET|PRIVATE_KEY|_PEM)$|^NARADO_SECRETS_/;
 const NAME = /^NARADO_[A-Z0-9_]+$/;
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 

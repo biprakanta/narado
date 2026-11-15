@@ -11,7 +11,7 @@ const quiet = { log() {}, warn() {}, error() {} };
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'narado-admin-'));
 
 /** An admin-pages server; cookie "sid=<user id>" signs in. */
-const startAdmin = async ({ env = {}, users = {}, enabled = true, localOnly = false, fetchImpl, dataDir = tmp() } = {}) => {
+const startAdmin = async ({ env = {}, users = {}, enabled = true, localOnly = false, fetchImpl, dataDir = tmp(), secrets = null } = {}) => {
   const settings = new SettingsStore({ dataDir, env: {} });
   let restarts = 0;
   let publicUrl;
@@ -32,6 +32,7 @@ const startAdmin = async ({ env = {}, users = {}, enabled = true, localOnly = fa
       },
       desktop: { adminDevices: () => [], adminRevoke: () => true },
       gitAccounts: {},
+      secrets,
       dataDir,
       localOnly,
       restart: async () => {
@@ -231,6 +232,82 @@ test('Git hosts: adding and removing self-managed hosts, Explore defaults', asyn
     assert.match(await bad.text(), /must be/);
     await a.post('/admin/git/ghe/remove', {}, { cookie: 'sid=alice' });
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(a.dataDir, 'narado.json'), 'utf8')).hosts.map((h) => h.id), ['github', 'gitlab']);
+  } finally {
+    await a.close();
+  }
+});
+
+
+test('secrets stores: added and changed from the admin page, credentials kept encrypted and never shown', async () => {
+  const users = { alice: { id: 'alice', name: 'Alice', email: 'alice@acme.com' } };
+  const a = await startAdmin({ users, env: { NARADO_ADMINS: 'alice@acme.com' } });
+  const cookie = { cookie: 'sid=alice' };
+  try {
+    const added = await a.post('/admin/secrets/add', { type: 'aws', id: 'aws-prod', region: 'ap-south-1', cred_ACCESS_KEY_ID: 'AKIATEST', cred_SECRET_ACCESS_KEY: 'very-secret' }, cookie);
+    assert.equal(added.status, 200);
+    const cfg = JSON.parse(fs.readFileSync(path.join(a.dataDir, 'narado.json'), 'utf8'));
+    assert.deepEqual(cfg.secrets.stores, [{ id: 'aws-prod', type: 'aws', region: 'ap-south-1' }]);
+    assert.ok(!JSON.stringify(cfg).includes('very-secret'), 'credentials are not in narado.json');
+    assert.equal(a.settings.get('NARADO_SECRETS_AWS_PROD_SECRET_ACCESS_KEY'), 'very-secret');
+    const raw = fs.readFileSync(path.join(a.dataDir, 'narado.db'));
+    assert.ok(!raw.includes('very-secret') && !raw.includes('AKIATEST'), 'credentials are encrypted');
+
+    // Saving with the secret left empty keeps it; the page never shows it.
+    await wait(400);
+    await a.post('/admin/secrets/aws-prod/save', { region: 'eu-west-1', cred_ACCESS_KEY_ID: 'AKIANEW', cred_SECRET_ACCESS_KEY: '' }, cookie);
+    assert.equal(a.settings.get('NARADO_SECRETS_AWS_PROD_SECRET_ACCESS_KEY'), 'very-secret');
+    assert.equal(a.settings.get('NARADO_SECRETS_AWS_PROD_ACCESS_KEY_ID'), 'AKIANEW');
+    await wait(400);
+    const html = await (await fetch(`${a.publicUrl}/admin`, { headers: cookie })).text();
+    assert.ok(!html.includes('very-secret'));
+    assert.match(html, /AWS Secrets Manager/);
+    assert.match(html, /region eu-west-1/);
+
+    // A Google key that isn't a service account key is refused; a duplicate ID too.
+    const badKey = await a.post('/admin/secrets/add', { type: 'gcp', id: 'gcp', project: 'acme', cred_CREDENTIALS: '{"nope":1}' }, cookie);
+    assert.match(await badKey.text(), /paste the service account/);
+    const dup = await a.post('/admin/secrets/add', { type: 'aws', id: 'aws-prod', region: 'x' }, cookie);
+    assert.match(await dup.text(), /already a store called aws-prod/);
+
+    // Vault signing in as each person: no credentials, a JWT role.
+    await a.post('/admin/secrets/add', { type: 'vault', id: 'vault', url: 'https://vault.acme.internal/', authMethod: 'jwt', role: '' }, cookie);
+    await wait(400);
+    const stores = JSON.parse(fs.readFileSync(path.join(a.dataDir, 'narado.json'), 'utf8')).secrets.stores;
+    assert.deepEqual(stores[1], { id: 'vault', type: 'vault', url: 'https://vault.acme.internal', auth: { method: 'jwt', role: 'narado' } });
+
+    // Removing a store removes its access rules and credentials.
+    const file = path.join(a.dataDir, 'narado.json');
+    const withRule = JSON.parse(fs.readFileSync(file, 'utf8'));
+    withRule.secrets.access = [{ store: 'aws-prod', paths: ['payments/*'] }, { store: 'vault', paths: ['x'] }];
+    fs.writeFileSync(file, JSON.stringify(withRule));
+    await a.post('/admin/secrets/aws-prod/remove', {}, cookie);
+    const after = JSON.parse(fs.readFileSync(file, 'utf8')).secrets;
+    assert.deepEqual(after.stores.map((x) => x.id), ['vault']);
+    assert.deepEqual(after.access, [{ store: 'vault', paths: ['x'] }]);
+    assert.equal(a.settings.get('NARADO_SECRETS_AWS_PROD_SECRET_ACCESS_KEY'), undefined);
+  } finally {
+    await a.close();
+  }
+});
+
+test('secrets stores: Test connection shows a count only, and explains failures', async () => {
+  const users = { alice: { id: 'alice', name: 'Alice', email: 'alice@acme.com' } };
+  const dataDir = tmp();
+  fs.writeFileSync(path.join(dataDir, 'narado.json'), JSON.stringify({ secrets: { stores: [{ id: 'aws', type: 'aws', region: 'x' }, { id: 'broken', type: 'aws', region: 'y' }] } }));
+  const secrets = {
+    stores: new Map([
+      ['aws', { perPerson: false, configured: () => true, list: async () => [{ path: 'payments/stripe' }, { path: 'payments/adyen' }] }],
+      ['broken', { perPerson: false, configured: () => false, list: async () => { throw new Error('needs NARADO_SECRETS_BROKEN_ACCESS_KEY_ID'); } }]
+    ])
+  };
+  const a = await startAdmin({ users, env: { NARADO_ADMINS: 'alice@acme.com' }, dataDir, secrets });
+  try {
+    const ok = await (await a.post('/admin/secrets/aws/test', {}, { cookie: 'sid=alice' })).text();
+    assert.match(ok, /aws answered: 2 entries at the top level/);
+    assert.ok(!ok.includes('payments/stripe'), 'names are not shown');
+    const bad = await (await a.post('/admin/secrets/broken/test', {}, { cookie: 'sid=alice' })).text();
+    assert.match(bad, /broken didn&#39;t answer: needs NARADO_SECRETS_BROKEN_ACCESS_KEY_ID/);
+    assert.match(bad, /Needs credentials/);
   } finally {
     await a.close();
   }
