@@ -102,6 +102,20 @@ class GitHubProvider {
     return GitHubProvider.toRepo(data, this);
   }
 
+  /** Every file path on `ref`, without cloning (for finding collections). */
+  async listFiles(repoPath, ref) {
+    const { data } = await this.api(`/repos/${repoPath}/git/trees/${encodeURIComponent(ref)}?recursive=1`);
+    return { files: (data.tree || []).filter((e) => e.type === 'blob').map((e) => e.path), truncated: !!data.truncated, commit: data.sha };
+  }
+
+  /** One file's text on `ref`. */
+  async readFile(repoPath, ref, filePath) {
+    const { data } = await this.api(`/repos/${repoPath}/contents/${filePath.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(ref)}`, {
+      headers: { accept: 'application/vnd.github.raw+json' }
+    });
+    return typeof data === 'string' ? data : JSON.stringify(data);
+  }
+
   /** The signed-in person's fork of `repoPath`, or null. */
   async findFork(repoPath) {
     const me = await this.getCurrentUser();

@@ -158,3 +158,30 @@ test('reads retry after a network failure; writes do not; errors name the host',
   );
   assert.equal(calls, 1, 'a POST is never repeated');
 });
+
+test('listing and reading files through the host API, for the catalogue', async () => {
+  const gh = new GitHubProvider({
+    id: 'github',
+    token: 't',
+    fetchImpl: fakeFetch({
+      'GET /repos/acme/svc/git/trees/main?recursive=1': () => [200, { sha: 'abc', truncated: false, tree: [{ path: 'api', type: 'tree' }, { path: 'api/openapi.yaml', type: 'blob' }] }],
+      'GET /repos/acme/svc/contents/api/open%20api.yaml?ref=main': () => [200, 'openapi: 3.1.0']
+    })
+  });
+  assert.deepEqual(await gh.listFiles('acme/svc', 'main'), { files: ['api/openapi.yaml'], truncated: false, commit: 'abc' });
+  assert.equal(await gh.readFile('acme/svc', 'main', 'api/open api.yaml'), 'openapi: 3.1.0');
+
+  let page = 0;
+  const glFetch = fakeFetch({
+    'GET /api/v4/projects/acme%2Fsvc/repository/tree': () => {
+      page++;
+      return [200, page === 1 ? Array.from({ length: 100 }, (_, i) => ({ path: `f${i}`, type: 'blob' })) : [{ path: 'api/openapi.yaml', type: 'blob' }, { path: 'api', type: 'tree' }]];
+    },
+    'GET /api/v4/projects/acme%2Fsvc/repository/files/api%2Fopenapi.yaml/raw?ref=main': () => [200, { openapi: '3.1.0' }]
+  });
+  const gl = new GitLabProvider({ id: 'gitlab', token: 't', fetchImpl: glFetch });
+  const listed = await gl.listFiles('acme/svc', 'main');
+  assert.equal(listed.files.length, 101);
+  assert.ok(listed.files.includes('api/openapi.yaml'));
+  assert.equal(await gl.readFile('acme/svc', 'main', 'api/openapi.yaml'), '{"openapi":"3.1.0"}');
+});

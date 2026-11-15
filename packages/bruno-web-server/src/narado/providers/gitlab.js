@@ -85,6 +85,27 @@ class GitLabProvider {
     };
   }
 
+  /** Every file path on `ref`, without cloning (for finding collections). */
+  async listFiles(repoPath, ref, { maxPages = 100 } = {}) {
+    const files = [];
+    const base = `/projects/${encodeURIComponent(repoPath)}/repository/tree?recursive=true&per_page=100&ref=${encodeURIComponent(ref)}`;
+    let page = 1;
+    for (; page <= maxPages; page++) {
+      const { data, headers } = await this.api(`${base}&page=${page}`);
+      for (const e of data) if (e.type === 'blob') files.push(e.path);
+      // A full page means there may be more; GitLab leaves out paging headers on big listings.
+      const next = headers && headers.get ? headers.get('x-next-page') : null;
+      if (data.length < 100 || next === '') break;
+    }
+    return { files, truncated: page > maxPages, commit: null };
+  }
+
+  /** One file's text on `ref`. */
+  async readFile(repoPath, ref, filePath) {
+    const { data } = await this.api(`/projects/${encodeURIComponent(repoPath)}/repository/files/${encodeURIComponent(filePath)}/raw?ref=${encodeURIComponent(ref)}`);
+    return typeof data === 'string' ? data : JSON.stringify(data);
+  }
+
   /** The signed-in person's fork of `repoPath`, or null. */
   async findFork(repoPath) {
     const { data } = await this.api(`/projects/${encodeURIComponent(repoPath)}/forks?owned=true&per_page=100`);

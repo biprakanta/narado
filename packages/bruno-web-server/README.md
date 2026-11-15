@@ -16,6 +16,7 @@ What each phase added:
 - **Phase 4e:** secrets from HashiCorp Vault, AWS Secrets Manager, Google Secret Manager and Azure Key Vault.
 - **Phase 4a:** request safety: a platform block list for every connection, and each repo's host allowlist for every send.
 - **Phase 4c:** each person connects their own GitHub or GitLab account, and narado works on Git as them.
+- **Explore APIs:** a catalogue of every repository the person can see that holds collections, including code repositories that carry their API in a subfolder. One click opens one.
 
 ## Run
 
@@ -78,6 +79,7 @@ How it is kept safe:
 - Refresh tokens and app credentials stay in the front process. A person's worker asks the front for an access token when it needs one, and the front refreshes it when it has under five minutes left. A refused refresh disconnects the account, and narado asks the person to connect again.
 - Git commands get the token in an HTTP header for that command only, with credential helpers turned off, so nothing is saved on disk and nothing falls back to another account.
 - Disconnecting deletes the stored tokens and withdraws narado's access on the host.
+- One Git account can be connected by one narado person only, so the host's records always name the person who acted. A second person trying to connect the same account (for example on a shared computer) is refused and told to sign in to the host as themselves.
 
 ### Shared tokens (local mode)
 
@@ -89,6 +91,16 @@ Without sign-in, a host can use one token from `NARADO_<HOST ID>_TOKEN` instead 
 | GitLab.com (`gitlab`) | `NARADO_GITLAB_TOKEN` | `api` scope |
 
 With sign-in on, these are ignored unless `NARADO_SHARED_GIT_TOKENS=1`, which is only meant for moving a server over. Workers never see them: the front hands them out like personal tokens.
+
+### Explore APIs
+
+The **Explore APIs** button in the Git section lists every repository the person can see that holds a collection, found through the host's API as them. Nothing is cloned until they open one.
+
+- **What counts as a collection:** a folder with `bruno.json` or `opencollection.yml` (Bruno), or with `openapi.yaml`, `openapi.yml` or `openapi.json` (narado's OpenAPI storage, with `.client/` beside it). Copies and other people's code are skipped: `node_modules`, `vendor`, `third_party`, `dist`, `build`, `target`, `out` and hidden folders.
+- **Two kinds of repository:** an **API repo** has its collection at the root. A **Code + API** repo is a service that carries its API in subfolders, for example `api/openapi.yaml` or several `services/*/api/` folders.
+- **Cost:** one file-list call per repository, plus one call per collection for its name. Results are cached in the person's folder per repository, keyed by its default branch and last push, so later visits only read repositories that changed. If the host rate-limits narado, it stops and carries on next time.
+- **Opening** a collection opens the repository's default branch, with every collection in it, and shows the one chosen. Edits are saved to a branch or fork as usual. **Change or branch…** opens the full dialog.
+- **Right after sign-in,** a person with no Git account connected is sent to connect one, once per browser session. If GitHub has already authorised the app for the account signed in to that browser, this returns at once with no prompt.
 
 ### How workspaces work
 
@@ -151,7 +163,7 @@ With sign-in on, a person's requests run on the server, so narado stops them rea
 
 A request may only go to hosts the repo names on its **default branch**. A host added on a branch counts once its merge request is merged. The hosts come from three places:
 
-- `.client/allowed-hosts.yml`:
+- `.client/allowed-hosts.yml`, at the root or next to a collection in a code repository (for example `services/payments/api/.client/allowed-hosts.yml`):
 
   ```yaml
   hosts:
@@ -169,7 +181,7 @@ A request may only go to hosts the repo names on its **default branch**. A host 
 How the check works:
 
 - **Each HTTP request is checked** (host, port and path), including reused keep-alive connections. Other connections are checked by host and port.
-- **Review the file.** The Git panel lists the hosts and warns when no `CODEOWNERS` entry covers `.client/allowed-hosts.yml`. Add one, and turn on code-owner review in branch protection, so allowlist changes need approval.
+- **Review the file.** The Git panel lists the hosts and warns when `CODEOWNERS` doesn't cover every `.client/allowed-hosts.yml` in the repo. Add one, and turn on code-owner review in branch protection, so allowlist changes need approval.
 - **Collections outside a Git workspace** only get the block list. Set `NARADO_REQUESTS_OUTSIDE_REPOS=refuse` to stop their sends.
 - **MCP sends** use the same default-branch allowlist, also in single-user mode.
 
@@ -284,7 +296,8 @@ The workspace tests run real Git against a local repo standing in for the host, 
 
 ## Known limits
 
-- **Git accounts are separate from sign-in.** Connecting is a second step after signing in to narado; narado does not check that the Git account belongs to the same person as the SSO account.
+- **Git accounts are separate from sign-in.** narado connects the Git account signed in to the person's browser, and doesn't check it belongs to the same person as the SSO account (only that no one else has it).
+- **Opening a large code repository** clones all of it, even though only its collection folders are used. A partial, sparse clone would fetch just those folders.
 - **GitLab sign-in** is covered by the same code and tests as GitHub, but has not been tried against a real GitLab instance yet.
 - **Access tokens reach the worker.** Workers get short-lived access tokens (GitHub: 8 hours, GitLab: 2 hours) for the calls they make, never refresh tokens.
 - **The sandbox has gaps.**

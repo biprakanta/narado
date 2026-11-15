@@ -13,6 +13,7 @@ export const naradoApi = {
   hosts: () => invoke('narado:hosts'),
   repos: (hostId) => invoke('narado:repos', { hostId }),
   me: (hostId) => invoke('narado:me', { hostId }),
+  catalogue: (hostId, refresh = false) => invoke('narado:catalogue', { hostId, refresh }),
   repo: (hostId, repoPath) => invoke('narado:repo', { hostId, repoPath }),
   open: (args) => invoke('narado:open', args),
   initCollection: (path, name) => invoke('narado:init-collection', { path, name }),

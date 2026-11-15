@@ -4,7 +4,8 @@
  * A repo's requests may go to the hosts named on its **default branch**, never on a
  * person's own branch, so a new host only counts once its merge request is merged:
  *
- *   - `.client/allowed-hosts.yml`:
+ *   - `.client/allowed-hosts.yml`, at the root or next to a collection in a code
+ *     repository (for example `services/payments/api/.client/allowed-hosts.yml`):
  *
  *       hosts:
  *         - api.stripe.com                 # ports 80 and 443
@@ -37,19 +38,21 @@ const git = (args, cwd) =>
 const hostPattern = (h) => String(h).trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
 
 /** One allowlist entry from the YAML file. */
-const parseEntry = (e) => {
+const parseEntry = (e, source = ALLOW_FILE) => {
   if (typeof e === 'string') {
     const m = /^(\[[^\]]+\]|[^:]+)(?::(\d+))?$/.exec(e.trim());
     if (!m) return null;
-    return { host: hostPattern(m[1]), ports: m[2] ? [Number(m[2])] : [80, 443], paths: null, source: ALLOW_FILE };
+    return { host: hostPattern(m[1]), ports: m[2] ? [Number(m[2])] : [80, 443], paths: null, source };
   }
   if (e && typeof e === 'object' && e.host) {
     const ports = Array.isArray(e.ports) ? e.ports.map(Number).filter((p) => p > 0 && p < 65536) : e.port ? [Number(e.port)] : [80, 443];
     const paths = Array.isArray(e.paths) ? e.paths.map(String).filter((p) => p.startsWith('/')) : null;
-    return { host: hostPattern(e.host), ports, paths: paths && paths.length ? paths : null, source: ALLOW_FILE };
+    return { host: hostPattern(e.host), ports, paths: paths && paths.length ? paths : null, source };
   }
   return null;
 };
+
+const isAllowFile = (f) => f === ALLOW_FILE || f.endsWith(`/${ALLOW_FILE}`);
 
 /** Host and port entries for literal URLs in some text (spec servers, environment files). */
 const entriesFromUrls = (text, source) => {
@@ -91,8 +94,8 @@ class RepoRules {
   }
 }
 
-/** Whether a CODEOWNERS file on the branch assigns owners to the allowlist file. */
-const codeownersCovers = (text) => {
+/** Whether a CODEOWNERS file on the branch assigns owners to an allowlist file. */
+const codeownersCovers = (text, file = ALLOW_FILE) => {
   if (!text) return false;
   let covered = false;
   for (const raw of text.split('\n')) {
@@ -108,7 +111,9 @@ const codeownersCovers = (text) => {
         .replace(/\*/g, '[^/]*')
         .replace(/\u0000/g, '.*')}(?:/.*)?$`
     );
-    const matches = pattern === '*' || re.test(ALLOW_FILE) || (!pattern.includes('/') && re.test(path.basename(ALLOW_FILE)));
+    // A pattern without a slash (other than a trailing one) matches at any depth.
+    const anywhere = !pattern.replace(/\/$/, '').includes('/');
+    const matches = pattern === '*' || re.test(file) || (anywhere && file.split('/').some((_, i, parts) => re.test(parts.slice(i).join('/'))));
     if (matches) covered = owners.length > 0; // the last matching line wins, as on GitHub and GitLab
   }
   return covered;
@@ -138,16 +143,17 @@ class AllowlistReader {
     const entries = [];
     const files = commit ? ((await git(['ls-tree', '-r', '--name-only', commit], base)) || '').split('\n').filter(Boolean) : [];
     const show = (f) => git(['show', `${commit}:${f}`], base);
-    if (files.includes(ALLOW_FILE)) {
+    const allowFiles = files.filter(isAllowFile).slice(0, 50);
+    for (const f of allowFiles) {
       try {
-        const data = YAML.parse((await show(ALLOW_FILE)) || '') || {};
+        const data = YAML.parse((await show(f)) || '') || {};
         for (const e of Array.isArray(data.hosts) ? data.hosts : []) {
-          const parsed = parseEntry(e);
+          const parsed = parseEntry(e, f);
           if (parsed) entries.push(parsed);
         }
       } catch {}
     }
-    for (const f of files.filter((x) => SPEC_RE.test(x) && !x.includes('node_modules/')).slice(0, 5)) {
+    for (const f of files.filter((x) => SPEC_RE.test(x) && !x.includes('node_modules/')).slice(0, 20)) {
       const text = (await show(f)) || '';
       try {
         const doc = f.endsWith('.json') ? JSON.parse(text) : YAML.parse(text);
@@ -163,10 +169,12 @@ class AllowlistReader {
         break;
       }
     }
-    const rules = new RepoRules({ repo, branch, commit, entries, codeowners: codeownersCovers(owners) });
+    // Review must cover every allowlist file (the root one if there is none yet).
+    const covered = (allowFiles.length ? allowFiles : [ALLOW_FILE]).every((f) => codeownersCovers(owners, f));
+    const rules = new RepoRules({ repo, branch, commit, entries, codeowners: covered });
     this.cache.set(base, rules);
     return rules;
   }
 }
 
-module.exports = { AllowlistReader, RepoRules, parseEntry, entriesFromUrls, hostMatches, codeownersCovers, ALLOW_FILE };
+module.exports = { AllowlistReader, RepoRules, parseEntry, entriesFromUrls, hostMatches, codeownersCovers, isAllowFile, ALLOW_FILE };

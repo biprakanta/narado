@@ -12,7 +12,7 @@ const REPO_PATH_RE = /^[^/\s]+(\/[^/\s]+)+$/;
  * existing branch, or browse the default branch read-only. Changes are made on a
  * branch in the repo or in the person's fork; read-only access means fork only.
  */
-const OpenRepoModal = ({ onClose, onOpened }) => {
+const OpenRepoModal = ({ onClose, onOpened, initialHostId = '', initialRepoPath = '' }) => {
   const [hosts, setHosts] = useState([]);
   const [hostId, setHostId] = useState('');
   const [repos, setRepos] = useState([]);
@@ -33,7 +33,8 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
       .hosts()
       .then((list) => {
         setHosts(list);
-        const first = list.find((h) => h.connected);
+        const preferred = list.find((h) => h.connected && h.id === initialHostId);
+        const first = preferred || list.find((h) => h.connected);
         setHostId(first ? first.id : '');
       })
       .catch((err) => setError(errorText(err)));
@@ -61,7 +62,13 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
     setError('');
     naradoApi
       .repos(hostId)
-      .then(setRepos)
+      .then((list) => {
+        setRepos(list);
+        if (initialRepoPath && hostId === initialHostId && list.some((r) => r.path === initialRepoPath)) {
+          setRepoPath(initialRepoPath);
+          setMode('change');
+        }
+      })
       .catch((err) => setError(errorText(err)))
       .finally(() => setLoadingRepos(false));
   }, [hostId]);

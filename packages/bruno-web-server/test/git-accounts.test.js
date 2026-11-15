@@ -107,7 +107,7 @@ test('connecting a GitHub account: PKCE, state tied to the person, tokens encryp
   const { gh, dataDir, accounts } = make();
   const done = await connect(accounts, gh, alice);
   assert.equal(done.status, 302);
-  assert.equal(done.headers.location, '/workspace?git-connect=ok&host=github');
+  assert.equal(done.headers.location, '/workspace?git-connect=ok&host=github&login=alice-gh');
 
   const status = accounts.status(alice).find((h) => h.id === 'github');
   assert.deepEqual(
@@ -125,6 +125,17 @@ test('connecting a GitHub account: PKCE, state tied to the person, tokens encryp
   // A row moved to another person can't be decrypted (the person is part of the sealed data).
   db.prepare("UPDATE git_accounts SET user_key = 'u-bob'").run();
   assert.throws(() => accounts.store.get('u-bob', 'github'));
+});
+
+test('a Git account already connected by another person is refused', async () => {
+  const { gh, accounts } = make();
+  await connect(accounts, gh, alice);
+  // Bob's browser is signed in to the same GitHub account (a shared machine, say).
+  const taken = await connect(accounts, gh, bob);
+  assert.equal(taken.headers.location, '/workspace?git-connect=taken&host=github&login=alice-gh');
+  assert.equal(accounts.status(bob).find((h) => h.id === 'github').connected, false);
+  // Alice reconnecting the same account is fine.
+  assert.match((await connect(accounts, gh, alice)).headers.location, /git-connect=ok/);
 });
 
 test('a callback is refused for a different person, a reused state, or a wrong verifier', async () => {

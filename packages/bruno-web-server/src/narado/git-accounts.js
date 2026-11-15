@@ -20,6 +20,9 @@
  * NARADO_<HOST ID>_APP_CLIENT_SECRET (for example NARADO_GITHUB_APP_CLIENT_ID), and for
  * GitHub NARADO_<HOST ID>_APP_SLUG for the "install the app" link.
  *
+ * One host account can be connected by one narado person only, so that what narado does
+ * on the host is always attributed to the person who did it.
+ *
  * Shared tokens (NARADO_<HOST ID>_TOKEN) still work in single-user local mode. With
  * sign-in on they are not used, unless NARADO_SHARED_GIT_TOKENS=1 (for moving over).
  */
@@ -130,6 +133,12 @@ class GitAccountStore {
            refresh_token = excluded.refresh_token, refresh_expires_at = excluded.refresh_expires_at, updated_at = excluded.updated_at`
       )
       .run(userKey, hostId, a.login || null, a.accountId != null ? String(a.accountId) : null, this.box.seal(a.accessToken, aad), a.accessExpiresAt || null, this.box.seal(a.refreshToken, aad), a.refreshExpiresAt || null, now, now);
+  }
+
+  /** Who else, if anyone, has this host account connected. */
+  ownerOf(hostId, accountId) {
+    const r = this.db.prepare('SELECT user_key FROM git_accounts WHERE host_id = ? AND account_id = ?').get(hostId, String(accountId));
+    return r ? r.user_key : null;
   }
 
   remove(userKey, hostId) {
@@ -370,9 +379,15 @@ class GitAccounts {
       try {
         const t = await this.tokenRequest(h, { grant_type: 'authorization_code', code: url.searchParams.get('code') || '', redirect_uri: this.callbackUrl(hostId), code_verifier: p.verifier });
         const me = await this.registry.build(h, t.accessToken).getCurrentUser();
+        // One host account belongs to one person, so the host's audit trail names the right one.
+        const owner = this.store.ownerOf(hostId, me.id);
+        if (owner && owner !== key) {
+          this.log.warn(`[narado] ${key} tried to connect ${hostId} account ${me.login}, which another person has connected`);
+          return back(p.returnTo, { 'git-connect': 'taken', host: hostId, login: me.login }), true;
+        }
         this.store.save(key, hostId, { ...t, login: me.login, accountId: me.id });
         this.log.log(`[narado] ${key} connected ${hostId} account ${me.login}`);
-        return back(p.returnTo, { 'git-connect': 'ok', host: hostId }), true;
+        return back(p.returnTo, { 'git-connect': 'ok', host: hostId, login: me.login }), true;
       } catch (err) {
         this.log.error(`[narado] connecting ${hostId} failed for ${key}: ${err.message}`);
         return back(p.returnTo, { 'git-connect': 'failed', host: hostId }), true;

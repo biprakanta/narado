@@ -6,9 +6,9 @@
  */
 const path = require('node:path');
 const { ProviderRegistry } = require('./providers');
-const { WorkspaceManager, branchFor, findCollections } = require('./workspaces');
+const { WorkspaceManager, branchFor, runGit } = require('./workspaces');
+const { collectionsInTree, Catalogue } = require('./catalogue');
 const { Projection } = require('./openapi/projection');
-const { findSpec } = require('./openapi/spec');
 
 const REPO_TTL_MS = 5 * 60 * 1000;
 
@@ -17,6 +17,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
   // With `git` (a worker), Git tokens are the person's own, from the front process (Phase 4c).
   const registry = new ProviderRegistry({ dataDir: configDir, env, tokenFor: git ? async (hostId, opts) => (await git.token(hostId, opts)).token : undefined });
   const workspaces = new WorkspaceManager({ dataDir });
+  const catalogue = new Catalogue({ registry, dataDir });
   const users = new Map(); // hostId -> { user, at }
   const repos = new Map(); // hostId/repoPath -> { repo, at }
 
@@ -37,33 +38,53 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     return repo;
   };
 
-  /* OpenAPI repos (Phase 3): Bruno works on a generated view kept in sync with the repo. */
-  const projections = new Map(); // worktree path -> Projection
+  /*
+   * Collections in a working copy, anywhere in it: Bruno collections open as they are;
+   * each OpenAPI spec folder (Phase 3) gets a generated Bruno view kept in sync with it.
+   * A code repository can carry several of either (for example an api/ folder in each service).
+   */
+  const projections = new Map(); // spec folder -> Projection
+  const projectionsIn = (wtPath) => [...projections.entries()].filter(([dir]) => dir === wtPath || dir.startsWith(wtPath + path.sep));
 
-  /** Collections to open for a working copy: its OpenAPI view, or its Bruno collections. */
-  const collectionsFor = async (wtPath, found) => {
-    if (!findSpec(wtPath)) return found || findCollections(wtPath);
-    let p = projections.get(wtPath);
-    if (!p) {
-      p = new Projection({ repoDir: wtPath, viewDir: workspaces.viewPath(wtPath) });
-      await p.start();
-      projections.set(wtPath, p);
-    } else {
-      await p.run(() => p.project());
+  const collectionsFor = async (wtPath) => {
+    const { stdout } = await runGit(['ls-files', '-co', '--exclude-standard', '-z'], { cwd: wtPath });
+    const found = collectionsInTree(stdout.split('\0').filter(Boolean));
+    const out = [];
+    const live = new Set();
+    for (const c of found) {
+      const dir = c.dir ? path.join(wtPath, ...c.dir.split('/')) : wtPath;
+      if (c.kind === 'bruno') {
+        out.push(dir);
+        continue;
+      }
+      live.add(dir);
+      let p = projections.get(dir);
+      if (!p) {
+        p = new Projection({ repoDir: dir, viewDir: c.dir ? path.join(workspaces.viewPath(wtPath), ...c.dir.split('/')) : workspaces.viewPath(wtPath) });
+        await p.start();
+        projections.set(dir, p);
+      } else {
+        await p.run(() => p.project());
+      }
+      out.push(p.viewDir);
     }
-    return [p.viewDir];
+    for (const [dir, p] of projectionsIn(wtPath)) {
+      if (!live.has(dir)) {
+        if (p.stop) await p.stop();
+        projections.delete(dir);
+      }
+    }
+    return out;
   };
 
   /** Write pending view edits into the repo before Git looks at it. */
   const settle = async (wtPath) => {
-    const p = projections.get(wtPath);
-    if (p) await p.settle();
+    for (const [, p] of projectionsIn(wtPath)) await p.settle();
   };
 
-  /** Regenerate a view after Git changed the repo files. */
+  /** Regenerate views after Git changed the repo files. */
   const refreshView = async (wtPath) => {
-    const p = projections.get(wtPath);
-    if (p) await p.run(() => p.project());
+    for (const [, p] of projectionsIn(wtPath)) await p.run(() => p.project());
   };
 
   /** Resolve a folder from the browser to its workspace, or throw. */
@@ -97,6 +118,13 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
   });
 
   ipcMain.handle('narado:me', async (_e, { hostId }) => me(hostId));
+
+  /** The API catalogue: the person's repositories that hold collections (found through the host's API). */
+  ipcMain.handle('narado:catalogue', async (_e, { hostId, refresh = false } = {}) => {
+    registry.get(hostId); // unknown host -> error
+    if (refresh) catalogue.scan(hostId);
+    return catalogue.get(hostId);
+  });
 
   /** Look up one repo by path, including public repos the person is not a member of. */
   ipcMain.handle('narado:repo', async (_e, { hostId, repoPath }) => {
@@ -165,7 +193,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       via,
       forkCloneUrl: fork ? fork.cloneUrl : undefined
     });
-    ws.collections = await collectionsFor(ws.path, ws.collections);
+    ws.collections = await collectionsFor(ws.path);
     await openCollections(ws.collections);
     return {
       ...ws,
@@ -247,7 +275,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       }
     }
     await refreshView(ws.path);
-    saved.collections = await collectionsFor(saved.path, saved.collections);
+    saved.collections = await collectionsFor(saved.path);
     await openCollections(saved.collections);
     return { ...saved, forkPath: fork ? fork.path : null, forkCreated, pushError, mergeRequest, mergeRequestError };
   });
@@ -411,7 +439,14 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     return true;
   });
 
-  return { registry, workspaces, collectionsFor };
+  const stopViews = async () => {
+    for (const [dir, p] of [...projections.entries()]) {
+      await p.stop();
+      projections.delete(dir);
+    }
+  };
+
+  return { registry, workspaces, collectionsFor, stopViews };
 };
 
 module.exports = { registerNaradoIpc };
