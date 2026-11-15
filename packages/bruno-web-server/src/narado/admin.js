@@ -35,49 +35,98 @@ const manifestStates = new Map(); // state -> { hostId, at }
 const PLATFORMS = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
 const when = (ms) => (ms ? new Date(ms).toISOString().replace('T', ' ').slice(0, 16) : 'never');
 
+// Brand marks for the connector cards, used to name the services narado connects to.
+// GitHub's mark is from GitHub's Octicons (MIT); GitLab's is its tanuki.
+const LOGOS = {
+  github: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>',
+  gitlab: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#FC6D26" d="m23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z"/></svg>'
+};
+
 const STYLE = `
 @font-face{font-family:"Space Grotesk";font-style:normal;font-weight:700;font-display:swap;src:url(/auth/assets/space-grotesk-700.woff2) format("woff2")}
 @font-face{font-family:Inter;font-style:normal;font-weight:400;font-display:swap;src:url(/auth/assets/inter-400.woff2) format("woff2")}
 @font-face{font-family:Inter;font-style:normal;font-weight:600;font-display:swap;src:url(/auth/assets/inter-600.woff2) format("woff2")}
-:root{color-scheme:dark;--bg:#17121F;--card:#211A2B;--line:#342B40;--text:#EDE4D8;--muted:#B5AABB;--accent:#FD6E15;--warn:#FDB55A;--ok:#7BD88F}
+:root{color-scheme:dark;--bg:#17121F;--side:#130F1A;--card:#211A2B;--card2:#281F33;--line:#342B40;--text:#EDE4D8;--muted:#A89DAE;--accent:#FB9B1A;--warn:#FDB55A;--ok:#7BD88F}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-header{display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid var(--line)}
-header img{width:22px;height:22px}
-header h1{margin:0;font:700 18px "Space Grotesk",ui-sans-serif,sans-serif;color:#FDEED2}
-header .who{margin-left:auto;color:var(--muted);font-size:13px}
-main{max-width:820px;margin:0 auto;padding:20px 16px 60px}
-.banner{border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--card);border-radius:10px;padding:12px 14px;margin-bottom:16px}
+a{color:#F6B85C}
+.top{display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(23,18,31,.92);backdrop-filter:blur(6px);z-index:5}
+.top img{width:22px;height:22px}
+.top h1{margin:0;font:700 18px "Space Grotesk",Inter,sans-serif;color:#FDEED2}
+.top .who{margin-left:auto;color:var(--muted);font-size:13px}
+.layout{display:flex;max-width:1080px;margin:0 auto;gap:28px;padding:24px 20px 80px}
+nav.side{width:190px;flex-shrink:0;position:sticky;top:76px;align-self:flex-start;display:flex;flex-direction:column;gap:2px}
+nav.side a{color:var(--muted);text-decoration:none;padding:7px 10px;border-radius:8px;font-size:13.5px}
+nav.side a:hover{background:var(--card);color:var(--text)}
+main{flex:1;min-width:0}
+@media (max-width:760px){.layout{flex-direction:column;gap:12px;padding:16px}nav.side{width:auto;position:static;flex-direction:row;flex-wrap:wrap}}
+.banner{border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--card);border-radius:10px;padding:12px 14px;margin-bottom:18px}
 .banner.ok{border-left-color:var(--ok)}.banner.err{border-left-color:var(--warn);color:var(--warn)}
-section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
-section h2{margin:0 0 4px;font:700 16px "Space Grotesk",ui-sans-serif,sans-serif}
-section .lead{margin:0 0 12px;color:var(--muted)}
+section{margin-bottom:34px;scroll-margin-top:76px}
+section>h2{margin:0 0 2px;font:700 18px "Space Grotesk",Inter,sans-serif;color:#FDEED2}
+section>.lead{margin:0 0 14px;color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
 label{display:block;margin:10px 0 0}
 label>span{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
 label span.tag{display:inline-block;margin:0 0 0 6px;padding:0 7px;font-size:10px}
-input[type=text],input[type=password],input[type=url],textarea,select{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:#17121F;color:var(--text);font:inherit}
+input[type=text],input[type=password],input[type=url],input[type=email],textarea,select{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit}
+input:focus,textarea:focus,select:focus{outline:2px solid #FB9B1A55;border-color:#FB9B1A}
 input:disabled,textarea:disabled,select:disabled{opacity:.6}
 .row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1 1 220px}
 .actions{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-button,.btn{padding:8px 14px;border-radius:8px;border:0;cursor:pointer;font-family:inherit;font-weight:600;font-size:14px;color:#17121F;background:#FB9B1A;text-decoration:none;display:inline-block}
+button,.btn{padding:8px 14px;border-radius:8px;border:0;cursor:pointer;font-family:inherit;font-weight:600;font-size:13.5px;color:#17121F;background:#FB9B1A;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+button:hover,.btn:hover{filter:brightness(1.07)}
 button.secondary,.btn.secondary{background:transparent;color:var(--text);border:1px solid var(--line)}
-button.danger{background:transparent;color:var(--warn);border:1px solid var(--line);padding:4px 10px;font-size:13px}
-code,.copy{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:#17121F;border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+button.secondary:hover,.btn.secondary:hover{background:var(--card2);filter:none}
+button.danger{background:transparent;color:var(--warn);border:1px solid var(--line)}
+code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 6px;word-break:break-all}
 .note{font-size:12px;color:var(--muted);margin-top:6px}
-.tag{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--muted);margin-left:6px}
-.tag.ok{color:var(--ok);border-color:#2f5a3a}.tag.warn{color:var(--warn);border-color:#5a4a2f}
-.host{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
-.host:first-of-type{border-top:0;margin-top:0;padding-top:0}
-details summary{cursor:pointer;color:var(--muted);margin-top:10px}
-table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px 4px;border-top:1px solid var(--line);font-size:13px}th{color:var(--muted);font-weight:500}
+.tag{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px;background:var(--card2);color:var(--muted);white-space:nowrap}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.ok{color:var(--ok);background:#1d2f24}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.conn{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;transition:border-color .15s}
+.conn:hover{border-color:#4A3F57}
+.conn-top{display:flex;align-items:center;gap:12px}
+.logo{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.logo svg{width:24px;height:24px}
+.logo.github{background:#F0EEF3;color:#1F2328}
+.logo.gitlab{background:#2B2133}
+.conn-title{display:flex;flex-direction:column;min-width:0;flex:1}
+.conn-title strong{font-size:15px}
+.conn-title span{color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conn-desc{margin:0;color:var(--muted);font-size:13px;flex:1}
+.conn-actions{display:flex;gap:8px;flex-wrap:wrap}
+.conn.add{border-style:dashed;align-items:center;justify-content:center;text-align:center;color:var(--muted);cursor:pointer;min-height:120px;background:transparent;font:inherit;font-weight:500}
+.conn.add:hover{color:var(--text);background:var(--card)}
+.conn.add .plus{font-size:26px;line-height:1}
+dialog{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:16px;padding:0;width:min(560px,calc(100% - 32px));max-height:calc(100vh - 64px)}
+dialog::backdrop{background:rgba(8,5,12,.6)}
+.dlg-head{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.dlg-head h3{margin:0;font:700 16px "Space Grotesk",Inter,sans-serif;flex:1}
+.dlg-body{padding:6px 18px 18px}
+.dlg-body h4{margin:16px 0 0;font-size:13px}
+.close{background:transparent;color:var(--muted);border:0;font-size:20px;padding:2px 8px}
+.list{display:flex;flex-direction:column}
+.list .item{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.list .item:first-child{border-top:0}
+.list .item .grow{flex:1;min-width:0}
+.list .sub{color:var(--muted);font-size:12px}
 `;
 
-const page = ({ title, who, body }) => `<!doctype html>
+const page = ({ title, who, body, nav = true, script = '' }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)} · narado</title><link rel="icon" type="image/svg+xml" href="/auth/assets/narado-favicon.svg?v=2"><link rel="alternate icon" href="/auth/assets/favicon.ico?v=2">
 <style>${STYLE}</style></head><body>
-<header><img src="/auth/assets/narado-favicon.svg" alt=""><h1>narado</h1><span class="tag">${esc(title)}</span>${who ? `<span class="who">${esc(who)}</span>` : ''}</header>
-<main>${body}</main></body></html>`;
+<header class="top"><img src="/auth/assets/narado-favicon.svg?v=2" alt=""><h1>narado</h1><span class="tag">${esc(title)}</span>${who ? `<span class="who">${esc(who)}</span>` : ''}</header>
+<div class="layout">${nav ? `<nav class="side" aria-label="Sections"><a href="#signin">Sign-in</a><a href="#admins">Admins</a><a href="#connectors">Connectors</a><a href="#desktop">Desktop</a><a href="#computers">Computers</a></nav>` : ''}
+<main>${body}</main></div>
+<script>
+function openDlg(id){var d=document.getElementById(id);if(d&&d.showModal)d.showModal();}
+document.querySelectorAll('dialog').forEach(function(d){d.addEventListener('click',function(e){if(e.target===d)d.close();});});
+${script}
+</script></body></html>`;
 
 /** An input for a setting: shows where its value comes from; secrets are never echoed. */
 const field = ({ name, label, value, source, secret = false, placeholder = '', note = '', type = 'text' }) => {
@@ -155,6 +204,7 @@ const createAdmin = ({ settings, env, realEnv = process.env, auth, desktop, gitA
       200,
       page({
         title: 'Admin',
+        nav: false,
         body: `<div class="banner ok">Saved. narado is restarting with the new settings…</div><script>setTimeout(function(){location.href=${JSON.stringify(back)}},2500)</script><noscript><a href="${esc(back)}">Continue</a></noscript>`
       })
     );
@@ -189,42 +239,59 @@ const createAdmin = ({ settings, env, realEnv = process.env, auth, desktop, gitA
     return { id: p + 'CLIENT_ID', secret: p + 'CLIENT_SECRET', slug: p + 'SLUG', appId: p + 'ID', key: p + 'PRIVATE_KEY', webhook: p + 'WEBHOOK_SECRET' };
   };
 
+  const dialog = (id, title, logo, inner) => `<dialog id="${id}" aria-labelledby="${id}-t"><div class="dlg-head">${logo || ''}<h3 id="${id}-t">${esc(title)}</h3><form method="dialog"><button class="close" aria-label="Close">×</button></form></div><div class="dlg-body">${inner}</div></dialog>`;
+  const logoOf = (h, small = false) => `<div class="logo ${h.type}"${small ? ' style="width:32px;height:32px;border-radius:9px"' : ''}>${LOGOS[h.type] || ''}</div>`;
+  const keep = (dlg) => `<input type="hidden" name="_dlg" value="${dlg}">`;
+
+  /** A connector card per Git host, and its dialog (connect, install, settings). */
   const hostCard = (h) => {
     const n = appSet(h);
     const configured = !!(env[n.id] && env[n.secret]);
     const fromEnv = settings.source(n.id, realEnv) === 'env';
     const web = webOf(h);
+    const hostName = web.replace(/^https?:\/\//, '');
     const id = esc(h.id);
-    const status = configured ? `<span class="tag ok">app set up${fromEnv ? ' (environment)' : ''}</span>` : '<span class="tag warn">not set up</span>';
+    const dlg = `dlg-${id}`;
+    const title = h.name && h.name !== h.id ? h.name : h.type === 'github' ? (hostName === 'github.com' ? 'GitHub' : 'GitHub Enterprise') : hostName === 'gitlab.com' ? 'GitLab' : 'GitLab (self-managed)';
+    const isCom = h.type === 'gitlab' && /^https:\/\/gitlab\.com$/i.test(web);
+    const installUrl = h.type === 'github' && env[n.slug] ? `${web}/apps/${env[n.slug]}/installations/new` : null;
     const ns = esc((h.exploreNamespaces || []).join(', '));
+
     let create = '';
     if (!fromEnv && h.type === 'github') {
-      create = `<form method="post" action="/admin/git/${id}/github-app">
-<div class="row"><label><span>Organisation on ${esc(web.replace(/^https?:\/\//, ''))} (leave empty for your own account)</span><input type="text" name="org" placeholder="acme"></label>
+      create = `<h4>${configured ? 'Create a new GitHub App' : 'Create narado’s GitHub App'}</h4>
+<p class="note">GitHub asks you to confirm, then sends narado its credentials. Permissions: contents and pull requests (read and write), metadata and email (read).</p>
+<form method="post" action="/admin/git/${id}/github-app">${keep(dlg)}
+<div class="row"><label><span>Organisation on ${esc(hostName)} (empty for your own account)</span><input type="text" name="org" placeholder="acme"></label>
 <label><span>App name</span><input type="text" name="name" value="${esc(`narado (${new URL(publicUrl).host})`)}"></label></div>
-<div class="actions"><button type="submit">${configured ? 'Create a new GitHub App' : 'Create the GitHub App'}</button>
-<span class="note">GitHub asks you to confirm, then sends narado its credentials. Permissions: contents and pull requests (read and write), metadata and email (read).</span></div></form>`;
+<div class="actions"><button type="submit">${configured ? 'Create a new app on GitHub' : 'Continue on GitHub'}</button></div></form>`;
     } else if (!fromEnv && h.type === 'gitlab') {
-      const isCom = /^https:\/\/gitlab\.com$/i.test(web);
       create = isCom
-        ? `<p class="note">GitLab.com can't create applications through its API, so create one by hand: open <a href="https://gitlab.com/-/user_settings/applications" target="_blank" rel="noopener">your applications</a> (or a group's <em>Settings → Applications</em>), name it narado, set the redirect URI to <code>${esc(callbackOf(h))}</code>, tick <em>Confidential</em> and the scopes <code>api</code> and <code>read_user</code>, then paste its ID and secret below.</p>`
-        : `<form method="post" action="/admin/git/${id}/gitlab-app">
-<label><span>Administrator access token for ${esc(web.replace(/^https?:\/\//, ''))} (scope api; used once, not kept)</span><input type="password" name="token" autocomplete="off"></label>
-<div class="actions"><button type="submit">Create the GitLab application</button><span class="note">Creates an instance-wide OAuth application named narado with redirect URI <code>${esc(callbackOf(h))}</code>.</span></div></form>`;
+        ? `<h4>Create the application on GitLab.com</h4><p class="note">GitLab.com can't create applications through its API, so create one by hand: open <a href="https://gitlab.com/-/user_settings/applications" target="_blank" rel="noopener">your applications</a> (or a group's <em>Settings → Applications</em>), name it narado, set the redirect URI to <code>${esc(callbackOf(h))}</code>, tick <em>Confidential</em> and the scopes <code>api</code> and <code>read_user</code>, then paste its ID and secret below.</p>`
+        : `<h4>Create narado’s application</h4><form method="post" action="/admin/git/${id}/gitlab-app">${keep(dlg)}
+<label><span>Administrator access token for ${esc(hostName)} (scope api; used once, not kept)</span><input type="password" name="token" autocomplete="off"></label>
+<p class="note">Creates an instance-wide OAuth application named narado with redirect URI <code>${esc(callbackOf(h))}</code>.</p>
+<div class="actions"><button type="submit">Create the GitLab application</button></div></form>`;
     }
     const manual = fromEnv
-      ? ''
-      : `<details${h.type === 'gitlab' && /gitlab\.com$/i.test(web) && !configured ? ' open' : ''}><summary>${h.type === 'gitlab' && /gitlab\.com$/i.test(web) ? 'Application ID and secret' : 'Or enter app credentials by hand'}</summary>
-<form method="post" action="/admin/git/${id}/manual">
+      ? `<p class="note">This app is set in the server environment (<code>${esc(n.id)}</code>), so it's managed there.</p>`
+      : `<h4>${isCom ? 'Application ID and secret' : 'Or enter app credentials by hand'}</h4>
+<form method="post" action="/admin/git/${id}/manual">${keep(dlg)}
 <div class="row">${field({ name: 'clientId', label: 'Client (application) ID', value: env[n.id] })}${field({ name: 'clientSecret', label: 'Client secret', value: env[n.secret], secret: true })}</div>
 ${h.type === 'github' ? field({ name: 'slug', label: 'App slug (for the install link)', value: env[n.slug] }) : ''}
-<p class="note">Redirect or callback URL to register: <code>${esc(callbackOf(h))}</code></p>
-<div class="actions"><button type="submit" class="secondary">Save</button></div></form></details>`;
-    const install = h.type === 'github' && env[n.slug] ? `<p class="note">Install it on the repositories narado should see: <a href="${esc(`${web}/apps/${env[n.slug]}/installations/new`)}" target="_blank" rel="noopener">install ${esc(env[n.slug])}</a>.</p>` : '';
-    return `<div class="host"><strong>${esc(h.name || h.id)}</strong> <span class="tag">${esc(h.type)}</span> <span class="tag">${esc(web)}</span> ${status}
-${install}${create}${manual}
-<form method="post" action="/admin/git/${id}/namespaces"><label><span>Where Explore APIs looks by default (users, organisations or groups; empty for everything a person can see)</span><input type="text" name="namespaces" value="${ns}" placeholder="acme, acme-platform"></label>
-<div class="actions"><button type="submit" class="secondary">Save</button>${!['github', 'gitlab'].includes(h.id) ? `<button type="submit" class="danger" formaction="/admin/git/${id}/remove">Remove host</button>` : ''}</div></form></div>`;
+<p class="note">Callback URL to register: <code>${esc(callbackOf(h))}</code></p>
+<div class="actions"><button type="submit" class="secondary">Save credentials</button></div></form>`;
+    const settingsForm = `<h4>Explore APIs</h4>
+<form method="post" action="/admin/git/${id}/namespaces">${keep(dlg)}<label><span>Where it looks by default: users, organisations or groups (empty for everything a person can see)</span><input type="text" name="namespaces" value="${ns}" placeholder="acme, acme-platform"></label>
+<div class="actions"><button type="submit" class="secondary">Save</button>${!['github', 'gitlab'].includes(h.id) ? `<button type="submit" class="danger" formaction="/admin/git/${id}/remove">Remove ${esc(title)}</button>` : ''}</div></form>`;
+
+    const card = `<div class="conn" data-testid="connector-${id}">
+<div class="conn-top">${logoOf(h)}<div class="conn-title"><strong>${esc(title)}</strong><span>${esc(hostName)}</span></div>
+<span class="pill${configured ? ' ok' : ''}">${configured ? 'Connected' : 'Not connected'}</span></div>
+<p class="conn-desc">${configured ? `People connect their own ${esc(title)} account and work as themselves.${fromEnv ? ' Set in the server environment.' : ''}` : `Let people open, review and change API collections in ${esc(title)} repositories, as themselves.`}</p>
+<div class="conn-actions"><button type="button" class="${configured ? 'secondary' : ''}" onclick="openDlg('${dlg}')">${configured ? 'Manage' : 'Connect'}</button>${installUrl ? `<a class="btn secondary" href="${esc(installUrl)}" target="_blank" rel="noopener">Install on repositories ↗</a>` : ''}</div></div>`;
+    const body = `${installUrl ? `<p class="note" style="margin-top:12px">Install it on the repositories narado should see: <a href="${esc(installUrl)}" target="_blank" rel="noopener">install ${esc(env[n.slug])}</a>.</p>` : ''}${create}${manual}${settingsForm}`;
+    return { card, dialog: dialog(dlg, title, logoOf(h, true), body) };
   };
 
   /* ------------------------------------------------------------------ page */
@@ -234,13 +301,27 @@ ${install}${create}${manual}
     const src = (name) => settings.source(name, realEnv);
     const oidcOn = !!env.NARADO_OIDC_ISSUER;
     const devices = desktop && auth.enabled ? desktop.adminDevices() : [];
+    const hosts = hostList().map(hostCard);
+    const envTag = (name) => (src(name) === 'env' ? '<span class="tag">set in the server environment</span>' : '');
     const steps = who.setup
       ? `<div class="banner">First-time setup. 1. Sign-in: your organisation's SSO. 2. Admins: who manages narado (include your own email). 3. Git: can wait. When sign-in and admins are saved, <a href="/auth/login?return=/admin">sign in</a> as an admin to finish; this setup link then stops working.</div>`
       : '';
-    const banner = notice ? `<div class="banner ${notice.error ? 'err' : 'ok'}">${esc(notice.text)}</div>` : '';
+    const banner = notice ? `<div class="banner ${notice.error ? 'err' : 'ok'}" role="${notice.error ? 'alert' : 'status'}">${esc(notice.text)}</div>` : '';
+    const addDlg = dialog(
+      'dlg-add',
+      'Add a connector',
+      '',
+      `<p class="note">For GitHub Enterprise or a self-managed GitLab. GitHub.com and GitLab.com are always listed.</p>
+<form method="post" action="/admin/git/add">${keep('dlg-add')}<div class="row">
+<label><span>Type</span><select name="type"><option value="gitlab">GitLab (self-managed)</option><option value="github">GitHub Enterprise</option></select></label>
+<label><span>Address</span><input type="url" name="url" placeholder="https://git.acme.com"></label></div>
+<label><span>ID (short, unique; used in its settings' names)</span><input type="text" name="id" placeholder="gitlab-acme" pattern="[a-z0-9-]+"></label>
+<div class="actions"><button type="submit">Add connector</button></div></form>`
+    );
     const body = `${steps}${banner}
 ${localOnly ? '<div class="banner">Single-user local mode: no sign-in, listening on this computer only. Set up sign-in to let your team use narado.</div>' : ''}
-<section><h2>Sign-in</h2><p class="lead">Your organisation's single sign-on (OpenID Connect). Register narado as a confidential web application with redirect URI <code>${esc(publicUrl)}/auth/callback</code>.</p>
+<section id="signin"><h2>Sign-in</h2><p class="lead">Your organisation's single sign-on (OpenID Connect). Register narado as a confidential web application with redirect URI <code>${esc(publicUrl)}/auth/callback</code>.</p>
+<div class="card"><div class="conn-top" style="margin-bottom:4px"><div class="conn-title"><strong>${esc(v('NARADO_OIDC_PROVIDER_NAME') || 'Single sign-on')}</strong><span>${esc(v('NARADO_OIDC_ISSUER') || 'Not configured')}</span></div><span class="pill${oidcOn ? ' ok' : ''}">${oidcOn ? 'On' : 'Off'}</span></div>
 <form method="post" action="/admin/signin">
 ${field({ name: 'NARADO_PUBLIC_URL', label: "narado's address", value: v('NARADO_PUBLIC_URL') || publicUrl, source: src('NARADO_PUBLIC_URL'), placeholder: 'https://narado.example.com' })}
 <div class="row">${field({ name: 'NARADO_OIDC_ISSUER', label: 'Issuer URL', value: v('NARADO_OIDC_ISSUER'), source: src('NARADO_OIDC_ISSUER'), placeholder: 'https://login.example.com/realms/acme' })}
@@ -248,34 +329,32 @@ ${field({ name: 'NARADO_OIDC_PROVIDER_NAME', label: 'Shown as', value: v('NARADO
 <div class="row">${field({ name: 'NARADO_OIDC_CLIENT_ID', label: 'Client ID', value: v('NARADO_OIDC_CLIENT_ID'), source: src('NARADO_OIDC_CLIENT_ID') })}
 ${field({ name: 'NARADO_OIDC_CLIENT_SECRET', label: 'Client secret', value: v('NARADO_OIDC_CLIENT_SECRET'), source: src('NARADO_OIDC_CLIENT_SECRET'), secret: true })}</div>
 ${field({ name: 'NARADO_ALLOWED_EMAIL_DOMAINS', label: 'Allowed email domains (optional, comma-separated)', value: v('NARADO_ALLOWED_EMAIL_DOMAINS'), source: src('NARADO_ALLOWED_EMAIL_DOMAINS'), placeholder: 'acme.com' })}
-<div class="actions"><button type="submit">Save sign-in</button><span class="note">${oidcOn ? 'Sign-in is on.' : 'Sign-in is off.'} narado checks the issuer before saving, and restarts.</span></div></form></section>
+<div class="actions"><button type="submit">Save sign-in</button><span class="note">Sign-in is ${oidcOn ? 'on' : 'off'}. narado checks the issuer before saving, and restarts.</span></div></form></div></section>
 
-<section><h2>Admins</h2><p class="lead">People who can use these pages, by the email they sign in with.</p>
-<form method="post" action="/admin/admins">
-<label><span>Admin emails (comma-separated)${src('NARADO_ADMINS') === 'env' ? '<span class="tag">set in the server environment</span>' : ''}</span>
+<section id="admins"><h2>Admins</h2><p class="lead">People who can use these pages, by the email they sign in with.</p>
+<div class="card"><form method="post" action="/admin/admins">
+<label><span>Admin emails (comma-separated)${envTag('NARADO_ADMINS')}</span>
 <textarea name="NARADO_ADMINS" rows="2"${src('NARADO_ADMINS') === 'env' ? ' disabled' : ''}>${esc(v('NARADO_ADMINS') || '')}</textarea></label>
-<div class="actions"><button type="submit">Save admins</button></div></form></section>
+<div class="actions"><button type="submit">Save admins</button></div></form></div></section>
 
-<section><h2>Git</h2><p class="lead">narado reaches GitHub and GitLab through an app it creates here; each person then connects their own account and works as themselves.</p>
-${hostList().map(hostCard).join('\n')}
-<details><summary>Add a host (GitHub Enterprise or self-managed GitLab)</summary>
-<form method="post" action="/admin/git/add"><div class="row">
-<label><span>ID (short, unique)</span><input type="text" name="id" placeholder="gitlab-acme" pattern="[a-z0-9-]+"></label>
-<label><span>Type</span><select name="type"><option value="gitlab">GitLab</option><option value="github">GitHub Enterprise</option></select></label>
-<label><span>Address</span><input type="url" name="url" placeholder="https://git.acme.com"></label></div>
-<div class="actions"><button type="submit" class="secondary">Add host</button></div></form></details></section>
+<section id="connectors"><h2>Connectors</h2><p class="lead">narado reaches GitHub and GitLab through an app it creates for you. Each person then connects their own account and works as themselves.</p>
+<div class="grid">${hosts.map((x) => x.card).join('\n')}
+<button type="button" class="conn add" onclick="openDlg('dlg-add')"><span class="plus">+</span><span>Add GitHub Enterprise or self-managed GitLab</span></button></div>
+${hosts.map((x) => x.dialog).join('\n')}${addDlg}</section>
 
-<section><h2>Desktop</h2><p class="lead">What narado desktop may send requests to from people's computers. Cloud metadata addresses are always refused.</p>
-<form method="post" action="/admin/desktop"><label><span>Sends allowed${src('NARADO_DESKTOP_SEND') === 'env' ? '<span class="tag">set in the server environment</span>' : ''}</span>
+<section id="desktop"><h2>Desktop</h2><p class="lead">What narado desktop may send requests to from people's computers. Cloud metadata addresses are always refused.</p>
+<div class="card"><form method="post" action="/admin/desktop"><label><span>Sends allowed${envTag('NARADO_DESKTOP_SEND')}</span>
 <select name="NARADO_DESKTOP_SEND"${src('NARADO_DESKTOP_SEND') === 'env' ? ' disabled' : ''}>
 ${[['any', 'Private and local addresses, and public hosts on the repo’s allowlist (default)'], ['private-only', 'Private and local addresses only'], ['allowlist-only', 'Only hosts on a repo’s allowlist, private ones included']].map(([val, text]) => `<option value="${val}"${(v('NARADO_DESKTOP_SEND') || 'any') === val ? ' selected' : ''}>${esc(text)}</option>`).join('')}
-</select></label><div class="actions"><button type="submit">Save</button></div></form>
-${auth.enabled ? `<h2 style="margin-top:18px">Signed-in computers (${devices.length})</h2>${devices.length ? `<table><tr><th>Computer</th><th>Person</th><th>Last used</th><th></th></tr>${devices
-      .map((d) => `<tr><td>${esc(d.name)} <span class="tag">${esc(PLATFORMS[d.platform] || d.platform || '?')}</span></td><td>${esc(d.userName || d.userEmail || '?')}</td><td>${esc(when(d.lastSeenAt))}</td>
-<td><form method="post" action="/admin/devices/${esc(d.id)}/revoke" onsubmit="return confirm('Sign out ${esc(d.name).replace(/'/g, '')}?')"><button class="danger" type="submit">Sign out</button></form></td></tr>`)
-      .join('')}</table>` : '<p class="note">None yet.</p>'}` : ''}
-</section>`;
-    return page({ title: who.setup ? 'Setup' : 'Admin', who: who.setup ? 'setup link' : who.name, body });
+</select></label><div class="actions"><button type="submit">Save</button></div></form></div></section>
+
+${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="lead">Computers using narado desktop, everyone's. Signing one out stops it at its next contact with narado.</p>
+<div class="card">${devices.length ? `<div class="list">${devices
+      .map((d) => `<div class="item"><div class="grow"><div>${esc(d.name)} <span class="tag">${esc(PLATFORMS[d.platform] || d.platform || '?')}</span></div><div class="sub">${esc(d.userName || d.userEmail || '?')} · last used ${esc(when(d.lastSeenAt))}</div></div>
+<form method="post" action="/admin/devices/${esc(d.id)}/revoke" onsubmit="return confirm('Sign out ${esc(d.name).replace(/'/g, '')}?')"><button class="danger" type="submit">Sign out</button></form></div>`)
+      .join('')}</div>` : '<p class="note" style="margin:0">No computers are signed in.</p>'}</div></section>` : ''}`;
+    const reopen = notice && notice.open && /^dlg-[a-z0-9-]+$/.test(notice.open) ? `openDlg(${JSON.stringify(notice.open)});` : '';
+    return page({ title: who.setup ? 'Setup' : 'Admin', who: who.setup ? 'setup link' : who.name, body, script: reopen });
   };
 
   /* ------------------------------------------------------------- handlers */
@@ -329,6 +408,7 @@ ${auth.enabled ? `<h2 style="margin-top:18px">Signed-in computers (${devices.len
       200,
       page({
         title: 'Admin',
+        nav: false,
         body: `<div class="banner">Taking you to ${esc(web.replace(/^https?:\/\//, ''))} to create the app…</div>
 <form id="go" method="post" action="${esc(action)}"><input type="hidden" name="manifest" value="${esc(JSON.stringify(manifest))}"><button type="submit">Continue to GitHub</button></form>
 <script>document.getElementById('go').submit()</script>`
@@ -379,7 +459,7 @@ ${auth.enabled ? `<h2 style="margin-top:18px">Signed-in computers (${devices.len
     if (p === '/setup') {
       if (!setupNeeded) return redirect(res, '/admin'), true;
       if (!settings.checkSetupToken(url.searchParams.get('token'))) {
-        return html(res, 403, page({ title: 'Setup', body: '<div class="banner err">This setup link isn\'t valid. Use the latest link from narado\'s log (a new one is printed each time it starts).</div>' })), true;
+        return html(res, 403, page({ title: 'Setup', nav: false, body: '<div class="banner err">This setup link isn\'t valid. Use the latest link from narado\'s log (a new one is printed each time it starts).</div>' })), true;
       }
       const sid = crypto.randomBytes(24).toString('base64url');
       setupSessions.add(sid);
@@ -390,7 +470,7 @@ ${auth.enabled ? `<h2 style="margin-top:18px">Signed-in computers (${devices.len
     const who = adminFor(req);
     if (!who) {
       if (auth.enabled && !auth.userFor(req)) return redirect(res, `/auth/login?return=${encodeURIComponent(p)}`), true;
-      return html(res, 403, page({ title: 'Admin', body: '<div class="banner err">Only narado admins can open this page. Ask an admin to add your email.</div>' })), true;
+      return html(res, 403, page({ title: 'Admin', nav: false, body: '<div class="banner err">Only narado admins can open this page. Ask an admin to add your email.</div>' })), true;
     }
     // An admin signed in with SSO: setup is over.
     if (who.user) {
@@ -398,6 +478,7 @@ ${auth.enabled ? `<h2 style="margin-top:18px">Signed-in computers (${devices.len
       setupSessions.clear();
     }
 
+    let openDialog = null;
     try {
       if (p === '/admin' && req.method === 'GET') {
         const saved = url.searchParams.get('saved');
@@ -412,9 +493,10 @@ ${auth.enabled ? `<h2 style="margin-top:18px">Signed-in computers (${devices.len
         return savedAndRestart(res, '/admin?saved=git'), true;
       }
 
-      if (req.method !== 'POST') return html(res, 405, page({ title: 'Admin', body: '<div class="banner err">Not allowed.</div>' })), true;
-      if (!sameSite(req, who)) return html(res, 403, page({ title: 'Admin', body: '<div class="banner err">Cross-site request refused.</div>' })), true;
+      if (req.method !== 'POST') return html(res, 405, page({ title: 'Admin', nav: false, body: '<div class="banner err">Not allowed.</div>' })), true;
+      if (!sameSite(req, who)) return html(res, 403, page({ title: 'Admin', nav: false, body: '<div class="banner err">Cross-site request refused.</div>' })), true;
       const form = await readForm(req);
+      openDialog = form.get('_dlg');
 
       if (p === '/admin/signin') return await signin(form, who), savedAndRestart(res, '/admin?saved=signin'), true;
       if (p === '/admin/admins') {
@@ -487,10 +569,10 @@ ${auth.enabled ? `<h2 style="margin-top:18px">Signed-in computers (${devices.len
           return savedAndRestart(res, '/admin?saved=git'), true;
         }
       }
-      return html(res, 404, page({ title: 'Admin', body: '<div class="banner err">Not found.</div>' })), true;
+      return html(res, 404, page({ title: 'Admin', nav: false, body: '<div class="banner err">Not found.</div>' })), true;
     } catch (err) {
       log.warn(`[narado] admin: ${err.message}`);
-      return html(res, 400, adminPage(who, { text: err.message, error: true })), true;
+      return html(res, 400, adminPage(who, { text: err.message, error: true, open: openDialog })), true;
     }
   };
 
