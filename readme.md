@@ -135,7 +135,7 @@ The server tests take about 15 seconds and need no network. For changes you can 
 **Making changes**
 
 - Branch from `main`, and open a pull request against `main`. Don't force-push shared branches.
-- Every pull request runs narado's tests in GitHub Actions ([`narado-tests.yml`](.github/workflows/narado-tests.yml)): the server, desktop and CLI tests, and the narado interface tests. Bruno's own test and lint workflows are switched off in this repository (Actions → the workflow → Enable to run one); they test Bruno, and their macOS minutes are expensive on a private repository.
+- Every pull request runs narado's tests in GitHub Actions ([`narado-tests.yml`](.github/workflows/narado-tests.yml)): the server, desktop and CLI tests, the narado interface tests, and a build of the interface with narado's brand. Bruno's [`lint-checks.yml`](.github/workflows/lint-checks.yml) lints the lines each pull request changes. Bruno's own test workflows are switched off in this repository (Actions → the workflow → Enable to run one); they test Bruno, and their macOS minutes are expensive on a private repository.
 - Dependencies: Dependabot only opens pull requests for security fixes here. Bruno's routine upgrades arrive when Bruno's changes are merged in from `upstream`.
 - Keep upstream Bruno code changes small and marked with a `narado` comment, so merges from Bruno stay easy. narado's own code lives under `packages/bruno-web-server/src/narado` and `packages/bruno-app/src/components/Narado`.
 - Write commit messages, comments and interface text in plain, short sentences that say what happens and why.
