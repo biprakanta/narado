@@ -14,6 +14,9 @@ const base = require('./electron-builder-config.js');
 const naradoVersion = require('../bruno-web-server/package.json').version;
 
 const macSigned = !!(process.env.CSC_NAME || process.env.CSC_LINK);
+// Which chips to build: NARADO_ARCHS (comma-separated, set by scripts/build-narado-desktop.js),
+// else both.
+const archs = (process.env.NARADO_ARCHS || 'arm64,x64').split(',').map((a) => a.trim()).filter(Boolean);
 const protocols = [{ name: 'narado', schemes: ['narado'] }];
 
 module.exports = {
@@ -41,8 +44,8 @@ module.exports = {
     icon: 'narado/assets/icon.icns',
     // dmg to install, zip for updates.
     target: [
-      { target: 'dmg', arch: ['arm64', 'x64'] },
-      { target: 'zip', arch: ['arm64', 'x64'] }
+      { target: 'dmg', arch: archs },
+      { target: 'zip', arch: archs }
     ],
     identity: macSigned ? process.env.CSC_NAME || undefined : null,
     hardenedRuntime: macSigned,
@@ -53,6 +56,7 @@ module.exports = {
     ...base.win,
     artifactName: 'narado_${version}_${arch}_win.${ext}',
     icon: 'narado/assets/app-icon-512.png',
+    target: [{ target: 'nsis', arch: archs }],
     signtoolOptions: process.env.NARADO_WIN_PUBLISHER ? { publisherName: process.env.NARADO_WIN_PUBLISHER } : undefined
   },
   nsis: {
@@ -66,8 +70,8 @@ module.exports = {
     executableName: 'narado',
     icon: 'narado/assets/app-icon-512.png',
     target: [
-      { target: 'AppImage', arch: ['x64', 'arm64'] },
-      { target: 'deb', arch: ['x64', 'arm64'] }
+      { target: 'AppImage', arch: archs },
+      { target: 'deb', arch: archs }
     ],
     protocols,
     desktop: { entry: { Name: 'narado', MimeType: 'x-scheme-handler/narado;' } }

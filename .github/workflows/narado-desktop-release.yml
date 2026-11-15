@@ -1,0 +1,139 @@
+# narado desktop installers, built on each system and published as a GitHub release.
+#
+#   Release:  push a tag desktop-v<version>, matching packages/bruno-web-server/package.json
+#             (git tag desktop-v0.1.0 && git push origin desktop-v0.1.0).
+#   Check:    pull requests that change the packaging build everything without publishing.
+#   Try it:   run the workflow by hand ("Run workflow"); it builds and keeps the files as
+#             workflow artifacts, and publishes nothing unless "publish" is ticked.
+#
+# The release holds the installers and narado-desktop-updates-<version>.zip, whose
+# desktop-updates/ folder goes into a narado server's data folder so signed-in desktops
+# update from it. Build output never goes into Git.
+#
+# Signing isn't set up yet: the installers are unsigned (macOS asks for right-click → Open
+# the first time). See packages/bruno-electron/electron-builder-narado.js for the settings.
+name: narado desktop release
+
+on:
+  push:
+    tags: ['desktop-v*']
+  # Pull requests that change the packaging get a build (never a release).
+  pull_request:
+    paths:
+      - '.github/workflows/narado-desktop-release.yml'
+      - 'scripts/build-narado-desktop.js'
+      - 'packages/bruno-electron/electron-builder-narado.js'
+      - 'packages/bruno-electron/src/narado-main.js'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a GitHub release (otherwise only build)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One Mac builds both chips (Intel is cross-built, as on a developer's Mac).
+          - { name: macOS, os: macos-14, target: mac, arch: 'arm64,x64' }
+          - { name: Windows, os: windows-latest, target: win, arch: x64 }
+          - { name: Linux, os: ubuntu-latest, target: linux, arch: x64 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      # Unsigned until the signing accounts are settled; don't look for identities.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check the tag matches narado's version
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        shell: bash
+        run: |
+          version=$(node -p "require('./packages/bruno-web-server/package.json').version")
+          if [ "${GITHUB_REF_NAME}" != "desktop-v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match narado's version ${version} (packages/bruno-web-server/package.json)"
+            exit 1
+          fi
+
+      - name: Setup Node dependencies
+        uses: ./.github/actions/common/setup-node-deps
+        with:
+          shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+
+      - name: Build the installers
+        shell: bash
+        run: node scripts/build-narado-desktop.js --${{ matrix.target }} --arch ${{ matrix.arch }}
+
+      - name: Keep the installers and update files
+        uses: actions/upload-artifact@v4
+        with:
+          name: narado-desktop-${{ matrix.target }}
+          path: packages/bruno-electron/out-narado/updates/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/desktop-v') || inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Collect the builds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: narado-desktop-*
+          path: built
+
+      - name: Make the release files
+        id: files
+        shell: bash
+        run: |
+          version=$(node -p "require('./packages/bruno-web-server/package.json').version")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          mkdir -p release/desktop-updates
+          for platform in mac win linux; do
+            src="built/narado-desktop-${platform}"
+            [ -d "$src" ] || { echo "::error::No ${platform} build"; exit 1; }
+            cp -R "$src" "release/desktop-updates/${platform}"
+            find "$src" -maxdepth 1 -type f ! -name latest.json -exec cp {} release/ \;
+          done
+          (cd release && zip -qr "narado-desktop-updates-${version}.zip" desktop-updates && rm -rf desktop-updates)
+          (cd release && sha256sum narado_* narado-desktop-updates-* > SHA256SUMS.txt)
+          ls -la release
+
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.files.outputs.version }}
+        run: |
+          tag="desktop-v${VERSION}"
+          cat > notes.md <<EOF
+          narado desktop ${VERSION}, built from ${GITHUB_SHA::9}.
+
+          **Install:** the dmg for your Mac's chip (arm64 for Apple silicon, x64 for Intel), the Windows installer, or the Linux AppImage or deb. These builds aren't signed yet: on macOS, right-click narado and choose Open the first time; on Windows, choose More info → Run anyway.
+
+          **For admins:** unzip \`narado-desktop-updates-${VERSION}.zip\` into the narado server's data folder. Its \`desktop-updates/\` folder lets signed-in desktops offer this version as an update. \`SHA256SUMS.txt\` has every file's checksum.
+          EOF
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" release/* --clobber
+          else
+            gh release create "$tag" release/* --title "narado desktop ${VERSION}" --notes-file notes.md --target "$GITHUB_SHA"
+          fi
