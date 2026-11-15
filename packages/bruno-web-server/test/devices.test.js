@@ -38,7 +38,7 @@ const startServer = async ({ env = {} } = {}) => {
   const rpc = async (user, method, args) => {
     calls.push([user.id, method, args]);
     if (method === 'git.token') return { token: `gh-token-for-${user.id}`, expiresAt: Date.now() + 3600e3 };
-    if (method === 'secrets.resolve') return Object.fromEntries(args[0].map((r) => [r, `value-of-${r}`]));
+    if (method === 'secrets.resolve') return { values: Object.fromEntries(args[0].map((r) => [r, `value-of-${r}`])), errors: {} };
     return { method };
   };
   desktop = createDesktopAuth({
@@ -111,7 +111,7 @@ test('desktop sign-in: browser approval, PKCE code exchange, then front calls as
 
     assert.equal((await front.git.token('github')).token, 'gh-token-for-alice');
     assert.equal((await front.git.token('github')).token, 'gh-token-for-alice'); // cached: one call
-    assert.deepEqual(await front.secrets.resolve(['secret://vault/a']), { 'secret://vault/a': 'value-of-secret://vault/a' });
+    assert.deepEqual((await front.secrets.resolve(['secret://vault/a'])).values, { 'secret://vault/a': 'value-of-secret://vault/a' });
     assert.deepEqual(
       srv.calls.map((c) => [c[0], c[1]]),
       [

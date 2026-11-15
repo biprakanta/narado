@@ -315,6 +315,30 @@ When a request's OAuth 2 settings leave *Callback URL* empty, narado uses its ow
 - **Implicit flow:** tokens arrive after `#` in the address, which browsers never send to a server, so the page reads them itself. It then clears the result from the address bar.
 - **Several narado tabs:** questions from a person's worker back to the browser, such as opening a sign-in page or a confirm, go to the tab whose request asked.
 
+## Secrets bound to collections, and the narado command
+
+**Bound secrets.** Secrets are bound to environments, environments to collections, and collections to a repository. A secret is bound to a repository when an environment file on its default branch references it. Environment files are `environments/*.bru|yml|json`, including under `.narado/`, for example `api_key: secret://vault-svc/payments/staging#stripe`.
+- Anyone who can read the repository may use exactly those secrets (store and path). The front checks repository access with the host, as the person.
+- narado reads them from the store with its own service credentials.
+- Because the binding comes from the default branch, adding a secret goes through the repository's review.
+- Stores that sign in as each person still decide for themselves.
+- Admins' access rules cover anything not bound.
+- The bindings are read as the person, through the host's API, and cached for 5 minutes (`src/narado/secrets/bindings.js`).
+
+**The narado command** (`bin/narado.js`) lets people use their secrets in local tools, with their SSO sign-in as the credential:
+
+```bash
+narado login https://narado.acme.com
+narado run -- npm test
+narado check
+```
+
+- **`narado login`** signs in like narado desktop: SSO in the browser, then the computer is listed under Devices as "<computer> (narado CLI)". `--no-browser` prints the link instead, for SSH sessions. The refresh token is kept in the macOS Keychain or the Linux secret service; `NARADO_CLI_STORAGE=file` (or a machine without either) keeps it in a file only you can read, under `~/.config/narado`.
+- **`narado run`** reads `.env` (`-e` for others). Values that are whole `secret://` references are fetched from narado as you, for the repository in `git remote get-url origin` (or `--repo github:acme/api`). The command is then started with them. If any value is unavailable, the command isn't started, and narado says which value and why.
+- **`narado check`** lists which references you can use there, without the values.
+
+Values exist only in the started command's environment: never on disk, never printed.
+
 ## Setup and admin pages
 
 narado's own pages at `/setup` and `/admin` (`src/narado/admin.js`), served by the front so they work before sign-in is configured.

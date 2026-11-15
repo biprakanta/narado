@@ -30,6 +30,7 @@ const { TokenStore } = require('./narado/mcp-tokens');
 const { WorkerPool, WorkerError } = require('./narado/workers');
 const { tokenService } = require('./narado/token-service');
 const { SecretsService, secretsService } = require('./narado/secrets');
+const { RepoBindings } = require('./narado/secrets/bindings');
 const { Identity } = require('./narado/secrets/identity');
 const { GitAccounts, gitService } = require('./narado/git-accounts');
 const { createDesktopAuth } = require('./narado/devices');
@@ -90,9 +91,15 @@ const start = async ({ settings, restart }) => {
   const tokens = new TokenStore({ dataDir: DATA_DIR });
   // Secrets stores (Phase 4e): credentials and narado's signing key stay in this process.
   const identity = new Identity({ dataDir: DATA_DIR, issuer: auth.publicUrl });
-  const secrets = new SecretsService({ dataDir: DATA_DIR, identity, env });
+  // Secrets bound to a repository through its environments (narado/secrets/bindings.js),
+  // read from the host as the person; gitAccounts is set just below.
+  let gitAccounts = null;
+  const repoBindings = new RepoBindings({
+    providerFor: (user, hostId) => gitAccounts.registry.build(gitAccounts.host(hostId), undefined, (opts) => gitAccounts.token(user, hostId, opts).then((t) => t.token))
+  });
+  const secrets = new SecretsService({ dataDir: DATA_DIR, identity, env, bindings: (user, ctx) => repoBindings.forRepo(user, ctx.hostId, ctx.repoPath) });
   // Each person's own Git accounts (Phase 4c): refresh tokens and app credentials stay here.
-  const gitAccounts = new GitAccounts({ dataDir: DATA_DIR, publicUrl: auth.publicUrl, multiUser: auth.enabled, env });
+  gitAccounts = new GitAccounts({ dataDir: DATA_DIR, publicUrl: auth.publicUrl, multiUser: auth.enabled, env });
   const tokenCalls = tokenService(tokens, auth.enabled);
   const secretCalls = secretsService(secrets);
   const gitCalls = gitService(gitAccounts);

@@ -106,16 +106,16 @@ const PLATFORM_NAMES = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
 
 const desktopApprovePage = ({ action, request, deviceName, platform, userName }) =>
   shell({
-    title: 'Sign in narado desktop · narado',
+    title: 'Sign in a computer · narado',
     body: `<form class="card" method="post" action="${esc(action)}">
-<p class="note">Sign in narado desktop as <b>${esc(userName)}</b>?</p>
+<p class="note">Sign in narado on this computer as <b>${esc(userName)}</b>?</p>
 <p class="device">Computer: <b>${esc(deviceName || 'Unnamed computer')}</b>${platform ? ` (${esc(PLATFORM_NAMES[platform] || platform)})` : ''}<br>
-It will use your Git accounts and secrets for requests sent from that computer. You can sign it out at any time under Devices.</p>
+It will use your Git accounts and secrets from that computer. You can sign it out at any time under Devices.</p>
 <input type="hidden" name="request" value="${esc(request)}">
-<button class="btn" name="decision" value="allow" type="submit">Sign in narado desktop</button>
+<button class="btn" name="decision" value="allow" type="submit">Sign in</button>
 <button class="secondary" name="decision" value="deny" type="submit">Cancel</button>
 </form>
-<p class="foot">Only continue if you just started signing in from narado desktop.</p>`
+<p class="foot">Only continue if you just started signing in from narado desktop or the narado command.</p>`
   });
 
 /** A short message page (desktop sign-in finished, cancelled or failed). */

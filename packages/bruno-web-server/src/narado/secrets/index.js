@@ -31,6 +31,7 @@ const { VaultStore } = require('./vault');
 const { AwsSecretsStore } = require('./aws');
 const { GcpSecretsStore } = require('./gcp');
 const { AzureKeyVaultStore } = require('./azure');
+const { isBound, mayHoldBound } = require('./bindings');
 
 const TYPES = { vault: VaultStore, aws: AwsSecretsStore, gcp: GcpSecretsStore, azure: AzureKeyVaultStore };
 const STORE_ID_RE = /^[A-Za-z0-9_-]+$/;
@@ -81,7 +82,12 @@ const accessMatch = ({ access, storeId, perPerson, user, secretPath, repo }) => 
 const accessAllows = (args) => accessMatch(args) !== -1;
 
 class SecretsService {
-  constructor({ dataDir, env = process.env, fetchImpl, identity = null, cacheSeconds, log = console, config } = {}) {
+  /**
+   * @param bindings async (user, context) -> the secrets bound to the context's repository through
+   *                 its environments (narado/secrets/bindings.js); the caller has checked the
+   *                 person can read the repository
+   */
+  constructor({ dataDir, env = process.env, fetchImpl, identity = null, cacheSeconds, log = console, config, bindings = null } = {}) {
     const cfg = config || loadSecretsConfig(dataDir);
     this.identity = identity;
     this.stores = new Map(cfg.stores.map((s) => [s.id, new TYPES[s.type](s, { env, fetchImpl, identity })]));
@@ -90,6 +96,7 @@ class SecretsService {
     this.cacheMs = (cacheSeconds !== undefined ? cacheSeconds : Number(env.NARADO_SECRETS_CACHE_SECONDS || 60)) * 1000;
     this.cache = new Map();
     this.revealAllowed = env.NARADO_SECRETS_REVEAL !== '0';
+    this.bindings = bindings;
     this.log = log;
   }
 
@@ -104,6 +111,21 @@ class SecretsService {
   /** Whether narado's rules let `user` read `secretPath` from `storeId` for this workspace. */
   allowed(user, storeId, secretPath, context) {
     return accessAllows({ access: this.access, storeId, perPerson: this.stores.get(storeId).perPerson, user, secretPath, repo: this.repoKey(context) });
+  }
+
+  /**
+   * Whether the secret is bound to the context's repository (an environment on its default
+   * branch references it), which lets anyone who can read the repository use it. Only for
+   * stores narado signs in to as itself: a per-person store's own policies still decide.
+   */
+  async boundSecrets(user, context) {
+    if (!this.bindings || !this.repoKey(context)) return [];
+    return this.bindings(user, context);
+  }
+
+  async boundFor(user, store, parsed, context) {
+    if (store.perPerson) return false;
+    return isBound(await this.boundSecrets(user, context), parsed.store, parsed.path);
   }
 
   /** Whether a folder may hold something the rules allow (for browsing). */
@@ -133,8 +155,8 @@ class SecretsService {
     const parsed = parseRef(ref);
     if (!parsed) throw new SecretError(400, `Not a secret reference: ${ref}`);
     const store = this.storeFor(parsed.store);
-    if (!this.allowed(user, parsed.store, parsed.path, context)) {
-      throw new SecretError(403, `You may not use ${parsed.store}/${parsed.path}${this.repoKey(context) ? ` in ${this.repoKey(context)}` : ''}; ask a platform admin to add an access rule`);
+    if (!this.allowed(user, parsed.store, parsed.path, context) && !(await this.boundFor(user, store, parsed, context))) {
+      throw new SecretError(403, `You may not use ${parsed.store}/${parsed.path}${this.repoKey(context) ? ` in ${this.repoKey(context)}` : ''}: bind it in an environment of the repository (on its default branch), or ask an admin for an access rule`);
     }
     const key = JSON.stringify([parsed.store, parsed.path, parsed.field, store.perPerson ? user && user.id : null]);
     const hit = this.cache.get(key);
@@ -178,7 +200,12 @@ class SecretsService {
   async list(user, storeId, prefix, context = {}) {
     const store = this.storeFor(storeId);
     const entries = await store.list(prefix || '', { user });
-    return entries.filter((e) => (e.folder ? this.mayContain(user, storeId, e.path, context) : this.allowed(user, storeId, e.path, context)));
+    const bound = store.perPerson ? [] : await this.boundSecrets(user, context);
+    return entries.filter((e) =>
+      e.folder
+        ? this.mayContain(user, storeId, e.path, context) || mayHoldBound(bound, storeId, e.path)
+        : this.allowed(user, storeId, e.path, context) || isBound(bound, storeId, e.path)
+    );
   }
 
   /**

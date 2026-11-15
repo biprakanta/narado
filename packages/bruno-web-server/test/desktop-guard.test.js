@@ -114,7 +114,8 @@ test('offline: secret values from earlier in the session are used, others are re
     if (!online) throw new Error('ECONNREFUSED');
     const body = JSON.parse(init.body || '{}');
     if (url.endsWith('/desktop/api/token')) return { status: 200, json: async () => ({ access_token: 'nrd_at_x', expires_in: 3600, refresh_token: 'nrd_rt_y', user: { name: 'A' }, device: { id: 'd' } }) };
-    if (url.endsWith('/desktop/api/call')) return { status: 200, json: async () => ({ result: Object.fromEntries(body.args[0].map((r) => [r, `v:${r}`])) }) };
+    // As the server answers: SecretsService.resolve's { values, errors }.
+    if (url.endsWith('/desktop/api/call')) return { status: 200, json: async () => ({ result: { values: Object.fromEntries(body.args[0].map((r) => [r, `v:${r}`])), errors: {} } }) };
     return { status: 404, json: async () => ({}) };
   };
   const safeStorage = { isEncryptionAvailable: () => true, encryptString: (s) => Buffer.from(s), decryptString: (b) => String(b) };
@@ -125,10 +126,10 @@ test('offline: secret values from earlier in the session are used, others are re
   front.onChange((s) => changes.push(s.online));
 
   const ctx = { hostId: 'github', repoPath: 'acme/payments' };
-  assert.deepEqual(await front.secrets.resolve(['secret://vault/a'], ctx), { 'secret://vault/a': 'v:secret://vault/a' });
+  assert.deepEqual((await front.secrets.resolve(['secret://vault/a'], ctx)).values, { 'secret://vault/a': 'v:secret://vault/a' });
   online = false;
   front.access = null;
-  assert.deepEqual(await front.secrets.resolve(['secret://vault/a'], ctx), { 'secret://vault/a': 'v:secret://vault/a' });
+  assert.deepEqual((await front.secrets.resolve(['secret://vault/a'], ctx)).values, { 'secret://vault/a': 'v:secret://vault/a' });
   assert.equal(front.status().online, false);
   assert.deepEqual(changes, [false]);
   await assert.rejects(front.secrets.resolve(['secret://vault/b'], ctx), /can't be used offline/);

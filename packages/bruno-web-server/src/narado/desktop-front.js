@@ -114,9 +114,11 @@ class RemoteFront {
     this.secrets.resolve = async (refs, ctx = {}) => {
       const scope = `${ctx.hostId || ''}:${ctx.repoPath || ''}`;
       try {
-        const values = await call('secrets.resolve', refs, ctx);
-        for (const ref of refs) if (values && ref in values) this.secretCache.set(`${scope}|${ref}`, { value: values[ref], at: Date.now() });
-        return values;
+        // The server answers { values, errors }, as SecretsService.resolve does.
+        const res = await call('secrets.resolve', refs, ctx);
+        const values = (res && res.values) || {};
+        for (const ref of refs) if (ref in values) this.secretCache.set(`${scope}|${ref}`, { value: values[ref], at: Date.now() });
+        return res;
       } catch (err) {
         if (err.code !== 'NEEDS_CONNECTION') throw err;
         const out = {};
@@ -130,7 +132,7 @@ class RemoteFront {
           out[ref] = hit.value;
         }
         this.log.log(`[narado] desktop: offline, using ${refs.length} secret value(s) from earlier in this session`);
-        return out;
+        return { values: out, errors: {} };
       }
     };
     this.devices = {
