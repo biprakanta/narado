@@ -110,7 +110,10 @@ class WorkerPool {
       '--allow-child-process', // git, and the shell used to read the environment
       '--allow-addons', // file watching on macOS
       '--allow-worker',
-      '--allow-net' // listening for the front, and sending requests (Phase 4a adds rules for where)
+      // Listening for the front, and sending requests (narado's request rules decide where).
+      // --allow-net exists from Node 25; before that the permission model doesn't restrict
+      // the network, and Node 24 (.nvmrc, the Docker image) refuses the unknown flag.
+      ...(process.allowedNodeEnvironmentFlags.has('--allow-net') ? ['--allow-net'] : [])
     ];
   }
 

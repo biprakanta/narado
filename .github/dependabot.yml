@@ -1,3 +1,8 @@
+# narado: Dependabot opens pull requests for security fixes only (turned on in the repo's
+# settings: Dependabot alerts and security updates). Routine version upgrades of Bruno's
+# packages come through merges from Bruno (the `upstream` remote), where they're made and
+# tested; taking them early here conflicts with every upstream merge.
+# open-pull-requests-limit: 0 stops version-update pull requests, not security ones.
 version: 2
 
 updates:
@@ -5,27 +10,10 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
-  
+    open-pull-requests-limit: 0
+
   - package-ecosystem: npm
     directory: "/"
     schedule:
       interval: weekly
-    groups:
-      bruno-dependencies:
-        patterns:
-          - "*usebruno*"
-      babel-dependencies:
-        patterns:
-          - "*babel*"
-      fortawesome-dependencies:
-        patterns:
-          - "*fortawesome*"
-      electron-dependencies:
-        patterns:
-          - "*electron*"
-      rollup-dependencies:
-        patterns:
-          - "*rollup*"
-      jest-dependencies:
-        patterns:
-          - "*jest*"
+    open-pull-requests-limit: 0
