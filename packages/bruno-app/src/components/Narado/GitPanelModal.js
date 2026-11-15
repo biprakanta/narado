@@ -19,7 +19,13 @@ const GitPanelModal = ({ path, onClose, onSwitch }) => {
   const [message, setMessage] = useState('');
   const [mrTitle, setMrTitle] = useState('');
 
+  const [rules, setRules] = useState(null);
+
   const refresh = useCallback(async () => {
+    naradoApi
+      .requestRules(path)
+      .then(setRules)
+      .catch(() => setRules(null));
     try {
       setStatus(await naradoApi.status(path));
       setError('');
@@ -48,6 +54,23 @@ const GitPanelModal = ({ path, onClose, onSwitch }) => {
     }
   };
 
+  const rulesBlock = rules ? (
+    <div className="flex flex-col gap-1 text-xs" data-testid="narado-request-rules">
+      <div className="font-medium text-sm">Hosts this repo may send to</div>
+      <div className="opacity-80">
+        From {rules.branch || 'the default branch'}: <code>.client/allowed-hosts.yml</code>, the spec's servers and URLs in environments. A host
+        added on a branch counts once it is merged.{rules.enforced ? '' : ' Not enforced on this server (single-user mode), except for MCP.'}
+      </div>
+      <div className="opacity-90" data-testid="narado-request-hosts">{rules.hosts.length ? rules.hosts.join(' · ') : 'None yet: every request from this repo is refused.'}</div>
+      {!rules.codeowners && (
+        <div style={{ color: 'var(--color-text-warning, #e8590c)' }} data-testid="narado-codeowners-warning">
+          No CODEOWNERS entry covers .client/allowed-hosts.yml on {rules.branch || 'the default branch'}. Add one, and require code-owner review in
+          branch protection, so that changes to the allowlist need approval.
+        </div>
+      )}
+    </div>
+  ) : null;
+
   if (!status) {
     return (
       <Modal size="md" title="Git" hideFooter handleCancel={onClose}>
@@ -61,6 +84,7 @@ const GitPanelModal = ({ path, onClose, onSwitch }) => {
       <Modal size="lg" title={`${status.repoPath} · ${status.branch}`} hideFooter handleCancel={onClose} dataTestId="narado-git-panel">
         <div className="text-sm" data-testid="narado-git">
           <SaveChanges status={status} path={path} onRefresh={refresh} onSaved={(res) => (onSwitch ? onSwitch(res.path) : onClose())} />
+          <div className="mt-4">{rulesBlock}</div>
         </div>
       </Modal>
     );
@@ -230,6 +254,8 @@ const GitPanelModal = ({ path, onClose, onSwitch }) => {
             Refresh status
           </Button>
         </div>
+
+        {rulesBlock}
 
         {error && (
           <div style={{ color: 'var(--color-text-danger, #d9534f)' }} data-testid="narado-error">

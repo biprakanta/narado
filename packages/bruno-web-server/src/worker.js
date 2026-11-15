@@ -67,7 +67,9 @@ const CONFIG_DIR = process.env.NARADO_CONFIG_DIR || DATA_DIR;
 
 const ELECTRON_SRC = path.resolve(__dirname, '../../bruno-electron/src');
 const brunoRequire = (rel) => require(path.join(ELECTRON_SRC, rel));
-const { SecretRefs } = require('./narado/secrets/worker-side');
+const { SecretRefs, SEND_CHANNELS, collectionPathIn } = require('./narado/secrets/worker-side');
+const { RequestGuard, installSendRules } = require('./narado/requests/guard');
+const { AllowlistReader } = require('./narado/requests/allowlist');
 
 /* ---------------------------------------------------------------------------
  * 2. Several people on one server: scripts only in the QuickJS sandbox.
@@ -307,6 +309,42 @@ const main = async () => {
   const secretRefs = new SecretRefs({ secrets: front.secrets, workspaces: narado.workspaces });
   secretRefs.install(ipcMain);
 
+  // Request safety (Phase 4a): with sign-in on, every connection is checked against the
+  // platform block list, and sends against their repo's allowlist from its default branch.
+  const allowlists = new AllowlistReader();
+  const rulesFor = async (collectionPath) => {
+    const loc = collectionPath ? narado.workspaces.locate(collectionPath) : null;
+    if (!loc) return { rules: null, repo: null };
+    const repo = `${loc.hostId}:${loc.repoPath}`;
+    return { rules: await allowlists.rulesFor({ base: narado.workspaces.basePath(loc.hostId, loc.repoPath), repo }), repo };
+  };
+  const rulesOn = process.env.NARADO_REQUEST_RULES ? process.env.NARADO_REQUEST_RULES !== '0' : MULTI_USER;
+  if (rulesOn) {
+    const trustedHosts = narado.registry
+      .listHosts()
+      .map((h) => {
+        try {
+          return new URL(h.url).hostname;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+    const guard = new RequestGuard({ user: WORKER_USER, trustedHosts });
+    guard.install();
+    installSendRules({ ipcMain, guard, channels: SEND_CHANNELS, collectionPathIn, rulesFor });
+  }
+  ipcMain.handle('narado:request-rules', async (_e, { path: p } = {}) => {
+    const { rules, repo } = await rulesFor(p);
+    return {
+      enforced: rulesOn,
+      repo,
+      branch: rules ? rules.branch : null,
+      hosts: rules ? rules.summary() : [],
+      codeowners: rules ? rules.codeowners : false
+    };
+  });
+
   const sockets = new Set();
   const pending = new Map(); // server -> browser requests awaiting a reply
 
@@ -360,7 +398,8 @@ const main = async () => {
     collectionsFor: narado.collectionsFor,
     dataDir: DATA_DIR,
     port: PUBLIC_PORT,
-    tokens: front.tokens
+    tokens: front.tokens,
+    rulesFor
   });
 
   const server = http.createServer(async (req, res) => {

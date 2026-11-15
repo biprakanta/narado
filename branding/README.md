@@ -83,7 +83,7 @@ Bruno's other themes (Nord, Dracula, Catppuccin and the rest) stay available in 
 - **Loading**: [`loader-dark.gif`](loader-dark.gif) shows the animation, in which rings ripple out as the veena is plucked. It is `icons/narado-loader-{light,dark}.svg`, pure CSS, and holds still for people who turn on reduced motion. Used on sign-in, the start-up screen and request loading.
 - **Welcome dialog** (first run): the illustration and narado's own four points, since Bruno's "offline, on your disk" claims don't apply to a server.
 - **Overview**: a night-indigo banner with the illustration, the orbit from the artwork, a greeting by first name and the workspace.
-- **Elsewhere**: the veena as the Git section's icon, "narado on Bruno v…" in the status bar, the veena in the empty response pane, and the illustration on the home screen when no tab is open.
+- **Elsewhere**: "narado on Bruno v…" in the status bar, the veena in the empty response pane, and the illustration on the home screen when no tab is open.
 
 ## Screenshots
 
@@ -111,3 +111,5 @@ All of it applies only to the web build (`window.isBrunoWeb`). The Electron app 
 - The provider's own sign-in form (Keycloak in development) is not branded; narado's page comes before it.
 - No typeface has been chosen beyond the interface's own.
 - The app's JavaScript has to download before the start-up screen can show, so a slow first load is briefly blank.
+
+The veena is narado's mark, not an icon for a feature: keep it off sections and buttons such as Git, which use ordinary icons.

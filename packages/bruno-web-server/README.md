@@ -14,6 +14,7 @@ What each phase added:
 - **Phase 4b:** sign-in with OpenID Connect.
 - **Phase 4d:** a separate, sandboxed Bruno process for each person.
 - **Phase 4e:** secrets from HashiCorp Vault, AWS Secrets Manager, Google Secret Manager and Azure Key Vault.
+- **Phase 4a:** request safety: a platform block list for every connection, and each repo's host allowlist for every send.
 
 ## Run
 
@@ -99,6 +100,49 @@ With sign-in on, each person gets their own worker the first time they connect, 
 - **Lifecycle.** Idle workers stop after 30 minutes without a connection. A crashed or stopped worker starts again on the next request, and open pages reload to match it.
 - **Size.** About 60 to 170 MB of memory per active person.
 
+## Request safety
+
+With sign-in on, a person's requests run on the server, so narado stops them reaching what they shouldn't (server-side request forgery). Both checks run inside Node's networking in each worker, so they also cover scripts' own requests, redirects, OAuth 2 token calls, WebSockets, gRPC and proxies.
+
+**Platform block list: every connection a worker opens.**
+
+- Checked on the addresses a name resolves to, so a public name pointing at a blocked address is refused, as is any IP spelling (IPv4-mapped IPv6 and so on).
+- **Always refused:** loopback, link-local and cloud metadata (`169.254.169.254`, `fd00:ec2::254`), unspecified, multicast, broadcast, and local sockets.
+- **Refused unless opened:** private and shared ranges (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`) and other special-purpose ranges. `NARADO_ALLOWED_NETWORKS` opens internal ranges your APIs live in.
+- `NARADO_BLOCKED_NETWORKS` adds ranges, such as the server's own cluster network, and wins over `NARADO_ALLOWED_NETWORKS`.
+- Configured Git hosts (`narado.json`) may be on private addresses, never on the always-refused ones.
+- This also covers requests that aren't sends, such as importing a spec from a URL.
+
+**Repo allowlist: every request made during a send.**
+
+A request may only go to hosts the repo names on its **default branch**. A host added on a branch counts once its merge request is merged. The hosts come from three places:
+
+- `.client/allowed-hosts.yml`:
+
+  ```yaml
+  hosts:
+    - api.stripe.com                 # ports 80 and 443
+    - "*.sandbox.acme.com"           # any subdomain
+    - api.acme.com:8443              # that port
+    - host: payments.acme.com        # or in full
+      ports: [443, 8443]
+      paths: ["/v1/", "/health"]     # path prefixes
+  ```
+
+- URLs in the OpenAPI spec's `servers`.
+- Literal URLs in environment files.
+
+How the check works:
+
+- **Each HTTP request is checked** (host, port and path), including reused keep-alive connections. Other connections are checked by host and port.
+- **Review the file.** The Git panel lists the hosts and warns when no `CODEOWNERS` entry covers `.client/allowed-hosts.yml`. Add one, and turn on code-owner review in branch protection, so allowlist changes need approval.
+- **Collections outside a Git workspace** only get the block list. Set `NARADO_REQUESTS_OUTSIDE_REPOS=refuse` to stop their sends.
+- **MCP sends** use the same default-branch allowlist, also in single-user mode.
+
+**Log.** Each request in a send is logged with the person, method, host, port, repo and status, or why it was refused. Paths, queries, headers and bodies are not logged.
+
+Without sign-in, narado is a local tool and neither check applies to the interface, so `localhost` works. `NARADO_REQUEST_RULES=1` turns them on anyway; `0` turns them off with sign-in, for debugging only.
+
 ## Secrets
 
 Secrets stay in the organisation's secrets store. An environment variable holds a **reference**, which is committed to Git like any other value:
@@ -160,7 +204,7 @@ AI assistants can use narado through MCP (Streamable HTTP) at `http://127.0.0.1:
 - The token is shown once; only its SHA-256 hash is stored, in `<data dir>/mcp-tokens.json`. Tokens can be revoked from the same dialog.
 - `NARADO_MCP_ALLOW_WRITE=0` turns write tools off for every token.
 
-**Sending requests.** `send_request` only reaches hosts the workspace names itself: URLs in its environments, the spec's `servers`, and `.client/allowed-hosts.yml` (`hosts: [...]`). Pre- and post-request scripts and tests do not run for MCP sends, because they could change the target or make their own calls. Secrets are masked in tool results.
+**Sending requests.** `send_request` only reaches hosts on the repo's allowlist from its default branch (see Request safety). Pre- and post-request scripts and tests do not run for MCP sends, because they could change the target or make their own calls. Secrets are masked in tool results.
 
 **Other protections.** Requests with a browser `Origin` are refused, and the `Host` header must be the server's own address.
 
@@ -186,6 +230,10 @@ claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Autho
 | `NARADO_WORKER_IDLE_MINUTES` | `30` | Stop a person's worker after this long without a connection |
 | `NARADO_MAX_WORKERS` | `50` | Most workers at once; when full, the longest-idle one makes room, or new people get 503 |
 | `NARADO_WORKER_SANDBOX` | on with sign-in | `0` runs workers without Node's permission model. Only for debugging |
+| `NARADO_REQUEST_RULES` | on with sign-in | Block list and repo allowlists (see Request safety); `0` off, `1` on |
+| `NARADO_ALLOWED_NETWORKS` | none | Internal ranges requests may reach, comma-separated CIDRs |
+| `NARADO_BLOCKED_NETWORKS` | none | Extra ranges to refuse; wins over `NARADO_ALLOWED_NETWORKS` |
+| `NARADO_REQUESTS_OUTSIDE_REPOS` | `allow` | `refuse` stops sends from collections outside a Git workspace |
 | `NARADO_SECRETS_<STORE ID>_*` | none | Secrets store credentials (see Secrets) |
 | `NARADO_SECRETS_CACHE_SECONDS` | `60` | How long the front keeps a secret's value |
 
@@ -204,8 +252,10 @@ The workspace tests run real Git against a local repo standing in for the host, 
   - Workers run as the same operating-system account as the front.
   - Child processes (git, and the shell Bruno reads its environment from) are not covered by Node's permission model; narado builds their arguments itself.
   - Native add-ons are allowed, for file watching.
-  - Network access is open until Phase 4a adds rules for where requests may go.
+  - Network rules (Request safety) are enforced in the worker itself; a container per worker with its own egress rules adds a second layer.
   - For a hosted service, run each worker in its own container or OS user as well.
+- **Request rules and other programs.** The block list and allowlists are applied inside the worker's Node process; programs it starts (git) are not covered, but their targets are narado's configured Git hosts. Names are resolved once per connection, by the system resolver.
+- **The allowlist's repo** is found from the collection's folder; until Phase 4c, a person's worker reads it from its own clone of the default branch, fetched with the server's Git token.
 - **Data from before Phase 4d** at the top of the data folder is not moved into anyone's `users/` folder; people re-open their repositories.
 - **fsync** is skipped inside sandboxed workers, because Node's permission model refuses it, so a power cut can lose the last settings write.
 

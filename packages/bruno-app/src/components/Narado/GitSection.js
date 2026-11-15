@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { IconKey, IconLock, IconPlus, IconRefresh } from '@tabler/icons';
+import { IconGitBranch, IconKey, IconLock, IconPlus, IconRefresh } from '@tabler/icons';
 import toast from 'react-hot-toast';
 import SidebarSection from 'components/Sidebar/SidebarSection';
 import ActionIcon from 'ui/ActionIcon';
@@ -8,7 +8,6 @@ import GitPanelModal from './GitPanelModal';
 import McpTokensModal from './McpTokensModal';
 import SecretsModal from './SecretsModal';
 import { naradoApi, errorText, signOut } from './api';
-import { VeenaIcon } from './Brand';
 
 /** Sidebar section listing narado's Git working copies (one per repo and branch). */
 const GitSection = () => {
@@ -89,7 +88,7 @@ const GitSection = () => {
           }}
         />
       )}
-      <SidebarSection id="narado-git" title="Git" icon={VeenaIcon} actions={actions} className="narado-git-section">
+      <SidebarSection id="narado-git" title="Git" icon={IconGitBranch} actions={actions} className="narado-git-section">
         <div className="flex flex-col py-1" data-testid="narado-workspaces">
           {auth.mode === 'oidc' && auth.user && (
             <div className="px-4 py-1 flex items-center justify-between gap-2 text-xs opacity-80" data-testid="narado-signed-in">

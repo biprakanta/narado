@@ -140,7 +140,7 @@ const allowedHostsFor = ({ repoPath, collectionRoot }) => {
  * @param {object}   deps.workspaces      WorkspaceManager
  * @param {Function} deps.collectionsFor  (worktreePath) => [collection folders]
  */
-const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, workspaces, collectionsFor, dataDir, port, tokens: tokenStore, env = process.env, log = console }) => {
+const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, workspaces, collectionsFor, dataDir, port, tokens: tokenStore, rulesFor = null, env = process.env, log = console }) => {
   const signInOn = !!(auth && auth.enabled);
   // The token store: the file in the data folder, or (in a per-user worker) the front
   // process's store, reached over IPC and limited to this worker's user.
@@ -382,10 +382,23 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
 
         // Host check on the URL as it will be sent.
         const target = hostOf(interpolate(req.url, vars).replace(/:([A-Za-z0-9_]+)/g, 'x'));
-        const allowed = allowedHostsFor({ repoPath: ws.path, collectionRoot: ws.collectionRoot });
         if (!target) throw new Error(`The URL does not resolve to a full address: ${req.url}. Pick an environment that defines its variables.`);
-        if (!allowed.has(target)) {
-          throw new Error(`${target} is not a host this workspace names. Allowed: ${[...allowed].join(', ') || 'none'}. Add it to an environment or to .client/allowed-hosts.yml.`);
+        if (rulesFor) {
+          // The repo's allowlist from its default branch (Phase 4a), as for every send.
+          const u = new URL(interpolate(req.url, vars).replace(/:([A-Za-z0-9_]+)/g, 'x'));
+          const { rules } = await rulesFor(ws.path);
+          const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
+          if (!rules || !rules.allowsRequest(u.hostname, port, u.pathname)) {
+            const listed = rules ? rules.summary() : [];
+            throw new Error(
+              `${u.hostname}:${port} is not on this repo's allowlist (its default branch). Allowed: ${listed.join(', ') || 'none'}. Add it to .client/allowed-hosts.yml through a merge request.`
+            );
+          }
+        } else {
+          const allowed = allowedHostsFor({ repoPath: ws.path, collectionRoot: ws.collectionRoot });
+          if (!allowed.has(target)) {
+            throw new Error(`${target} is not a host this workspace names. Allowed: ${[...allowed].join(', ') || 'none'}. Add it to an environment or to .client/allowed-hosts.yml.`);
+          }
         }
 
         // Scripts and tests can change the URL or make their own calls, so they are off here.

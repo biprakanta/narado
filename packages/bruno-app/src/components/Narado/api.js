@@ -27,6 +27,7 @@ export const naradoApi = {
   pullDefault: (path) => invoke('narado:pull-default', { path }),
   resolve: (path, file, side) => invoke('narado:resolve', { path, file, side }),
   abortMerge: (path) => invoke('narado:abort-merge', { path }),
+  requestRules: (path) => invoke('narado:request-rules', { path }),
   mcpInfo: () => invoke('narado:mcp-info'),
   mcpTokens: () => invoke('narado:mcp-tokens'),
   createMcpToken: (name, scope) => invoke('narado:mcp-tokens:create', { name, scope }),
