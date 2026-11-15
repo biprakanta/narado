@@ -1,8 +1,8 @@
 /**
  * GitLab provider for GitLab.com and self-managed instances (design §7.1).
  *
- * Phase 2 authenticates with a token from configuration (a personal access token
- * with the `api` scope). Phase 4 replaces this with per-person OAuth tokens.
+ * It acts with a shared token from configuration (a personal access token with the
+ * `api` scope) in local mode, or each person's own OAuth token (Phase 4c).
  */
 const { requestJson } = require('./http');
 const { fromGitLabAccessLevel, highest } = require('./access');
@@ -14,10 +14,11 @@ class GitLabProvider {
    * @param {object} opts
    * @param {string} opts.id      host id in narado's configuration
    * @param {string} [opts.url]   instance URL, default https://gitlab.com
-   * @param {string} opts.token
+   * @param {string} [opts.token]
+   * @param {Function} [opts.getToken]  ({ force }) => Promise<string>, the person's own (Phase 4c)
    * @param {Function} [opts.fetchImpl]
    */
-  constructor({ id, name, url = 'https://gitlab.com', token, fetchImpl }) {
+  constructor({ id, name, url = 'https://gitlab.com', token, getToken, fetchImpl }) {
     this.type = 'gitlab';
     this.id = id;
     this.url = url.replace(/\/$/, '');
@@ -25,20 +26,33 @@ class GitLabProvider {
     this.name = name || (this.host === 'gitlab.com' ? 'GitLab' : `GitLab (${this.host})`);
     this.apiUrl = `${this.url}/api/v4`;
     this.token = token;
+    this.getToken = getToken;
     this.fetchImpl = fetchImpl;
   }
 
-  api(path, opts = {}) {
-    return requestJson(`${this.apiUrl}${path}`, {
-      ...opts,
-      fetchImpl: this.fetchImpl,
-      headers: { authorization: `Bearer ${this.token}`, ...(opts.headers || {}) }
-    });
+  accessToken(force = false) {
+    return this.getToken ? this.getToken({ force }) : this.token;
+  }
+
+  async api(path, opts = {}) {
+    const go = async (force) =>
+      requestJson(`${this.apiUrl}${path}`, {
+        ...opts,
+        fetchImpl: this.fetchImpl,
+        headers: { authorization: `Bearer ${await this.accessToken(force)}`, ...(opts.headers || {}) }
+      });
+    try {
+      return await go(false);
+    } catch (err) {
+      if (err.status === 401 && this.getToken) return go(true);
+      throw err;
+    }
   }
 
   async getCurrentUser() {
     const { data } = await this.api('/user');
     return {
+      id: data.id,
       login: data.username,
       name: data.name || data.username,
       email: data.public_email || data.commit_email || data.email || `${data.username}@users.noreply.${this.host}`
@@ -112,8 +126,8 @@ class GitLabProvider {
     return GitLabProvider.toRepo(data, this);
   }
 
-  gitAuthHeader() {
-    const basic = Buffer.from(`oauth2:${this.token}`).toString('base64');
+  async gitAuthHeader() {
+    const basic = Buffer.from(`oauth2:${await this.accessToken()}`).toString('base64');
     return `Authorization: Basic ${basic}`;
   }
 

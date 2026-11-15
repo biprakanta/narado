@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import Modal from 'components/Modal';
-import { naradoApi, errorText } from './api';
+import { naradoApi, errorText, connectGitAccount, disconnectGitAccount } from './api';
 
 const ACCESS_LABEL = { read: 'Read', write: 'Write', admin: 'Admin', none: 'No access' };
 
@@ -28,16 +28,30 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
   const [lookingUp, setLookingUp] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const loadHosts = () =>
     naradoApi
       .hosts()
       .then((list) => {
         setHosts(list);
         const first = list.find((h) => h.connected);
-        if (first) setHostId(first.id);
+        setHostId(first ? first.id : '');
       })
       .catch((err) => setError(errorText(err)));
+
+  useEffect(() => {
+    loadHosts();
   }, []);
+
+  const disconnect = async (h) => {
+    if (!window.confirm(`Disconnect your ${h.name} account${h.login ? ` (${h.login})` : ''}? narado's access on ${h.name} is withdrawn too.`)) return;
+    try {
+      await disconnectGitAccount(h.id);
+      toast.success(`Disconnected ${h.name}`);
+      loadHosts();
+    } catch (err) {
+      toast.error(errorText(err));
+    }
+  };
 
   useEffect(() => {
     if (!hostId) return;
@@ -122,6 +136,7 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
 
   const connected = hosts.filter((h) => h.connected);
   const notConnected = hosts.filter((h) => !h.connected);
+  const current = hosts.find((h) => h.id === hostId);
 
   return (
     <Modal
@@ -135,9 +150,22 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
     >
       <div className="flex flex-col gap-3" data-testid="narado-open-repo">
         {hosts.length > 0 && !connected.length && (
-          <div className="text-sm">
-            No Git host is connected. Set a token on the server, for example{' '}
-            <code>{notConnected.map((h) => h.tokenEnv).join(' or ')}</code>, then restart it.
+          <div className="text-sm" data-testid="narado-not-connected">
+            {notConnected.some((h) => h.canConnect)
+              ? 'Connect your Git account to open repositories. narado then works on them as you, with your own access.'
+              : 'No Git host is set up on this server yet. An administrator needs to configure the GitHub App or GitLab application.'}
+          </div>
+        )}
+
+        {notConnected.some((h) => h.canConnect) && (
+          <div className="flex flex-wrap gap-2" data-testid="narado-connect">
+            {notConnected
+              .filter((h) => h.canConnect)
+              .map((h) => (
+                <button key={h.id} type="button" className="btn btn-sm btn-secondary" onClick={() => connectGitAccount(h)} data-testid={`narado-connect-${h.id}`}>
+                  Connect {h.name}
+                </button>
+              ))}
           </div>
         )}
 
@@ -151,12 +179,40 @@ const OpenRepoModal = ({ onClose, onOpened }) => {
                 </option>
               ))}
             </select>
-            {notConnected.length > 0 && (
-              <span className="text-xs opacity-70">
-                Not connected: {notConnected.map((h) => `${h.name} (${h.tokenEnv})`).join(', ')}
+          </label>
+        )}
+
+        {current && current.connected && (
+          <div className="text-xs opacity-80 flex flex-wrap gap-x-2 gap-y-1" data-testid="narado-account">
+            {current.via === 'account' ? (
+              <>
+                <span>
+                  Working as <strong>{current.login}</strong> on {current.name}.
+                </span>
+                {current.installUrl && (
+                  <a className="underline" href={current.installUrl} target="_blank" rel="noreferrer" data-testid="narado-install-app">
+                    Repository missing? Give the narado app access to it
+                  </a>
+                )}
+                <button type="button" className="underline" onClick={() => disconnect(current)} data-testid="narado-disconnect">
+                  Disconnect
+                </button>
+              </>
+            ) : (
+              <span>
+                Using the server's shared {current.name} token.
+                {current.canConnect && (
+                  <>
+                    {' '}
+                    <button type="button" className="underline" onClick={() => connectGitAccount(current)}>
+                      Connect your own account
+                    </button>{' '}
+                    to work as yourself.
+                  </>
+                )}
               </span>
             )}
-          </label>
+          </div>
         )}
 
         {hostId && (

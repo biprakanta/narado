@@ -1,9 +1,9 @@
 /**
  * GitHub provider (design §7.1).
  *
- * Phase 2 authenticates with a token from configuration (a personal access token
- * or a GitHub App user token). Phase 4 replaces this with per-person tokens from
- * the GitHub App's user authorisation.
+ * It acts with one token: either fixed (`token`, a shared token in local mode) or the
+ * signed-in person's own, fetched for each call (`getToken`, Phase 4c), which is
+ * refreshed and retried once if the host says it is no longer valid.
  */
 const { requestJson } = require('./http');
 const { fromGitHubPermissions } = require('./access');
@@ -16,10 +16,11 @@ class GitHubProvider {
    * @param {string} opts.id        host id in narado's configuration
    * @param {string} [opts.url]     web URL, default https://github.com
    * @param {string} [opts.apiUrl]  API URL, default https://api.github.com
-   * @param {string} opts.token
+   * @param {string} [opts.token]
+   * @param {Function} [opts.getToken]  ({ force }) => Promise<string>
    * @param {Function} [opts.fetchImpl]
    */
-  constructor({ id, name, url = 'https://github.com', apiUrl = 'https://api.github.com', token, fetchImpl }) {
+  constructor({ id, name, url = 'https://github.com', apiUrl = 'https://api.github.com', token, getToken, fetchImpl }) {
     this.type = 'github';
     this.id = id;
     this.name = name || 'GitHub';
@@ -27,26 +28,39 @@ class GitHubProvider {
     this.apiUrl = apiUrl.replace(/\/$/, '');
     this.host = new URL(this.url).host;
     this.token = token;
+    this.getToken = getToken;
     this.fetchImpl = fetchImpl;
   }
 
-  api(path, opts = {}) {
-    return requestJson(`${this.apiUrl}${path}`, {
-      ...opts,
-      fetchImpl: this.fetchImpl,
-      headers: {
-        authorization: `Bearer ${this.token}`,
-        accept: 'application/vnd.github+json',
-        'x-github-api-version': '2022-11-28',
-        ...(opts.headers || {})
-      }
-    });
+  accessToken(force = false) {
+    return this.getToken ? this.getToken({ force }) : this.token;
+  }
+
+  async api(path, opts = {}) {
+    const go = async (force) =>
+      requestJson(`${this.apiUrl}${path}`, {
+        ...opts,
+        fetchImpl: this.fetchImpl,
+        headers: {
+          authorization: `Bearer ${await this.accessToken(force)}`,
+          accept: 'application/vnd.github+json',
+          'x-github-api-version': '2022-11-28',
+          ...(opts.headers || {})
+        }
+      });
+    try {
+      return await go(false);
+    } catch (err) {
+      if (err.status === 401 && this.getToken) return go(true);
+      throw err;
+    }
   }
 
   /** The signed-in account, used for branch names and commit identity. */
   async getCurrentUser() {
     const { data } = await this.api('/user');
     return {
+      id: data.id,
       login: data.login,
       name: data.name || data.login,
       // GitHub's no-reply address when the email is private.
@@ -133,8 +147,8 @@ class GitHubProvider {
   }
 
   /** HTTP header value Git uses to authenticate over HTTPS. */
-  gitAuthHeader() {
-    const basic = Buffer.from(`x-access-token:${this.token}`).toString('base64');
+  async gitAuthHeader() {
+    const basic = Buffer.from(`x-access-token:${await this.accessToken()}`).toString('base64');
     return `Authorization: Basic ${basic}`;
   }
 

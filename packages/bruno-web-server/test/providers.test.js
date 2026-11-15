@@ -76,9 +76,9 @@ test('GitHub: opens a pull request and reads its review state', async () => {
   assert.ok(fetchImpl.calls.some((c) => c.url.includes(encodeURIComponent('acme:narado/alice/refunds'))));
 });
 
-test('GitHub: git auth header uses x-access-token basic auth', () => {
+test('GitHub: git auth header uses x-access-token basic auth', async () => {
   const gh = new GitHubProvider({ id: 'github', token: 'abc' });
-  assert.equal(gh.gitAuthHeader(), `Authorization: Basic ${Buffer.from('x-access-token:abc').toString('base64')}`);
+  assert.equal(await gh.gitAuthHeader(), `Authorization: Basic ${Buffer.from('x-access-token:abc').toString('base64')}`);
 });
 
 test('GitHub: API errors include the status and message but not the token', async () => {
@@ -114,7 +114,7 @@ test('GitLab: self-managed URL, project and group access, merge requests', async
   const found = await gl.findMergeRequest('platform/payments', 'narado/alice/refunds');
   assert.equal(found.state, 'merged');
   assert.equal(found.review, 'approved');
-  assert.equal(gl.gitAuthHeader(), `Authorization: Basic ${Buffer.from('oauth2:gl').toString('base64')}`);
+  assert.equal(await gl.gitAuthHeader(), `Authorization: Basic ${Buffer.from('oauth2:gl').toString('base64')}`);
 });
 
 test('registry: defaults, tokens only from the environment', () => {

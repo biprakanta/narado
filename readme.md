@@ -38,7 +38,7 @@ NARADO_GITHUB_TOKEN=$(gh auth token) node packages/bruno-web-server/src/server.j
 npm run dev:web
 ```
 
-Open http://localhost:3000. Without sign-in configured, narado is a single-user tool and only listens on `127.0.0.1`. To try sign-in locally, start the Keycloak realm in [`packages/bruno-web-server/dev/keycloak`](packages/bruno-web-server/dev/keycloak) and follow its README.
+Open http://localhost:3000. Without sign-in configured, narado is a single-user tool that uses that one Git token, and only listens on `127.0.0.1`. With sign-in, each person connects their own GitHub or GitLab account through narado's GitHub App or GitLab application instead. To try sign-in locally, start the Keycloak realm in [`packages/bruno-web-server/dev/keycloak`](packages/bruno-web-server/dev/keycloak) and follow its README.
 
 Configuration, Git hosts, sign-in, the MCP server and known limits are documented in [`packages/bruno-web-server/README.md`](packages/bruno-web-server/README.md).
 
@@ -59,8 +59,8 @@ narado is in active development and not production-ready yet.
 
 | | |
 |---|---|
-| Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · a separate, sandboxed Bruno process per person · secrets from Vault, AWS, Google Cloud and Azure · request safety (block list and per-repo host allowlists) · branding |
-| Next | Per-person Git accounts through a GitHub App and GitLab OAuth (4c); until then everyone uses the server's Git token. |
+| Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · a separate, sandboxed Bruno process per person · secrets from Vault, AWS, Google Cloud and Azure · request safety (block list and per-repo host allowlists) · each person's own Git account (GitHub App, GitLab OAuth) · branding |
+| Next | Hosting, and checks that build on per-person accounts (branch protection on the allowlist, repo access for secrets rules). |
 
 GitLab support has been tested against unit-test fakes only so far, not a real GitLab instance.
 

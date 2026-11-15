@@ -67,6 +67,7 @@ const fakePool = (opts = {}) =>
     script: FAKE,
     sandbox: false,
     rpc: async (user, method) => ({ user: user && user.id, method }),
+    privateEnv: ['NARADO_GITHUB_TOKEN'],
     env: { ...process.env, NARADO_OIDC_CLIENT_SECRET: 'must-not-leak', NARADO_GITHUB_APP_CLIENT_SECRET: 'nor-this', NARADO_SECRETS_VAULT_TOKEN: 'nor-the-vault', NARADO_GITHUB_TOKEN: 'git-token' },
     log: quiet,
     ...opts
@@ -87,7 +88,7 @@ test('each person gets their own worker and data folder; cookies and sign-in sec
     assert.ok(!a.first.envKeys.includes('NARADO_OIDC_CLIENT_SECRET'));
     assert.ok(!a.first.envKeys.includes('NARADO_GITHUB_APP_CLIENT_SECRET'));
     assert.ok(!a.first.envKeys.includes('NARADO_SECRETS_VAULT_TOKEN'), 'secrets-store credentials stay in the front');
-    assert.ok(a.first.envKeys.includes('NARADO_GITHUB_TOKEN'));
+    assert.ok(!a.first.envKeys.includes('NARADO_GITHUB_TOKEN'), 'shared Git tokens stay in the front (Phase 4c)');
 
     // A second connection for Alice reaches the same worker.
     const a2 = await openSocket(front.url, 'alice');

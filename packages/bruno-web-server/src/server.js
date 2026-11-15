@@ -30,6 +30,7 @@ const { WorkerPool, WorkerError } = require('./narado/workers');
 const { tokenService } = require('./narado/token-service');
 const { SecretsService, secretsService } = require('./narado/secrets');
 const { Identity } = require('./narado/secrets/identity');
+const { GitAccounts, gitService } = require('./narado/git-accounts');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -79,10 +80,14 @@ const main = async () => {
   // Secrets stores (Phase 4e): credentials and narado's signing key stay in this process.
   const identity = new Identity({ dataDir: DATA_DIR, issuer: auth.publicUrl });
   const secrets = new SecretsService({ dataDir: DATA_DIR, identity });
+  // Each person's own Git accounts (Phase 4c): refresh tokens and app credentials stay here.
+  const gitAccounts = new GitAccounts({ dataDir: DATA_DIR, publicUrl: auth.publicUrl, multiUser: auth.enabled });
   const tokenCalls = tokenService(tokens, auth.enabled);
   const secretCalls = secretsService(secrets);
-  const rpc = (user, method, args) => (method.startsWith('secrets.') ? secretCalls(user, method, args) : tokenCalls(user, method, args));
-  const pool = new WorkerPool({ dataDir: DATA_DIR, multiUser: auth.enabled, publicPort: PORT, rpc });
+  const gitCalls = gitService(gitAccounts);
+  const rpc = (user, method, args) =>
+    method.startsWith('secrets.') ? secretCalls(user, method, args) : method.startsWith('git.') ? gitCalls(user, method, args) : tokenCalls(user, method, args);
+  const pool = new WorkerPool({ dataDir: DATA_DIR, multiUser: auth.enabled, publicPort: PORT, rpc, privateEnv: gitAccounts.tokenEnvNames() });
 
   const fail = (res, err) => {
     const status = err instanceof WorkerError ? err.status : 500;
@@ -121,6 +126,16 @@ const main = async () => {
         res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'max-age=300' });
         res.end(JSON.stringify(identity.jwks()));
         return;
+      }
+      // Connecting a Git account: needs the narado session (or local mode), before /auth/*'s 404.
+      if (/^\/auth\/(git\/[^/]+\/(connect|disconnect)|[^/]+\/callback)$/.test(new URL(req.url, 'http://x').pathname)) {
+        const user = auth.enabled ? auth.userFor(req) : null;
+        if (auth.enabled && !user) {
+          res.writeHead(302, { location: '/auth/login?return=/', 'cache-control': 'no-store' });
+          res.end();
+          return;
+        }
+        if (await gitAccounts.handle(req, res, { user, allowedOrigins: ALLOWED_ORIGINS })) return;
       }
       if (await auth.handle(req, res)) return;
       if (new URL(req.url, 'http://x').pathname === '/mcp') return handleMcp(req, res);
@@ -171,6 +186,9 @@ const main = async () => {
   server.listen(PORT, HOST, () => {
     console.log(`[narado] sign-in: ${auth.enabled ? `OIDC (${process.env.NARADO_OIDC_ISSUER}), public URL ${auth.publicUrl}` : 'off (single-user local mode)'}`);
     console.log(`[narado] one Bruno worker per ${auth.enabled ? `person, in ${path.join(DATA_DIR, 'users')}${pool.sandbox ? ', sandboxed' : ', NOT sandboxed (NARADO_WORKER_SANDBOX=0)'}` : 'server (local mode)'}`);
+    console.log(
+      `[narado] Git accounts: ${gitAccounts.status(null).map((h) => `${h.id} (${h.canConnect ? 'people connect their own' : 'no app configured'}${gitAccounts.sharedTokens && process.env[h.tokenEnv] ? ', shared token' : ''})`).join(', ')}`
+    );
     console.log(`[narado] secrets stores: ${secrets.enabled ? secrets.listStores().map((s) => `${s.id} (${s.type}${s.configured ? '' : ', no credentials'})`).join(', ') : 'none'}`);
     console.log(`[narado] MCP server at http://127.0.0.1:${PORT}/mcp`);
     console.log(`[narado] listening on http://${HOST}:${PORT} (data: ${DATA_DIR})`);

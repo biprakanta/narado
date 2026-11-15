@@ -12,16 +12,20 @@ const { findSpec } = require('./openapi/spec');
 
 const REPO_TTL_MS = 5 * 60 * 1000;
 
-const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollection, dataDir, configDir = dataDir, env = process.env }) => {
+const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollection, dataDir, configDir = dataDir, env = process.env, git = null }) => {
   // Host settings (narado.json) are server-wide; each person's workspaces are under their own dataDir.
-  const registry = new ProviderRegistry({ dataDir: configDir, env });
+  // With `git` (a worker), Git tokens are the person's own, from the front process (Phase 4c).
+  const registry = new ProviderRegistry({ dataDir: configDir, env, tokenFor: git ? async (hostId, opts) => (await git.token(hostId, opts)).token : undefined });
   const workspaces = new WorkspaceManager({ dataDir });
-  const users = new Map(); // hostId -> current user
+  const users = new Map(); // hostId -> { user, at }
   const repos = new Map(); // hostId/repoPath -> { repo, at }
 
   const me = async (hostId) => {
-    if (!users.has(hostId)) users.set(hostId, await registry.get(hostId).getCurrentUser());
-    return users.get(hostId);
+    const hit = users.get(hostId);
+    if (hit && Date.now() - hit.at < REPO_TTL_MS) return hit.user;
+    const user = await registry.get(hostId).getCurrentUser();
+    users.set(hostId, { user, at: Date.now() });
+    return user;
   };
 
   const repoInfo = async (hostId, repoPath, { fresh = false } = {}) => {
@@ -79,7 +83,12 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     }
   };
 
-  ipcMain.handle('narado:hosts', async () => registry.listHosts());
+  // Connecting or disconnecting an account happens in the front; start afresh when the interface asks.
+  ipcMain.handle('narado:hosts', async () => {
+    users.clear();
+    repos.clear();
+    return git ? git.status() : registry.listHosts();
+  });
 
   ipcMain.handle('narado:repos', async (_e, { hostId }) => {
     const list = await registry.get(hostId).listRepos();
@@ -94,7 +103,14 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     if (typeof repoPath !== 'string' || !/^[^/\s]+(\/[^/\s]+)+$/.test(repoPath.trim())) {
       throw new Error('Enter the repo as owner/name');
     }
-    return repoInfo(hostId, repoPath.trim(), { fresh: true });
+    try {
+      return await repoInfo(hostId, repoPath.trim(), { fresh: true });
+    } catch (err) {
+      if (err.status !== 404) throw err;
+      // With per-person accounts, a GitHub App only reaches repos it is installed on.
+      const app = registry.get(hostId).type === 'github' ? ' If it exists, the narado GitHub App may not be installed on it: use "Give the narado app access to it".' : '';
+      throw new Error(`${repoPath.trim()} was not found, or your account can't see it.${app}`);
+    }
   });
 
   const forks = new Map(); // hostId/repoPath -> fork repo
@@ -143,7 +159,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       hostId,
       repoPath,
       cloneUrl: repo.cloneUrl,
-      authHeader: provider.gitAuthHeader(),
+      authHeader: await provider.gitAuthHeader(),
       branch: target,
       defaultBranch: repo.defaultBranch,
       via,
@@ -203,14 +219,14 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       branch,
       via,
       forkCloneUrl: fork ? fork.cloneUrl : undefined,
-      authHeader: ws.provider.gitAuthHeader(),
+      authHeader: await ws.provider.gitAuthHeader(),
       message,
       user: await me(ws.hostId)
     });
     // The change is committed on its branch from here on; a failed push must not hide that.
     let pushError = null;
     try {
-      await workspaces.push({ hostId: ws.hostId, repoPath: ws.repoPath, path: saved.path, branch, authHeader: ws.provider.gitAuthHeader() });
+      await workspaces.push({ hostId: ws.hostId, repoPath: ws.repoPath, path: saved.path, branch, authHeader: await ws.provider.gitAuthHeader() });
     } catch (err) {
       pushError = `${err.message}. The change is committed on ${branch}; push it again from its Git panel.`;
     }
@@ -325,7 +341,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
   ipcMain.handle('narado:push', async (_e, { path: folder }) => {
     const ws = await workspaceFor(folder);
     const st = await refuseDefaultBranch(ws);
-    const { remote } = await workspaces.push({ ...ws, branch: st.branch, authHeader: ws.provider.gitAuthHeader() });
+    const { remote } = await workspaces.push({ ...ws, branch: st.branch, authHeader: await ws.provider.gitAuthHeader() });
     return { pushed: st.branch, to: remote === 'fork' ? 'fork' : 'repo' };
   });
 
@@ -337,7 +353,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     const ws = await workspaceFor(folder);
     const st = await refuseDefaultBranch(ws);
     if (st.files.length) throw new Error('Commit your changes before opening a merge request');
-    await workspaces.push({ ...ws, branch: st.branch, authHeader: ws.provider.gitAuthHeader() });
+    await workspaces.push({ ...ws, branch: st.branch, authHeader: await ws.provider.gitAuthHeader() });
     const sourceRepoPath = st.via === 'fork' ? (await forkOf(ws.hostId, ws.repoPath)).fork?.path : undefined;
     if (st.via === 'fork' && !sourceRepoPath) throw new Error('Could not find your fork of this repo');
     const existing = await ws.provider.findMergeRequest(ws.repoPath, st.branch, { sourceRepoPath });
@@ -357,7 +373,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     const res = await workspaces.updateFromDefault({
       ...ws,
       defaultBranch: ws.repo.defaultBranch,
-      authHeader: ws.provider.gitAuthHeader(),
+      authHeader: await ws.provider.gitAuthHeader(),
       user: await me(ws.hostId)
     });
     // While openapi.yaml holds conflict markers the view keeps its last good state.
@@ -373,7 +389,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     const res = await workspaces.updateFromDefault({
       ...ws,
       defaultBranch: ws.repo.defaultBranch,
-      authHeader: ws.provider.gitAuthHeader(),
+      authHeader: await ws.provider.gitAuthHeader(),
       user: await me(ws.hostId)
     });
     if (res.merged) await refreshView(ws.path);

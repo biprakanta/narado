@@ -34,6 +34,19 @@ export const naradoApi = {
   revokeMcpToken: (id) => invoke('narado:mcp-tokens:revoke', { id })
 };
 
+/** Start connecting a Git account: the host asks the person, then sends them back here. */
+export const connectGitAccount = (host) => {
+  const back = window.location.pathname + window.location.search;
+  window.location.assign(`${host.connectUrl}?return=${encodeURIComponent(back)}`);
+};
+
+/** Disconnect a Git account (also withdraws narado's access on the host). */
+export const disconnectGitAccount = async (hostId) => {
+  const res = await fetch(`/auth/git/${encodeURIComponent(hostId)}/disconnect`, { method: 'POST', credentials: 'same-origin' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Could not disconnect (${res.status})`);
+};
+
 /** Sign out of narado (and the identity provider, when it supports it). */
 export const signOut = async () => {
   const res = await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });

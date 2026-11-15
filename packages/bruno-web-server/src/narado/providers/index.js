@@ -9,9 +9,11 @@
  *       { "id": "acme-gitlab", "type": "gitlab", "url": "https://gitlab.acme.internal", "tokenEnv": "ACME_GITLAB_TOKEN" }
  *   ] }
  *
- * Without the file, GitHub.com and GitLab.com are configured. Tokens are only ever
- * read from environment variables (default NARADO_<ID>_TOKEN), never from the file.
- * A host without a token is listed as not connected.
+ * Without the file, GitHub.com and GitLab.com are configured. Credentials never come
+ * from the file. In a worker, tokens come from `tokenFor(hostId, { force })`: the front
+ * process answers with the person's own token (src/narado/git-accounts.js) or, in
+ * local mode, a shared token from NARADO_<ID>_TOKEN. Without `tokenFor`, the registry
+ * reads that variable itself (tests and tools).
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -41,10 +43,11 @@ const loadHostConfig = (dataDir) => {
 };
 
 class ProviderRegistry {
-  constructor({ dataDir, env = process.env, fetchImpl } = {}) {
+  constructor({ dataDir, env = process.env, fetchImpl, tokenFor } = {}) {
     this.hosts = loadHostConfig(dataDir).map((h) => ({ ...h, tokenEnv: tokenEnvFor(h) }));
     this.env = env;
     this.fetchImpl = fetchImpl;
+    this.tokenFor = tokenFor;
     this.cache = new Map();
   }
 
@@ -63,14 +66,18 @@ class ProviderRegistry {
     });
   }
 
-  build(h, token) {
-    const opts = { ...h, token, fetchImpl: this.fetchImpl };
+  build(h, token, getToken) {
+    const opts = { ...h, token, getToken, fetchImpl: this.fetchImpl };
     return h.type === 'github' ? new GitHubProvider(opts) : new GitLabProvider(opts);
   }
 
   get(hostId) {
     const h = this.hosts.find((x) => x.id === hostId);
     if (!h) throw new Error(`Unknown Git host "${hostId}"`);
+    if (this.tokenFor) {
+      if (!this.cache.has(hostId)) this.cache.set(hostId, this.build(h, undefined, (opts) => this.tokenFor(hostId, opts)));
+      return this.cache.get(hostId);
+    }
     const token = this.env[h.tokenEnv];
     if (!token) throw new Error(`${h.id} is not connected: set ${h.tokenEnv} on the server`);
     if (!this.cache.has(hostId)) this.cache.set(hostId, this.build(h, token));

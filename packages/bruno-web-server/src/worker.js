@@ -200,7 +200,8 @@ const startBruno = async () => {
     collectionWatcher,
     openCollection: brunoRequire('app/collections').openCollection,
     dataDir: DATA_DIR,
-    configDir: CONFIG_DIR
+    configDir: CONFIG_DIR,
+    git: front.git
   });
 
   ipcMain.handle('main:cache-clear', async () => {
@@ -290,6 +291,11 @@ const front = (() => {
       revoke: (id) => call('tokens.revoke', id),
       verify: (token) => call('tokens.verify', token),
       touch: (id) => call('tokens.touch', id)
+    },
+    // The person's own Git tokens (Phase 4c): the front keeps refresh tokens and app credentials.
+    git: {
+      status: () => call('git.status'),
+      token: (hostId, opts) => call('git.token', hostId, opts || {})
     },
     // Secrets stores live in the front; it checks access as this worker's person.
     secrets: {

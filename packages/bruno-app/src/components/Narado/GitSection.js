@@ -35,6 +35,26 @@ const GitSection = () => {
     load();
   }, [load]);
 
+  // Back from connecting a Git account: say how it went, and open the repo picker.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get('git-connect');
+    if (!outcome) return;
+    const host = params.get('host') || 'Git';
+    const text = {
+      ok: [`Connected your ${host} account`, true],
+      refused: [`${host} did not connect: the request was declined`, false],
+      expired: [`That ${host} connection link expired. Try again.`, false],
+      failed: [`Could not connect ${host}. Check the server log.`, false]
+    }[outcome] || [`Connecting ${host}: ${outcome}`, false];
+    (text[1] ? toast.success : toast.error)(text[0]);
+    params.delete('git-connect');
+    params.delete('host');
+    const rest = params.toString();
+    window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
+    if (outcome === 'ok') setOpenRepo(true);
+  }, []);
+
   const actions = (
     <>
       <ActionIcon label="Secrets" onClick={() => setSecretsOpen(true)} data-testid="narado-secrets-btn">

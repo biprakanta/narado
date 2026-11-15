@@ -15,6 +15,7 @@ What each phase added:
 - **Phase 4d:** a separate, sandboxed Bruno process for each person.
 - **Phase 4e:** secrets from HashiCorp Vault, AWS Secrets Manager, Google Secret Manager and Azure Key Vault.
 - **Phase 4a:** request safety: a platform block list for every connection, and each repo's host allowlist for every send.
+- **Phase 4c:** each person connects their own GitHub or GitLab account, and narado works on Git as them.
 
 ## Run
 
@@ -23,6 +24,8 @@ From the repo root, after `npm run setup`:
 ```bash
 NARADO_GITHUB_TOKEN=<token> node packages/bruno-web-server/src/server.js
 ```
+
+That uses one shared token, which is only for single-user local mode. With sign-in, set up the GitHub App instead (see Git accounts).
 
 ```bash
 npm run dev:web
@@ -34,14 +37,7 @@ To serve a production build from the server itself instead, run `npm run build:w
 
 ## Git hosts
 
-Without a config file, GitHub.com and GitLab.com are available. Each host's token comes from an environment variable on the server, `NARADO_<HOST ID>_TOKEN`, never from a file:
-
-| Host | Variable | Token needs |
-|---|---|---|
-| GitHub.com (`github`) | `NARADO_GITHUB_TOKEN` | `repo` scope (classic), or Contents and Pull requests read/write (fine-grained) |
-| GitLab.com (`gitlab`) | `NARADO_GITLAB_TOKEN` | `api` scope |
-
-For self-managed GitLab, or to change the list, create `<data dir>/narado.json`:
+Without a config file, GitHub.com and GitLab.com are available. For self-managed GitLab, or to change the list, create `<data dir>/narado.json`:
 
 ```json
 {
@@ -52,9 +48,47 @@ For self-managed GitLab, or to change the list, create `<data dir>/narado.json`:
 }
 ```
 
-The second host above reads `NARADO_ACME_GITLAB_TOKEN`; set `"tokenEnv"` on a host to use another name. A host without a token shows as not connected.
+Credentials never go in this file. They come from environment variables named after the host's id, as below (`acme-gitlab` reads `NARADO_ACME_GITLAB_APP_CLIENT_ID`, and so on).
 
-These server-wide tokens stand in for per-person sign-in, which comes in Phase 4 (GitHub App and GitLab OAuth, linked to company SSO).
+### Git accounts
+
+Each person connects their own Git account (Git section, Open from Git, Connect), and narado then works on the host as them: their own access, branch protection and audit trail apply. Shared tokens are not used once sign-in is on.
+
+**GitHub** uses a GitHub App with user authorisation. Register one under Settings, Developer settings, GitHub Apps (or in your organisation's settings):
+
+- Callback URL: `<public URL>/auth/github/callback`, wildcard matching off. Use the host's id in place of `github` for other GitHub hosts.
+- Expire user authorisation tokens: on. Webhook: off.
+- Repository permissions: Contents read and write, Pull requests read and write, Metadata read. Account permissions: Email addresses read.
+- Generate a client secret. No private key is needed.
+
+| Variable | Meaning |
+|---|---|
+| `NARADO_GITHUB_APP_CLIENT_ID` | The app's client ID |
+| `NARADO_GITHUB_APP_CLIENT_SECRET` | Its client secret |
+| `NARADO_GITHUB_APP_SLUG` | Its URL name, for the "give the app access" link |
+
+A GitHub App reaches only the repositories it is installed on, so install it on your organisation (or the repositories narado should work on). Public repositories can be read without that.
+
+**GitLab** uses an OAuth application (User settings, Applications, or an instance-wide one in the Admin area): redirect URI `<public URL>/auth/gitlab/callback`, confidential, scopes `api` and `read_user`. Set `NARADO_GITLAB_APP_CLIENT_ID` and `NARADO_GITLAB_APP_CLIENT_SECRET`; set `"scopes"` on the host in `narado.json` to ask for others.
+
+How it is kept safe:
+
+- Connecting uses the authorization code flow with PKCE and a one-time state, valid for 10 minutes and only for the narado person who started it.
+- Tokens are stored in `narado.db`, encrypted (AES-256-GCM) with `NARADO_GIT_TOKEN_KEY` (32 bytes, base64) or, without it, a key file `narado-git-key` in the data folder. In production, set the variable from your secrets manager so the key is not next to the database.
+- Refresh tokens and app credentials stay in the front process. A person's worker asks the front for an access token when it needs one, and the front refreshes it when it has under five minutes left. A refused refresh disconnects the account, and narado asks the person to connect again.
+- Git commands get the token in an HTTP header for that command only, with credential helpers turned off, so nothing is saved on disk and nothing falls back to another account.
+- Disconnecting deletes the stored tokens and withdraws narado's access on the host.
+
+### Shared tokens (local mode)
+
+Without sign-in, a host can use one token from `NARADO_<HOST ID>_TOKEN` instead (set `"tokenEnv"` on a host for another name):
+
+| Host | Variable | Token needs |
+|---|---|---|
+| GitHub.com (`github`) | `NARADO_GITHUB_TOKEN` | `repo` scope (classic), or Contents and Pull requests read/write (fine-grained) |
+| GitLab.com (`gitlab`) | `NARADO_GITLAB_TOKEN` | `api` scope |
+
+With sign-in on, these are ignored unless `NARADO_SHARED_GIT_TOKENS=1`, which is only meant for moving a server over. Workers never see them: the front hands them out like personal tokens.
 
 ### How workspaces work
 
@@ -225,7 +259,10 @@ claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Autho
 | `BRUNO_WEB_ORIGINS` | `http://localhost:3000`, `http://127.0.0.1:3000` and the server's own origin | Browser origins allowed to connect, comma-separated |
 | `BRUNO_WEB_DATA_DIR` | `~/.bruno-web` | Sign-in database, MCP tokens, `narado.json`; with sign-in, each person's folder under `users/` |
 | `BRUNO_WEB_SERVER` | `http://127.0.0.1:4100` | Where the rsbuild dev server forwards `/ipc` |
-| `NARADO_<HOST ID>_TOKEN` | none | Token for a Git host (see above) |
+| `NARADO_<HOST ID>_APP_CLIENT_ID`, `_APP_CLIENT_SECRET`, `_APP_SLUG` | none | The GitHub App or GitLab application people connect their accounts through (see Git accounts) |
+| `NARADO_GIT_TOKEN_KEY` | a key file in the data folder | 32 bytes, base64: encrypts stored Git tokens |
+| `NARADO_<HOST ID>_TOKEN` | none | Shared token for a Git host, local mode only |
+| `NARADO_SHARED_GIT_TOKENS` | off | `1` lets signed-in people use shared tokens when they have not connected an account |
 | `NARADO_MCP_ALLOW_WRITE` | on | `0` turns MCP write tools off for every token |
 | `NARADO_WORKER_IDLE_MINUTES` | `30` | Stop a person's worker after this long without a connection |
 | `NARADO_MAX_WORKERS` | `50` | Most workers at once; when full, the longest-idle one makes room, or new people get 503 |
@@ -247,7 +284,9 @@ The workspace tests run real Git against a local repo standing in for the host, 
 
 ## Known limits
 
-- **Git access is still the server's.** Until Phase 4c, every person's worker uses the server-wide host tokens, so everyone acts as the same Git account. Per-person Git accounts come with the GitHub App and GitLab OAuth.
+- **Git accounts are separate from sign-in.** Connecting is a second step after signing in to narado; narado does not check that the Git account belongs to the same person as the SSO account.
+- **GitLab sign-in** is covered by the same code and tests as GitHub, but has not been tried against a real GitLab instance yet.
+- **Access tokens reach the worker.** Workers get short-lived access tokens (GitHub: 8 hours, GitLab: 2 hours) for the calls they make, never refresh tokens.
 - **The sandbox has gaps.**
   - Workers run as the same operating-system account as the front.
   - Child processes (git, and the shell Bruno reads its environment from) are not covered by Node's permission model; narado builds their arguments itself.
@@ -255,7 +294,7 @@ The workspace tests run real Git against a local repo standing in for the host, 
   - Network rules (Request safety) are enforced in the worker itself; a container per worker with its own egress rules adds a second layer.
   - For a hosted service, run each worker in its own container or OS user as well.
 - **Request rules and other programs.** The block list and allowlists are applied inside the worker's Node process; programs it starts (git) are not covered, but their targets are narado's configured Git hosts. Names are resolved once per connection, by the system resolver.
-- **The allowlist's repo** is found from the collection's folder; until Phase 4c, a person's worker reads it from its own clone of the default branch, fetched with the server's Git token.
+- **The allowlist's repo** is found from the collection's folder; a person's worker reads it from its own clone of the default branch, fetched with their own Git account.
 - **Data from before Phase 4d** at the top of the data folder is not moved into anyone's `users/` folder; people re-open their repositories.
 - **fsync** is skipped inside sandboxed workers, because Node's permission model refuses it, so a power cut can lose the last settings write.
 
@@ -263,7 +302,7 @@ The workspace tests run real Git against a local repo standing in for the host, 
 - **Drag-and-drop file paths** are not available, because browsers don't expose them.
 - **Turned off:** the built-in terminal (it would give a shell on the server), window controls and native menus.
 - **Bruno's own secret variables** (the "secret" checkbox) still work, encrypted with a key file in each person's folder. Prefer `secret://` references, which keep values in the organisation's store.
-- **Secret references and the repo.** Until Phase 4c, the front trusts the worker about which repo a request is in when applying `repos` rules; with per-person Git accounts it can check the person can read that repo.
+- **Secret references and the repo.** The front trusts the worker about which repo a request is in when applying `repos` rules. Now that people have their own Git accounts, it could check that the person can read that repo; it does not yet.
 - **Scripts can read resolved secrets** (for example `bru.getEnvVar`) and could send them on in a request or encode them in ways masking does not catch. Who may change a repo's scripts is controlled by review in Git.
 - **Masking** skips values shorter than 4 characters, and does not catch a value inside Basic auth's encoded `user:password`.
 - **Revealing** a secret's value in the interface is not available yet.

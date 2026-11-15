@@ -22,8 +22,9 @@ const path = require('node:path');
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 const WORKER_SCRIPT = path.resolve(__dirname, '../worker.js');
 
-// Settings the worker must not see: sign-in secrets and secrets-store credentials stay in the front.
-const PRIVATE_ENV = /^(NARADO_OIDC_|NARADO_GITHUB_APP_|NARADO_GITLAB_APP_|NARADO_SESSION_|NARADO_SECRETS_)/;
+// Settings the worker must not see: sign-in secrets, Git app credentials and tokens, and
+// secrets-store credentials stay in the front. Shared Git tokens are added by name (privateEnv).
+const PRIVATE_ENV = /^(NARADO_OIDC_|NARADO_[A-Z0-9_]*_APP_|NARADO_GIT_TOKEN_KEY$|NARADO_SESSION_|NARADO_SECRETS_)/;
 
 class WorkerError extends Error {
   constructor(status, message) {
@@ -48,12 +49,13 @@ class WorkerPool {
    * @param {number}   o.publicPort  the front's port (MCP's allowed Host)
    * @param {Function} o.rpc         (user, method, args) => result, for calls from a worker
    */
-  constructor({ dataDir, multiUser, publicPort, rpc, env = process.env, script = WORKER_SCRIPT, sandbox, idleMs, maxWorkers, startTimeoutMs = 120000, log = console }) {
+  constructor({ dataDir, multiUser, publicPort, rpc, privateEnv = [], env = process.env, script = WORKER_SCRIPT, sandbox, idleMs, maxWorkers, startTimeoutMs = 120000, log = console }) {
     this.dataDir = path.resolve(dataDir);
     this.multiUser = !!multiUser;
     this.publicPort = publicPort;
     this.rpc = rpc;
     this.env = env;
+    this.privateEnv = new Set(privateEnv);
     this.script = script;
     this.sandbox = sandbox !== undefined ? sandbox : this.multiUser && env.NARADO_WORKER_SANDBOX !== '0';
     this.idleMs = idleMs !== undefined ? idleMs : Number(env.NARADO_WORKER_IDLE_MINUTES || 30) * 60 * 1000;
@@ -117,7 +119,7 @@ class WorkerPool {
     fs.mkdirSync(path.join(dir, 'tmp'), { recursive: true, mode: 0o700 });
     const secret = crypto.randomBytes(32).toString('hex');
     const env = {};
-    for (const [k, v] of Object.entries(this.env)) if (!PRIVATE_ENV.test(k)) env[k] = v;
+    for (const [k, v] of Object.entries(this.env)) if (!PRIVATE_ENV.test(k) && !this.privateEnv.has(k)) env[k] = v;
     Object.assign(env, {
       NARADO_WORKER_SECRET: secret,
       NARADO_WORKER_USER: JSON.stringify(user ? { id: user.id, name: user.name || null, email: user.email || null } : null),
