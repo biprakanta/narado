@@ -1,0 +1,55 @@
+# narado's tests, for every pull request and for pushes to narado's branch.
+# (Bruno's own workflows only run for main and release/* in Bruno's repository.)
+name: narado tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [web, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The tests don't start Electron; skip downloading its binary.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+jobs:
+  server:
+    name: Server, desktop and CLI tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node dependencies
+        uses: ./.github/actions/common/setup-node-deps
+
+      - name: Git identity for tests that commit
+        run: |
+          git config --global user.name "narado CI"
+          git config --global user.email "ci@narado.invalid"
+          git config --global init.defaultBranch main
+
+      - name: Run server tests
+        working-directory: packages/bruno-web-server
+        run: npm test
+
+  interface:
+    name: Interface tests (narado screens and request tabs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node dependencies
+        uses: ./.github/actions/common/setup-node-deps
+
+      - name: Run interface tests
+        working-directory: packages/bruno-app
+        run: npx jest src/components/Narado src/components/RequestTabs
