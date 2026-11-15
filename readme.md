@@ -24,6 +24,9 @@ Your collections live in your own GitHub or GitLab repositories, stored as OpenA
 - **Company sign-in.** Any OpenID Connect provider: Okta, Microsoft Entra ID, Google Workspace, Keycloak and others. You can restrict sign-in to your email domains.
 - **Secrets stay in your secrets store.** Environments hold references such as `secret://vault/payments/staging#api_key`; the server swaps in values only when it sends, and the browser never sees them. Vault can decide per person; other stores follow access rules by repo and person.
 - **Requests can't reach what they shouldn't.** The server refuses loopback, cloud metadata and private networks, after DNS and on every redirect, and each repo's requests only go to hosts listed on its default branch, so new hosts go through review.
+- **Secrets bound to collections.** When an environment on a repository's default branch references a secret, anyone who can read that repository may use it; narado reads it with its own service credentials. Admins add other access in the admin pages.
+- **narado desktop and the `narado` command.** The desktop app (macOS, Windows, Linux) sends from your own computer, so `localhost` and your network work, and keeps working offline. The `narado` command signs in with SSO and runs local tools with `.env` values that are `secret://` references.
+- **Setup and admin pages.** A one-time setup link in the server's log, then `/admin`: sign-in, admins, GitHub and GitLab apps that narado creates for you, secrets stores, access rules and everyone's signed-in computers.
 - **MCP server for AI assistants.** Assistants such as Claude Code can list, read and send requests and propose changes through `/mcp`, using personal tokens that act as the person who made them. Sends only reach hosts the workspace names, and secrets are masked.
 
 ## Quick start (development)
@@ -49,9 +52,12 @@ Configuration, Git hosts, sign-in, the MCP server and known limits are documente
 | Server: a front process for sign-in and routing, and one sandboxed Bruno process per person whose IPC is relayed to the browser over a WebSocket | [`packages/bruno-web-server`](packages/bruno-web-server) |
 | Git workspaces, GitHub and GitLab, OpenAPI storage, MCP, sign-in | [`packages/bruno-web-server/src/narado`](packages/bruno-web-server/src/narado) |
 | Browser bridge and narado's interface additions | [`packages/bruno-app/src/web-bridge.js`](packages/bruno-app/src/web-bridge.js), [`packages/bruno-app/src/components/Narado`](packages/bruno-app/src/components/Narado) |
+| narado desktop: narado's worker in Electron's main process, and its client for the team's server | [`packages/bruno-web-server/src/desktop.js`](packages/bruno-web-server/src/desktop.js), [`src/narado/desktop-front.js`](packages/bruno-web-server/src/narado/desktop-front.js) |
+| Admin and setup pages, settings | [`src/narado/admin.js`](packages/bruno-web-server/src/narado/admin.js), [`src/narado/settings.js`](packages/bruno-web-server/src/narado/settings.js) |
+| The `narado` command | [`packages/bruno-web-server/bin/narado.js`](packages/bruno-web-server/bin/narado.js), [`src/narado/cli.js`](packages/bruno-web-server/src/narado/cli.js) |
 | Logo, colours, icons and themes | [`branding`](branding) |
 
-The Electron desktop app in this repository is unchanged and is still Bruno.
+Bruno's own desktop app (`packages/bruno-electron` without `NARADO_DESKTOP=1`) is kept as Bruno, so upstream changes merge easily.
 
 ## Status
 
@@ -59,10 +65,70 @@ narado is in active development and not production-ready yet.
 
 | | |
 |---|---|
-| Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · a separate, sandboxed Bruno process per person · secrets from Vault, AWS, Google Cloud and Azure · request safety (block list and per-repo host allowlists) · each person's own Git account (GitHub App, GitLab OAuth) · an API catalogue across repositories, including code repositories carrying their API, cloned with only their collection folders · one-click Sync of a personal copy into your workspace · branding |
-| Next | A desktop app for Windows and Mac (which also reaches services on your own machine), and one container or OS user per person's worker. |
+| Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · a separate, sandboxed Bruno process per person · secrets from Vault, AWS, Google Cloud and Azure, bound to collections through their environments · request safety (block list and per-repo host allowlists) · each person's own Git account (GitHub App, GitLab OAuth) · an API catalogue across repositories, including code repositories carrying their API, cloned with only their collection folders · one-click Sync of a personal copy into your workspace · setup and admin pages · narado desktop phases D1–D3 (runs from source: sign-in through the server, local request rules, offline) · the `narado` command · OAuth 2 sign-ins to APIs through narado's own callback · branding |
+| Next | Desktop D4 (installers, signing, auto-update) and D5 (a local MCP server, tests on all three systems); one container or OS user per person's worker. |
 
 GitHub and GitLab have both been tried end to end against GitHub.com and GitLab.com: connecting an account, opening a repository (light clones included), editing, and opening a pull or merge request as the person.
+
+## Working on narado
+
+Welcome! A few things that will save you time.
+
+**Where things live**
+
+- This repository, branch **`web`** (the default branch). `main` is Bruno's code; Bruno itself is the `upstream` remote (`https://github.com/usebruno/bruno.git`) for merging its changes.
+- Designs, decisions and progress notes are in the design repository, [`biprakanta/api-client-design`](https://github.com/biprakanta/api-client-design): `docs/design.md` for the server and `docs/desktop.md` for the desktop app. Read those before larger changes; they say what was decided and why.
+- Brand rules (names, colours, type, where the veena may appear) are in [`branding/README.md`](branding/README.md). The veena is brand-only: it never stands in for a feature icon.
+
+**Set up**
+
+```bash
+nvm use
+```
+
+```bash
+npm run setup
+```
+
+That's Node.js 24 (from `.nvmrc`) and the dependencies for all packages. If Electron's binary download stalls (it comes from GitHub), install it through a mirror:
+
+```bash
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electron/install.js
+```
+
+**Run it**
+
+- **Single user, no sign-in:** see Quick start above. Runs on `127.0.0.1` with your own GitHub token.
+- **With sign-in and secrets, like a team:** start the Keycloak realm in [`packages/bruno-web-server/dev/keycloak`](packages/bruno-web-server/dev/keycloak) (test users `alice` and `bob`) and, for secrets, the Vault in [`dev/vault`](packages/bruno-web-server/dev/vault). Then start the server with the `NARADO_OIDC_*` settings from the Keycloak README. On first start, open the setup link the server prints to name yourself an admin.
+- **The desktop app,** from source:
+  ```bash
+  NARADO_SERVER_URL=http://localhost:3000 npm run dev:narado-desktop
+  ```
+- **The command:**
+  ```bash
+  node packages/bruno-web-server/bin/narado.js --help
+  ```
+
+Keep your own credentials (GitHub App or GitLab application secrets, tokens) in a file outside the repository, such as `~/.narado-dev.env` (mode 600), and load it with `set -a; . ~/.narado-dev.env; set +a`. Nothing secret goes into commits.
+
+**Test**
+
+```bash
+cd packages/bruno-web-server && npm test
+```
+
+```bash
+cd packages/bruno-app && npx jest src/components/Narado src/components/RequestTabs
+```
+
+The server tests take about 15 seconds and need no network. For changes you can see, also try them in the running app: the tests use fakes, and some bugs only show up for real.
+
+**Making changes**
+
+- Branch from `web`, and open a pull request against `web`. Don't force-push shared branches.
+- Keep upstream Bruno code changes small and marked with a `narado` comment, so merges from Bruno stay easy. narado's own code lives under `packages/bruno-web-server/src/narado` and `packages/bruno-app/src/components/Narado`.
+- Write commit messages, comments and interface text in plain, short sentences that say what happens and why.
+- Security-sensitive areas, where changes need a second look: `src/narado/requests/` (what requests may reach), `src/narado/secrets/` (who reads which secret), `src/narado/devices.js` and `auth.js` (sign-in), and `src/narado/git-accounts.js` (people's Git tokens).
 
 ## Built on Bruno
 
