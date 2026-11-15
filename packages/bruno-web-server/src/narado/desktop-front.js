@@ -404,6 +404,77 @@ class RemoteFront {
     return this.pendingSignIn && this.pendingSignIn.url ? this.pendingSignIn.url : null;
   }
 
+  /* ---------------------------------------------------------------- updates */
+
+  /** GET an update file from the server, as this device (null when there's no such file). */
+  async updateFile(platform, name) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const token = await this.accessToken();
+      let res;
+      try {
+        res = await this.fetch(`${this.server}/desktop/api/updates/${platform}/${encodeURIComponent(name)}`, { headers: { authorization: `Bearer ${token}` } });
+      } catch {
+        this.setOnline(false);
+        throw new NeedsConnection(this.server);
+      }
+      this.setOnline(true);
+      if (res.status === 401 && attempt === 0) {
+        this.access = null;
+        continue;
+      }
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`narado server answered ${res.status}`);
+      return res;
+    }
+    throw new NeedsSignIn();
+  }
+
+  /**
+   * The newest narado desktop the server offers for this system and chip:
+   * { version, notes, file: { name, size, sha512 } } or null.
+   */
+  async latestUpdate({ platform, arch, kind }) {
+    const res = await this.updateFile(platform, 'latest.json');
+    if (!res) return null;
+    const manifest = await res.json().catch(() => null);
+    if (!manifest || !manifest.version || !Array.isArray(manifest.files)) return null;
+    const file = manifest.files.find((f) => f.arch === arch && (!kind || f.kind === kind)) || manifest.files.find((f) => f.arch === arch);
+    return file ? { version: String(manifest.version), notes: manifest.notes || null, file } : null;
+  }
+
+  /** Download an update to `dir`, checking its SHA-512; returns the file's path. */
+  async downloadUpdate(platform, file, dir, onProgress = () => {}) {
+    const crypto = require('node:crypto');
+    if (!/^[A-Za-z0-9._-]+$/.test(file.name)) throw new Error('Unexpected update file name');
+    const res = await this.updateFile(platform, file.name);
+    if (!res) throw new Error('The update is no longer on the server');
+    fs.mkdirSync(dir, { recursive: true });
+    const dest = path.join(dir, file.name);
+    const partial = `${dest}.partial`;
+    const hash = crypto.createHash('sha512');
+    const out = fs.createWriteStream(partial);
+    let got = 0;
+    const reader = res.body.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        hash.update(value);
+        got += value.length;
+        if (!out.write(Buffer.from(value))) await new Promise((r) => out.once('drain', r));
+        onProgress(file.size ? got / file.size : null);
+      }
+    } finally {
+      await new Promise((r) => out.end(r));
+    }
+    if (hash.digest('base64') !== file.sha512) {
+      fs.rmSync(partial, { force: true });
+      throw new Error("The downloaded update doesn't match its checksum; nothing was installed");
+    }
+    fs.renameSync(partial, dest);
+    return dest;
+  }
+
   /** Where to connect a Git account, in the system browser (the account stays on the server). */
   connectUrl(hostId) {
     if (!this.server) throw new NeedsSignIn();

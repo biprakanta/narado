@@ -38,7 +38,14 @@ if (NARADO_DESKTOP) {
   // Windows groups taskbar buttons by this ID; without it they show as Electron.
   if (os.platform() === 'win32') app.setAppUserModelId('co.narado.desktop');
 }
-const NARADO_ICON = path.join(__dirname, '../../../branding/icons/app-icon-512.png');
+// narado's own files: bundled into the packaged app (scripts/build-narado-desktop.js puts them
+// in ../narado), or read from the repository when run from source.
+const NARADO_BUNDLE = path.join(__dirname, '../narado');
+const naradoFile = (bundled, fromSource) => {
+  const p = path.join(NARADO_BUNDLE, bundled);
+  return require('fs').existsSync(p) ? p : path.join(__dirname, fromSource);
+};
+const NARADO_ICON = naradoFile('assets/app-icon-512.png', '../../../branding/icons/app-icon-512.png');
 
 // Command line switches
 if (os.platform() === 'linux') {
@@ -605,7 +612,7 @@ app.on('ready', async () => {
   // as they run in a person's worker on the server.
   if (NARADO_DESKTOP) {
     try {
-      await require('../../bruno-web-server/src/desktop').start({ app, ipcMain, mainWindow, collectionWatcher, openCollection });
+      await require(naradoFile('desktop.js', '../../bruno-web-server/src/desktop.js')).start({ app, ipcMain, mainWindow, collectionWatcher, openCollection });
     } catch (err) {
       console.error('[narado] desktop start failed:', err);
     }

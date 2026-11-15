@@ -4,12 +4,29 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const ART = path.resolve(__dirname, '../../../../branding/icons/narado-illustration-256.png');
+// Bundled into the packaged app, or from the repository when run from source.
+const ART = [path.resolve(__dirname, '../../narado/assets/narado-illustration-256.png'), path.resolve(__dirname, '../../../../branding/icons/narado-illustration-256.png')].find((p) => fs.existsSync(p)) || '';
 
-module.exports = function aboutNarado({ version }) {
+/** narado's and Bruno's versions: from the packaged app's version.json, or the repository. */
+const versions = () => {
+  try {
+    return JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../narado/version.json'), 'utf8'));
+  } catch {
+    try {
+      return { narado: require('../../../bruno-web-server/package.json').version, bruno: require('../../package.json').version };
+    } catch {
+      return {};
+    }
+  }
+};
+
+module.exports = function aboutNarado({ version, naradoVersion } = {}) {
+  const v = versions();
+  naradoVersion = naradoVersion || v.narado;
+  version = v.bruno || version;
   let art = '';
   try {
-    art = `data:image/png;base64,${fs.readFileSync(ART).toString('base64')}`;
+    if (ART) art = `data:image/png;base64,${fs.readFileSync(ART).toString('base64')}`;
   } catch {}
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>About narado</title>
 <style>
@@ -25,6 +42,7 @@ h1{margin:4px 0 0;font:700 24px "Space Grotesk",Inter,ui-sans-serif,sans-serif;c
 ${art ? `<div class="art"><img src="${art}" alt=""></div>` : ''}
 <h1>narado</h1>
 <div class="tag">API collections in Git, for your whole team.</div>
+${naradoVersion ? `<div class="credit" style="margin-top:0">Version ${naradoVersion}</div>` : ''}
 <div class="credit">Built on Bruno ${version}, the open-source API client (MIT licence).</div>
 </body></html>`;
 };

@@ -41,15 +41,16 @@ const startServer = async ({ env = {} } = {}) => {
     if (method === 'secrets.resolve') return { values: Object.fromEntries(args[0].map((r) => [r, `value-of-${r}`])), errors: {} };
     return { method };
   };
+  const dataDir = tmp();
   desktop = createDesktopAuth({
     auth: fakeAuth(publicUrl, users),
-    dataDir: tmp(),
+    dataDir,
     rpc,
     hosts: () => [{ id: 'github', type: 'github' }, { id: 'gl', type: 'gitlab', url: 'https://git.example.com' }],
     env,
     log
   });
-  return { server, publicUrl, desktop, calls, logs, close: () => new Promise((r) => server.close(r)) };
+  return { server, publicUrl, desktop, calls, logs, dataDir, close: () => new Promise((r) => server.close(r)) };
 };
 
 /** Plays the person in the system browser: signed in as `who`, approves (or cancels). */
@@ -297,4 +298,40 @@ test('device store: refresh tokens expire when unused', () => {
   assert.equal(store.list('alice')[0].name, 'old laptop');
   assert.throws(() => store.refresh(refreshToken, t0 + 31 * 24 * 3600e3), /expired/);
   assert.deepEqual(store.list('alice'), []);
+});
+
+test('updates: the server offers installers to signed-in devices; the app checks the checksum', async () => {
+  const srv = await startServer({ env: { NARADO_DESKTOP_MIN_VERSION: '0.1.0' } });
+  try {
+    const dir = path.join(srv.dataDir, 'desktop-updates', 'mac');
+    fs.mkdirSync(dir, { recursive: true });
+    const installer = Buffer.from('pretend this is a disk image');
+    const sha512 = crypto.createHash('sha512').update(installer).digest('base64');
+    fs.writeFileSync(path.join(dir, 'narado_0.2.0_arm64_mac.dmg'), installer);
+    fs.writeFileSync(path.join(dir, 'narado_0.2.0_x64_mac.dmg'), Buffer.from('intel'));
+    fs.writeFileSync(path.join(dir, 'latest.json'), JSON.stringify({ version: '0.2.0', files: [{ name: 'narado_0.2.0_x64_mac.dmg', arch: 'x64', kind: 'dmg', size: 5, sha512: 'x' }, { name: 'narado_0.2.0_arm64_mac.dmg', arch: 'arm64', kind: 'dmg', size: installer.length, sha512 }] }));
+
+    // Without a device session: nothing.
+    assert.equal((await fetch(`${srv.publicUrl}/desktop/api/updates/mac/latest.json`)).status, 401);
+
+    const front = new RemoteFront({ dataDir: tmp(), safeStorage: fakeSafeStorage(), openExternal: browserAs('alice').open, log: quiet });
+    await front.signIn(srv.publicUrl);
+    assert.deepEqual(front.session.server, { version: require('../package.json').version, minDesktopVersion: '0.1.0' });
+
+    const latest = await front.latestUpdate({ platform: 'mac', arch: 'arm64', kind: 'dmg' });
+    assert.equal(latest.version, '0.2.0');
+    assert.equal(latest.file.name, 'narado_0.2.0_arm64_mac.dmg');
+    const dest = tmp();
+    const got = await front.downloadUpdate('mac', latest.file, dest);
+    assert.deepEqual(fs.readFileSync(got), installer);
+
+    // A file that doesn't match its checksum is refused and not kept.
+    await assert.rejects(front.downloadUpdate('mac', { ...latest.file, sha512: 'wrong' }, dest), /doesn't match its checksum/);
+    assert.deepEqual(fs.readdirSync(dest), ['narado_0.2.0_arm64_mac.dmg']);
+    // Only files in the updates folder, by plain name.
+    await assert.rejects(front.downloadUpdate('mac', { name: '../../narado.db', sha512: 'x' }, dest), /Unexpected update file name/);
+    assert.equal(await front.latestUpdate({ platform: 'linux', arch: 'x64' }), null);
+  } finally {
+    await srv.close();
+  }
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { IconCloudDownload, IconCloudOff, IconCompass, IconDeviceLaptop, IconDots, IconGitBranch, IconKey, IconLock, IconLogin, IconLogout, IconRefresh, IconSettings } from '@tabler/icons';
+import { IconCloudDownload, IconCloudOff, IconCompass, IconDeviceLaptop, IconDots, IconGitBranch, IconKey, IconLock, IconLogin, IconLogout, IconRefresh, IconSettings, IconDownload, IconAlertTriangle } from '@tabler/icons';
 import toast from 'react-hot-toast';
 import SidebarSection from 'components/Sidebar/SidebarSection';
 import ActionIcon from 'ui/ActionIcon';
@@ -251,6 +251,38 @@ const GitSection = () => {
       )}
       <SidebarSection id="narado-git" title="Git" icon={IconGitBranch} actions={actions} className="narado-git-section">
         <GitSectionStyles className="flex flex-col pb-1" data-testid="narado-workspaces">
+          {desk && desk.update && desk.update.required && (
+            <div className="narado-offline" role="alert" data-testid="narado-update-required">
+              <IconAlertTriangle size={14} stroke={1.5} aria-hidden="true" />
+              <span>{serverHost} needs narado {desk.update.required} or newer</span>
+            </div>
+          )}
+          {desk && desk.update && desk.update.available && (
+            <button
+              type="button"
+              className="narado-update"
+              disabled={desk.update.state !== 'idle'}
+              onClick={async () => {
+                if (!window.confirm(`Update to narado ${desk.update.available.version}? narado downloads it from ${serverHost}, opens the installer and quits.`)) return;
+                try {
+                  await desktopApi.installUpdate();
+                } catch (err) {
+                  toast.error(errorText(err));
+                }
+              }}
+              title={desk.update.available.notes || `narado ${desk.update.available.version}, from ${serverHost}`}
+              data-testid="narado-update"
+            >
+              <IconDownload size={14} stroke={1.5} aria-hidden="true" />
+              <span>
+                {desk.update.state === 'downloading'
+                  ? `Downloading narado ${desk.update.available.version}… ${Math.round((desk.update.progress || 0) * 100)}%`
+                  : desk.update.state === 'installing'
+                    ? 'Opening the installer…'
+                    : `narado ${desk.update.available.version} is available · Update`}
+              </span>
+            </button>
+          )}
           {desk && desk.signedIn && desk.online === false && (
             <div
               className="narado-offline"

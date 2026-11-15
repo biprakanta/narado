@@ -104,6 +104,7 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electr
   ```bash
   NARADO_SERVER_URL=http://localhost:3000 npm run dev:narado-desktop
   ```
+- **Desktop installers:** `npm run build:narado-desktop` (add `--dir` for just the app folder). They land in `packages/bruno-electron/out-narado/`, unsigned unless you set up signing; the server README's "narado desktop" section covers options, signing and serving updates.
 - **The command:**
   ```bash
   node packages/bruno-web-server/bin/narado.js --help

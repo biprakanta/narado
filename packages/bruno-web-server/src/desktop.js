@@ -26,6 +26,16 @@ const { SecretsService } = require('./narado/secrets');
 const { Identity } = require('./narado/secrets/identity');
 const { SecretRefs, REVEAL_CHANNEL, SEND_CHANNELS, collectionPathIn } = require('./narado/secrets/worker-side');
 const { DesktopGuard } = require('./narado/requests/desktop-guard');
+const { compareVersions } = require('./narado/versions');
+
+/** This copy of narado's version: version.json beside the bundle (packaged), or the package. */
+const naradoVersion = () => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, 'version.json'), 'utf8')).narado;
+  } catch {
+    return require('../package.json').version;
+  }
+};
 const { installSendRules } = require('./narado/requests/guard');
 const { AllowlistReader } = require('./narado/requests/allowlist');
 const { RemoteFront, NeedsSignIn, normaliseServer } = require('./narado/desktop-front');
@@ -299,7 +309,9 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
   });
 
   // Signing this computer in to the team's narado server (desktop phase D2).
-  const status = () => (remote.server ? remote.status() : { mode: 'local', server: null, signedIn: false, user: null, device: null, policy: null });
+  // Updates (desktop phase D4): the team's server offers installers; see updater below.
+  let update = { current: naradoVersion(), available: null, required: null, state: 'idle', progress: null, error: null };
+  const status = () => ({ ...(remote.server ? remote.status() : { mode: 'local', server: null, signedIn: false, user: null, device: null, policy: null }), update });
   remote.onChange(() => {
     if (!(mainWindow.isDestroyed && mainWindow.isDestroyed())) mainWindow.webContents.send('narado:desktop-status', status());
   });
@@ -308,6 +320,7 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
     await remote.signIn(server);
     useServerHosts(remote.session && remote.session.hosts);
     useServerOauth2Callback();
+    checkForUpdate().catch(() => {});
     if (!(mainWindow.isDestroyed && mainWindow.isDestroyed()) && mainWindow.focus) mainWindow.focus();
     return status();
   });
@@ -345,6 +358,70 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
     return ok;
   });
 
+  /* ---- updates from the team's server ---- */
+  const pushStatus = () => {
+    if (!(mainWindow.isDestroyed && mainWindow.isDestroyed())) mainWindow.webContents.send('narado:desktop-status', status());
+  };
+  const platformDir = { darwin: 'mac', win32: 'win', linux: 'linux' }[process.platform];
+  // Which installer this copy updates with: an AppImage replaces itself, a .deb install uses .deb.
+  const kind = { mac: 'dmg', win: 'exe', linux: process.env.APPIMAGE ? 'AppImage' : 'deb' }[platformDir];
+  const checkForUpdate = async () => {
+    if (!remote.signedIn || !platformDir) return update;
+    const minimum = remote.session && remote.session.server && remote.session.server.minDesktopVersion;
+    try {
+      const latest = await remote.latestUpdate({ platform: platformDir, arch: process.arch, kind });
+      update = {
+        ...update,
+        available: latest && compareVersions(latest.version, update.current) > 0 ? latest : null,
+        required: minimum && compareVersions(update.current, minimum) < 0 ? minimum : null,
+        error: null
+      };
+    } catch (err) {
+      update = { ...update, error: err.message };
+    }
+    pushStatus();
+    return update;
+  };
+  ipcMain.handle('narado:desktop-update-check', async () => checkForUpdate());
+  ipcMain.handle('narado:desktop-update-install', async () => {
+    if (!update.available) await checkForUpdate();
+    const next = update.available;
+    if (!next) throw new Error('narado is up to date');
+    update = { ...update, state: 'downloading', progress: 0, error: null };
+    pushStatus();
+    try {
+      let last = 0;
+      const file = await remote.downloadUpdate(platformDir, next.file, path.join(app.getPath('userData'), 'updates'), (p) => {
+        if (p !== null && p - last >= 0.02) {
+          last = p;
+          update = { ...update, progress: p };
+          pushStatus();
+        }
+      });
+      update = { ...update, state: 'installing', progress: 1 };
+      pushStatus();
+      log.log(`[narado] desktop: installing narado ${next.version} from ${path.basename(file)}`);
+      // Hand over to the installer: macOS opens the disk image to drag narado in; Windows
+      // runs the installer; Linux opens the package (or swaps in the new AppImage).
+      if (kind === 'AppImage' && process.env.APPIMAGE) {
+        fs.chmodSync(file, 0o755);
+        fs.renameSync(file, process.env.APPIMAGE);
+        app.relaunch();
+      } else {
+        const err = await shell.openPath(file);
+        if (err) throw new Error(err);
+      }
+      setTimeout(() => app.quit(), 1500);
+      return { installing: next.version };
+    } catch (err) {
+      update = { ...update, state: 'idle', progress: null, error: err.message };
+      pushStatus();
+      throw err;
+    }
+  });
+  const updateTimer = setInterval(() => checkForUpdate().catch(() => {}), 6 * 60 * 60 * 1000);
+  if (updateTimer.unref) updateTimer.unref();
+
   // MCP on the desktop (a local MCP server for assistants on this computer) is phase D5.
   ipcMain.handle('narado:mcp-info', async () => ({ available: false, note: 'MCP comes to narado desktop in a later version.' }));
   ipcMain.handle('narado:mcp-tokens', async () => []);
@@ -376,7 +453,10 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
     if (remote.signedIn) {
       remote
         .loadSession()
-        .then((s) => useServerHosts(s.hosts))
+        .then((s) => {
+          useServerHosts(s.hosts);
+          return checkForUpdate();
+        })
         .catch((err) => log.warn(`[narado] desktop: ${err.message}`));
     }
   } else {

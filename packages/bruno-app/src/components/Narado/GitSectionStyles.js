@@ -74,6 +74,26 @@ const GitSectionStyles = styled.div`
     background: ${(props) => props.theme.requestTabs?.bg || 'transparent'};
     cursor: default;
   }
+
+  .narado-update {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 8px 4px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    text-align: left;
+    color: ${(props) => props.theme.brand || '#FB9B1A'};
+    background: ${(props) => props.theme.requestTabs?.bg || 'transparent'};
+    border: 0;
+    cursor: pointer;
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.85;
+    }
+  }
 `;
 
 export default GitSectionStyles;

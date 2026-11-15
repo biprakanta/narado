@@ -557,6 +557,21 @@ ${Object.keys(STORE_TYPES)
 ${cards.map((x) => x.dialog).join('\n')}${addStoreDialog()}${stores.length ? rulesCard(stores, access, checked) : ''}</section>`;
   };
 
+  /** What <data dir>/desktop-updates/ offers, per system. */
+  const desktopUpdatesList = () => {
+    const rows = ['mac', 'win', 'linux'].map((platform) => {
+      try {
+        const m = JSON.parse(fs.readFileSync(path.join(dataDir, 'desktop-updates', platform, 'latest.json'), 'utf8'));
+        return `<div class="item"><div class="grow">${{ mac: 'macOS', win: 'Windows', linux: 'Linux' }[platform]} · narado ${esc(m.version)}<div class="sub">${esc((m.files || []).map((f) => `${f.arch} ${f.kind}`).join(', '))}${m.publishedAt ? ` · published ${esc(when(Date.parse(m.publishedAt)))}` : ''}</div></div></div>`;
+      } catch {
+        return '';
+      }
+    });
+    return rows.some(Boolean)
+      ? `<div class="list">${rows.join('')}</div>`
+      : `<p class="note">None yet. Build them with <code>npm run build:narado-desktop</code> and copy <code>packages/bruno-electron/out-narado/updates/&lt;mac|win|linux&gt;/</code> to <code>&lt;data dir&gt;/desktop-updates/&lt;mac|win|linux&gt;/</code> here; people's narado desktop then offers the update.</p>`;
+  };
+
   const adminPage = (who, notice) => {
     const v = (name) => env[name];
     const src = (name) => settings.source(name, realEnv);
@@ -609,7 +624,10 @@ ${secretsSection(notice && notice.checked)}
 <div class="card"><form method="post" action="/admin/desktop"><label><span>Sends allowed${envTag('NARADO_DESKTOP_SEND')}</span>
 <select name="NARADO_DESKTOP_SEND"${src('NARADO_DESKTOP_SEND') === 'env' ? ' disabled' : ''}>
 ${[['any', 'Private and local addresses, and public hosts on the repo’s allowlist (default)'], ['private-only', 'Private and local addresses only'], ['allowlist-only', 'Only hosts on a repo’s allowlist, private ones included']].map(([val, text]) => `<option value="${val}"${(v('NARADO_DESKTOP_SEND') || 'any') === val ? ' selected' : ''}>${esc(text)}</option>`).join('')}
-</select></label><div class="actions"><button type="submit">Save</button></div></form></div></section>
+</select></label>
+${field({ name: 'NARADO_DESKTOP_MIN_VERSION', label: 'Oldest narado desktop this server works with (older copies are asked to update)', value: v('NARADO_DESKTOP_MIN_VERSION'), source: src('NARADO_DESKTOP_MIN_VERSION'), placeholder: '0.1.0' })}
+<div class="actions"><button type="submit">Save</button></div></form>
+<h4>Installers on this server</h4>${desktopUpdatesList()}</div></section>
 
 ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="lead">Computers using narado desktop, everyone's. Signing one out stops it at its next contact with narado.</p>
 <div class="card">${devices.length ? `<div class="list">${devices
@@ -781,7 +799,11 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
       if (p === '/admin/desktop') {
         const value = form.get('NARADO_DESKTOP_SEND');
         if (!['any', 'private-only', 'allowlist-only'].includes(value)) throw new Error('Unknown setting');
-        settings.set({ NARADO_DESKTOP_SEND: value === 'any' ? null : value }, who.email || who.name);
+        const minimum = String(form.get('NARADO_DESKTOP_MIN_VERSION') || '').trim();
+        if (minimum && !/^\d+\.\d+\.\d+$/.test(minimum)) throw new Error('The oldest version looks like 0.1.0');
+        const values = { NARADO_DESKTOP_SEND: value === 'any' ? null : value };
+        if (settings.source('NARADO_DESKTOP_MIN_VERSION', realEnv) !== 'env') values.NARADO_DESKTOP_MIN_VERSION = minimum || null;
+        settings.set(values, who.email || who.name);
         log.log(`[narado] admin: ${who.name} set desktop sends to ${value}`);
         return savedAndRestart(res, '/admin?saved=desktop'), true;
       }

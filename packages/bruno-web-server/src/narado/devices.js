@@ -22,8 +22,11 @@
  *   POST /desktop/api/call      { method, args }: git.status, git.token, secrets.*, devices.*
  *   POST /desktop/api/audit     { events: [{ at, method, host, repo, status }] }
  *   POST /desktop/api/logout    signs this device out
+ *   GET  /desktop/updates/<mac|win|linux>/latest.json, and the files it names (desktop phase
+ *        D4): installers an admin put in <data dir>/desktop-updates/<platform>/
  */
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { desktopApprovePage, messagePage } = require('./pages');
@@ -41,6 +44,10 @@ const APPROVE_TTL_MS = 10 * 60 * 1000;
 const CODE_TTL_MS = 60 * 1000;
 const LOOPBACK = /^http:\/\/(127\.0\.0\.1|\[::1\]):(\d{2,5})\/callback$/;
 const SEND_POLICIES = ['any', 'private-only', 'allowlist-only'];
+const UPDATE_PLATFORMS = ['mac', 'win', 'linux'];
+const SERVER_VERSION = require('../../package.json').version;
+
+const { compareVersions } = require('./versions');
 
 /** The calls a desktop may make, as its person (the same ones a worker makes, minus MCP tokens). */
 const DESKTOP_CALLS = new Set(['git.status', 'git.token', 'git.disconnect', 'secrets.stores', 'secrets.resolve', 'secrets.list', 'secrets.check', 'secrets.reveal', 'devices.list', 'devices.revoke']);
@@ -210,6 +217,9 @@ const readJson = async (req) => {
 const createDesktopAuth = ({ auth, dataDir, rpc, hosts = () => [], isAdmin = () => false, env = process.env, log = console }) => {
   const devices = new DeviceStore({ dataDir });
   const access = new AccessTokens();
+  const updatesDir = path.join(dataDir, 'desktop-updates');
+  // The oldest desktop version this server works with (older ones are told to update).
+  const minDesktop = /^\d+\.\d+\.\d+/.test(env.NARADO_DESKTOP_MIN_VERSION || '') ? env.NARADO_DESKTOP_MIN_VERSION : null;
   const approvals = new Map(); // request id -> { userId, redirectUri, state, challenge, deviceName, platform, at }
   const codes = new Map(); // code hash -> { userId, redirectUri, challenge, deviceName, platform, at }
   const sendPolicy = SEND_POLICIES.includes(env.NARADO_DESKTOP_SEND) ? env.NARADO_DESKTOP_SEND : 'any';
@@ -401,10 +411,24 @@ const createDesktopAuth = ({ auth, dataDir, rpc, hosts = () => [], isAdmin = () 
               device: DeviceStore.view(who.device),
               policy: { send: sendPolicy },
               hosts: hosts(),
-              isAdmin: !!isAdmin(who.user)
+              isAdmin: !!isAdmin(who.user),
+              server: { version: SERVER_VERSION, minDesktopVersion: minDesktop }
             }),
             true
           );
+        }
+        // Updates: the installers an admin put in <data dir>/desktop-updates/<platform>/.
+        const up = /^\/desktop\/api\/updates\/(mac|win|linux)\/([A-Za-z0-9._-]+)$/.exec(p);
+        if (up && req.method === 'GET') {
+          const [, platform, name] = up;
+          const file = path.join(updatesDir, platform, name);
+          if (!UPDATE_PLATFORMS.includes(platform) || name.startsWith('.') || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+            return json(res, 404, { error: 'not_found', message: name === 'latest.json' ? 'No narado desktop updates on this server yet' : 'No such file' }), true;
+          }
+          if (name !== 'latest.json') log.log(`[narado] desktop update ${platform}/${name} for ${who.user.name} on "${who.device.name}"`);
+          res.writeHead(200, { 'content-type': name.endsWith('.json') ? 'application/json' : 'application/octet-stream', 'content-length': fs.statSync(file).size, 'cache-control': 'no-store' });
+          fs.createReadStream(file).pipe(res);
+          return true;
         }
         if (p === '/desktop/api/call' && req.method === 'POST') {
           const body = await readJson(req);
@@ -436,4 +460,4 @@ const createDesktopAuth = ({ auth, dataDir, rpc, hosts = () => [], isAdmin = () 
   return { handle, deviceCalls, devices, access, sendPolicy, adminDevices, adminRevoke };
 };
 
-module.exports = { createDesktopAuth, DeviceStore, AccessTokens, DesktopError, DESKTOP_CALLS, LOOPBACK };
+module.exports = { createDesktopAuth, DeviceStore, AccessTokens, DesktopError, DESKTOP_CALLS, LOOPBACK, compareVersions, SERVER_VERSION };

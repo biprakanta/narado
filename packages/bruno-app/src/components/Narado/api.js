@@ -48,6 +48,8 @@ export const desktopApi = {
   signIn: (server) => invoke('narado:desktop-sign-in', { server }),
   signInLink: () => invoke('narado:desktop-sign-in-link'),
   openAdmin: () => invoke('narado:desktop-open-admin'),
+  checkUpdate: () => invoke('narado:desktop-update-check'),
+  installUpdate: () => invoke('narado:desktop-update-install'),
   signOut: () => invoke('narado:desktop-sign-out'),
   /** Status changes pushed by the app (signed in, signed out, session refreshed). */
   onStatus: (fn) => (window.ipcRenderer && window.ipcRenderer.on ? window.ipcRenderer.on('narado:desktop-status', fn) : () => {})
