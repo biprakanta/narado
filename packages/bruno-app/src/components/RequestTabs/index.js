@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import classnames from 'classnames';
-import { IconChevronRight, IconChevronLeft } from '@tabler/icons';
+import { IconChevronRight, IconChevronLeft, IconLayoutSidebar } from '@tabler/icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { focusTab, reorderTabs } from 'providers/ReduxStore/slices/tabs';
 import { revealTabInSidebar } from 'providers/ReduxStore/slices/collections/actions';
@@ -13,8 +13,13 @@ import CreateTransientRequest from 'components/CreateTransientRequest';
 import ActionIcon from 'ui/ActionIcon/index';
 import { selectCollectionByUid } from 'src/selectors/collections';
 import { selectActiveTab, selectActiveTabUid, makeSelectTabsForCollection } from 'src/selectors/tab';
+import { setVerticalTabs } from './tabsLayout';
 
-const RequestTabs = () => {
+/**
+ * The collection header and, unless `vertical` (the tabs then list beside the request, in
+ * VerticalTabs), the horizontal strip of open requests.
+ */
+const RequestTabs = ({ vertical = false }) => {
   const dispatch = useDispatch();
   const tabsRef = useRef();
   const scrollContainerRef = useRef();
@@ -130,73 +135,79 @@ const RequestTabs = () => {
               isScratchCollection={isScratchCollection}
             />
           )}
-          <div className="flex items-center gap-2 pl-2" ref={collectionTabsRef}>
-            <div className={classnames('scroll-chevrons', { hidden: !showChevrons })}>
-              <ActionIcon size="lg" onClick={leftSlide} aria-label="Left Chevron" style={{ marginBottom: '3px' }}>
-                <IconChevronLeft size={18} strokeWidth={1.5} />
-              </ActionIcon>
-            </div>
-            {/* Moved to post mvp */}
-            {/* <li className="select-none new-tab mr-1" onClick={createNewTab}>
+          {!vertical && (
+            <div className="flex items-center gap-2 pl-2" ref={collectionTabsRef}>
+              <div className={classnames('scroll-chevrons', { hidden: !showChevrons })}>
+                <ActionIcon size="lg" onClick={leftSlide} aria-label="Left Chevron" style={{ marginBottom: '3px' }}>
+                  <IconChevronLeft size={18} strokeWidth={1.5} />
+                </ActionIcon>
+              </div>
+              {/* Moved to post mvp */}
+              {/* <li className="select-none new-tab mr-1" onClick={createNewTab}>
               <div className="flex items-center home-icon-container">
                 <IconHome2 size={18} strokeWidth={1.5}/>
               </div>
             </li> */}
-            <div className="tabs-scroll-container" style={{ maxWidth: maxTablistWidth }} ref={scrollContainerRef}>
-              <ul role="tablist" ref={tabsRef}>
-                {collectionRequestTabs && collectionRequestTabs.length
-                  ? collectionRequestTabs.map((tab, index) => {
-                      return (
-                        <DraggableTab
-                          key={tab.uid}
-                          id={tab.uid}
-                          index={index}
-                          onMoveTab={(source, target) => {
-                            dispatch(reorderTabs({
-                              sourceUid: source,
-                              targetUid: target
-                            }));
-                          }}
-                          className={getTabClassname(tab)}
-                          active={tab.uid === activeTabUid}
-                          onClick={() => handleClick(tab)}
-                        >
-                          <RequestTab
-                            collectionRequestTabs={collectionRequestTabs}
-                            tabIndex={index}
+              <div className="tabs-scroll-container" style={{ maxWidth: maxTablistWidth }} ref={scrollContainerRef}>
+                <ul role="tablist" ref={tabsRef}>
+                  {collectionRequestTabs && collectionRequestTabs.length
+                    ? collectionRequestTabs.map((tab, index) => {
+                        return (
+                          <DraggableTab
                             key={tab.uid}
-                            tab={tab}
-                            collection={activeCollection}
-                            folderUid={tab.folderUid}
-                            hasOverflow={tabOverflowStates[tab.uid]}
-                            setHasOverflow={createSetHasOverflow(tab.uid)}
-                            dropdownContainerRef={collectionTabsRef}
-                          />
-                        </DraggableTab>
-                      );
-                    })
-                  : null}
-              </ul>
-            </div>
+                            id={tab.uid}
+                            index={index}
+                            onMoveTab={(source, target) => {
+                              dispatch(reorderTabs({
+                                sourceUid: source,
+                                targetUid: target
+                              }));
+                            }}
+                            className={getTabClassname(tab)}
+                            active={tab.uid === activeTabUid}
+                            onClick={() => handleClick(tab)}
+                          >
+                            <RequestTab
+                              collectionRequestTabs={collectionRequestTabs}
+                              tabIndex={index}
+                              key={tab.uid}
+                              tab={tab}
+                              collection={activeCollection}
+                              folderUid={tab.folderUid}
+                              hasOverflow={tabOverflowStates[tab.uid]}
+                              setHasOverflow={createSetHasOverflow(tab.uid)}
+                              dropdownContainerRef={collectionTabsRef}
+                            />
+                          </DraggableTab>
+                        );
+                      })
+                    : null}
+                </ul>
+              </div>
 
-            {activeCollection && (
-              <CreateTransientRequest collectionUid={activeCollection.uid} />
-            )}
+              {activeCollection && (
+                <CreateTransientRequest collectionUid={activeCollection.uid} />
+              )}
 
-            <div className={classnames('scroll-chevrons', { hidden: !showChevrons })}>
-              <ActionIcon size="lg" onClick={rightSlide} aria-label="Right Chevron" style={{ marginBottom: '3px' }}>
-                <IconChevronRight size={18} strokeWidth={1.5} />
+              <ActionIcon label="Show tabs as a vertical list" onClick={() => setVerticalTabs(true)} data-testid="vertical-tabs-on">
+                <IconLayoutSidebar size={16} strokeWidth={1.5} />
               </ActionIcon>
-            </div>
-            {/* Moved to post mvp */}
-            {/* <li className="select-none new-tab choose-request">
+
+              <div className={classnames('scroll-chevrons', { hidden: !showChevrons })}>
+                <ActionIcon size="lg" onClick={rightSlide} aria-label="Right Chevron" style={{ marginBottom: '3px' }}>
+                  <IconChevronRight size={18} strokeWidth={1.5} />
+                </ActionIcon>
+              </div>
+              {/* Moved to post mvp */}
+              {/* <li className="select-none new-tab choose-request">
                 <div className="flex items-center">
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/>
                   </svg>
                 </div>
               </li> */}
-          </div>
+            </div>
+          )}
         </>
       ) : null}
     </StyledWrapper>

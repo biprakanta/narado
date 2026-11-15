@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import classnames from 'classnames';
 import ManageWorkspace from 'components/ManageWorkspace';
 import RequestTabs from 'components/RequestTabs';
+import VerticalTabs from 'components/RequestTabs/VerticalTabs';
+import { useTabsLayout } from 'components/RequestTabs/tabsLayout';
 import RequestTabPanel from 'components/RequestTabPanel';
 import AppPreviewKeepAlive from 'components/AppPreviewKeepAlive';
 import AiChatSidebar from 'components/AiChatSidebar';
@@ -44,6 +46,7 @@ const TransientRequestModalsRenderer = ({ modals }) => {
 
 export default function Main() {
   const activeTabUid = useSelector((state) => state.tabs.activeTabUid);
+  const tabsLayout = useTabsLayout();
   const isDragging = useSelector((state) => state.app.isDragging);
   const showManageWorkspacePage = useSelector((state) => state.app.showManageWorkspacePage);
   const isConsoleOpen = useSelector((state) => state.logs.isConsoleOpen);
@@ -124,12 +127,15 @@ export default function Main() {
               <ManageWorkspace />
             ) : (
               <>
-                <RequestTabs />
-                <div className="relative flex flex-col flex-grow overflow-hidden">
-                  <TabPanelErrorBoundary key={activeTabUid} tabUid={activeTabUid}>
-                    <RequestTabPanel key={activeTabUid} />
-                  </TabPanelErrorBoundary>
-                  <AppPreviewKeepAlive />
+                <RequestTabs vertical={tabsLayout.vertical} />
+                <div className="flex flex-grow min-h-0 overflow-hidden">
+                  {tabsLayout.vertical && <VerticalTabs />}
+                  <div className="relative flex flex-col flex-grow min-w-0 overflow-hidden">
+                    <TabPanelErrorBoundary key={activeTabUid} tabUid={activeTabUid}>
+                      <RequestTabPanel key={activeTabUid} />
+                    </TabPanelErrorBoundary>
+                    <AppPreviewKeepAlive />
+                  </div>
                 </div>
               </>
             )}
