@@ -5,6 +5,8 @@ import DevicesModal from '../DevicesModal';
 import DesktopSignInModal from '../DesktopSignInModal';
 import { fakeServer, renderWithApp } from './helpers';
 
+// Tooltips need the app's theme provider; the hover text is checked through aria-label.
+jest.mock('components/ToolHint', () => ({ __esModule: true, default: () => null }));
 jest.mock('react-hot-toast', () => ({ __esModule: true, default: Object.assign(jest.fn(), { success: jest.fn(), error: jest.fn() }) }));
 
 describe('Devices', () => {
@@ -26,8 +28,12 @@ describe('Devices', () => {
     });
     renderWithApp(<DevicesModal thisDeviceId="d1" onClose={() => {}} />);
     expect(await screen.findByText(/alice-mbp/)).toBeInTheDocument();
-    expect(screen.getAllByTestId('narado-device-row')[0]).toHaveTextContent('macOS · this computer');
-    expect(screen.getAllByTestId('narado-device-row')[1]).toHaveTextContent('old-pc · Windows');
+    // One compact line each; platform and dates are in the hover details.
+    expect(screen.getAllByTestId('narado-device-row')[0]).toHaveTextContent('this computer');
+    expect(screen.getAllByTestId('narado-device-row')[1]).not.toHaveTextContent('this computer');
+    expect(screen.getAllByTestId('narado-device-info')[0].getAttribute('aria-label')).toMatch(/^macOS\. Signed in .+\. Last used /);
+    expect(screen.getAllByTestId('narado-device-info')[1].getAttribute('aria-label')).toMatch(/^Windows\./);
+    expect(screen.getAllByTestId('narado-device-revoke')[0]).toHaveAttribute('aria-label', 'Sign out this computer');
 
     fireEvent.click(screen.getAllByTestId('narado-device-revoke')[1]);
     await waitFor(() => expect(screen.getAllByTestId('narado-device-row')).toHaveLength(1));

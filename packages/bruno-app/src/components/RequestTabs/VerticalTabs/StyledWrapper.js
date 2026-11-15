@@ -157,27 +157,32 @@ const StyledWrapper = styled.aside`
       padding: 4px 2px;
     }
 
+    li.request-tab {
+      min-height: 32px;
+      opacity: 0.85;
+
+      &:hover,
+      &.active {
+        opacity: 1;
+      }
+    }
+
     .collapsed-tab {
       position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
       width: 100%;
-      min-height: 20px;
-    }
-
-    .collapsed-method {
-      font-size: 0.625rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
+      min-height: 22px;
     }
 
     .collapsed-draft {
       position: absolute;
-      top: -2px;
-      right: 0;
+      top: 0;
+      right: 6px;
       width: 6px;
       height: 6px;
+      box-shadow: 0 0 0 2px ${(props) => props.theme.bg};
       border-radius: 50%;
       background: ${(props) => props.theme.draftColor || '#cc7b1b'};
     }

@@ -2,7 +2,19 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import classnames from 'classnames';
 import { useDispatch, useSelector } from 'react-redux';
 import { get } from 'lodash';
-import { IconAlertTriangle, IconLayoutNavbar, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings } from '@tabler/icons';
+import {
+  IconAlertTriangle,
+  IconBrandGraphql,
+  IconCode,
+  IconLayoutNavbar,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand,
+  IconPlugConnected,
+  IconSettings,
+  IconWorld
+} from '@tabler/icons';
+import ToolHint from 'components/ToolHint';
+import useTooltipId from 'hooks/useTooltipId';
 import { useTheme } from 'providers/Theme';
 import { findItemInCollection, findItemInCollectionByPathname, hasRequestChanges } from 'utils/collections';
 import { focusTab, reorderTabs } from 'providers/ReduxStore/slices/tabs';
@@ -16,41 +28,52 @@ import RequestTab from '../RequestTab';
 import { setVerticalTabs, setVerticalTabsCollapsed, setVerticalTabsWidth, useTabsLayout } from '../tabsLayout';
 import StyledWrapper from './StyledWrapper';
 
-// Short method labels for the collapsed strip (like Chrome's icon-only tabs).
-const SHORT = { GET: 'GET', POST: 'POST', PUT: 'PUT', PATCH: 'PTCH', DELETE: 'DEL', OPTIONS: 'OPT', HEAD: 'HEAD', TRACE: 'TRC', CONNECT: 'CONN' };
 const TAB_NAMES = { 'collection-settings': 'Collection settings', 'folder-settings': 'Folder settings', 'environment-settings': 'Environments', 'collection-runner': 'Runner', 'variables': 'Variables' };
 
-/** One tab in the collapsed strip: a method badge, the name on hover. */
+// Each request type's icon (GraphQL, gRPC and WebSocket as in the New request menu); HTTP is a
+// globe in its method's colour.
+const TYPE_ICONS = { 'graphql-request': [IconBrandGraphql, 'gql', 'GraphQL'], 'grpc-request': [IconCode, 'grpc', 'gRPC'], 'ws-request': [IconPlugConnected, 'ws', 'WebSocket'] };
+
+/** One tab in the collapsed strip: its request type's icon, the name in a tooltip. */
 const CollapsedTab = ({ tab, collection }) => {
   const { theme } = useTheme();
+  const hintId = useTooltipId('vertical-tab');
   let item = collection ? findItemInCollection(collection, tab.uid) : null;
   if (!item && collection && tab.pathname) item = findItemInCollectionByPathname(collection, tab.pathname);
   const isRequest = /request$/.test(tab.type || '') || (item && /request$/.test(item.type || ''));
-  if (!isRequest) {
-    const name = TAB_NAMES[tab.type] || 'Settings';
-    return (
-      <span className="collapsed-tab" title={name} aria-label={name}>
-        <IconSettings size={15} stroke={1.5} />
-      </span>
-    );
+
+  let Icon = IconSettings;
+  let color;
+  let label = TAB_NAMES[tab.type] || 'Settings';
+  let changed = false;
+  if (isRequest && !item) {
+    Icon = IconAlertTriangle;
+    color = theme.colors?.text?.warning || '#d97706';
+    label = 'Not found: this request\'s file was deleted';
+  } else if (isRequest) {
+    changed = hasRequestChanges(item);
+    const typed = TYPE_ICONS[item.type];
+    if (typed) {
+      Icon = typed[0];
+      color = theme.request[typed[1]];
+      label = `${typed[2]} · ${item.name}`;
+    } else {
+      const method = String((item.draft ? get(item, 'draft.request.method') : get(item, 'request.method')) || 'GET').toUpperCase();
+      Icon = IconWorld;
+      color = theme.request.methods[method.toLowerCase()];
+      label = `${method} · ${item.name}`;
+    }
+    if (changed) label += ' (unsaved)';
   }
-  if (!item) {
-    return (
-      <span className="collapsed-tab" title="Not found: this request's file was deleted" aria-label="Not found">
-        <IconAlertTriangle size={15} stroke={1.5} className="text-yellow-600" />
-      </span>
-    );
-  }
-  const method = { 'grpc-request': 'gRPC', 'ws-request': 'WS', 'graphql-request': 'GQL' }[item.type] || String(item.draft ? get(item, 'draft.request.method') : get(item, 'request.method') || '').toUpperCase();
-  const color = { ...theme.request.methods, ...theme.request }[method.toLowerCase()];
-  const changed = hasRequestChanges(item);
+
   return (
-    <span className="collapsed-tab" title={`${method} ${item.name}${changed ? ' (unsaved)' : ''}`} aria-label={`${method} ${item.name}`}>
-      <span className="collapsed-method" style={{ color }}>
-        {SHORT[method] || method.slice(0, 4)}
+    <>
+      <span className="collapsed-tab" id={hintId} aria-label={label}>
+        <Icon size={17} strokeWidth={1.75} style={color ? { color } : undefined} aria-hidden="true" />
+        {changed && <span className="collapsed-draft" aria-hidden="true" />}
       </span>
-      {changed && <span className="collapsed-draft" aria-hidden="true" />}
-    </span>
+      <ToolHint toolhintId={hintId} text={label} place="right" positionStrategy="fixed" />
+    </>
   );
 };
 
@@ -109,7 +132,7 @@ const VerticalTabs = () => {
   return (
     <StyledWrapper
       className={classnames('vertical-tabs', { collapsed })}
-      style={{ width: collapsed ? 56 : width }}
+      style={{ width: collapsed ? 48 : width }}
       ref={containerRef}
       aria-label="Open requests"
       data-testid="vertical-tabs"
