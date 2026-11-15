@@ -453,6 +453,83 @@ ${credsOf(st).length ? `<h4>Credentials</h4><p class="note">Kept encrypted on th
     return { card, dialog: dialog(dlg, `${t.name} · ${st.id}`, storeLogo(st.type, true), body) };
   };
 
+  /* ---------------------------------------------------------- access rules */
+
+  const listFrom = (text) =>
+    String(text || '')
+      .split(/[,\n]/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+  const perPersonOf = (st) => {
+    const running = secrets && secrets.stores && secrets.stores.get(st.id);
+    if (running) return !!running.perPerson;
+    return st.type === 'vault' && (!st.auth || st.auth.method === 'jwt');
+  };
+  const codes = (list) => list.map((x) => `<code>${esc(x)}</code>`).join(', ');
+  /** A rule as a sentence. */
+  const ruleText = (r) => {
+    const who = r.people ? `People matching ${codes(r.people)}` : 'Anyone signed in';
+    const what = r.paths ? codes(r.paths) : 'any secret';
+    const from = r.store ? `<code>${esc(r.store)}</code>` : 'any store';
+    const where = r.repos ? `, from ${codes(r.repos)}` : ', from any repository or none';
+    return `${who} may read ${what} from ${from}${where}.`;
+  };
+  /** A rule from a form; checked. */
+  const ruleFromForm = (form, storeIds) => {
+    const r = {};
+    const store = String(form.get('store') || '');
+    if (store) {
+      if (!storeIds.includes(store)) throw new Error('Unknown secrets store');
+      r.store = store;
+    }
+    const paths = listFrom(form.get('paths'));
+    const repos = listFrom(form.get('repos'));
+    const people = listFrom(form.get('people'));
+    for (const x of [...paths, ...repos, ...people]) if (/\s/.test(x) || x.length > 200) throw new Error(`"${x}" isn't a valid pattern`);
+    for (const x of repos) if (x !== '*' && !/^[\w.*-]+:[^\s:]+$/.test(x)) throw new Error(`Repositories look like github:acme/payments-api (* matches anything): "${x}"`);
+    for (const x of people) if (x !== '*' && !/^[^@\s]*@[^@\s]+$|^[\w*-]+$/.test(x)) throw new Error(`People are emails or patterns like *@acme.com: "${x}"`);
+    if (paths.length) r.paths = paths;
+    if (repos.length) r.repos = repos;
+    if (people.length) r.people = people;
+    return r;
+  };
+  const ruleForm = (action, dlg, r, storeIds, extra = '') => `<form method="post" action="${action}">${keep(dlg)}${extra}
+<label><span>Store</span><select name="store"><option value="">Any store</option>${storeIds.map((id) => `<option value="${esc(id)}"${r.store === id ? ' selected' : ''}>${esc(id)}</option>`).join('')}</select></label>
+<label><span>Secrets (paths; * matches anything; empty for any)</span><textarea name="paths" rows="2" placeholder="payments/staging/*">${esc((r.paths || []).join(', '))}</textarea></label>
+<label><span>From repositories (host:owner/repo; empty for any, including none)</span><textarea name="repos" rows="2" placeholder="github:acme/payments-api, gitlab:acme/*">${esc((r.repos || []).join(', '))}</textarea></label>
+<label><span>People (emails or patterns; empty for anyone signed in)</span><textarea name="people" rows="2" placeholder="*@acme.com, alice@acme.com">${esc((r.people || []).join(', '))}</textarea></label>
+<div class="actions"><button type="submit">Save rule</button></div></form>`;
+
+  const rulesCard = (stores, access, checked = null) => {
+    const ids = stores.map((x) => x.id);
+    const items = access
+      .map((r, i) => {
+        const dlg = `dlg-rule-${i}`;
+        const broad = !r.paths && !r.people;
+        const was = `<input type="hidden" name="was" value="${esc(JSON.stringify(r))}">`;
+        return {
+          row: `<div class="item" data-testid="rule-${i}"><div class="grow">${ruleText(r)}${broad ? ' <span class="pill" style="color:var(--warn)">Broad</span>' : ''}</div>
+<button type="button" class="secondary" onclick="openDlg('${dlg}')">Edit</button>
+<form method="post" action="/admin/secrets/rules/${i}/delete" onsubmit="return confirm('Delete this rule?')">${was}<button type="submit" class="danger">Delete</button></form></div>`,
+          dialog: dialog(dlg, 'Edit access rule', '', ruleForm(`/admin/secrets/rules/${i}/save`, dlg, r, ids, was))
+        };
+      });
+    const perPerson = stores.filter(perPersonOf).map((x) => x.id);
+    return `<div class="card" style="margin-top:14px" id="rules"><div class="conn-top" style="margin-bottom:6px"><div class="conn-title"><strong>Who may read what</strong><span>For stores narado signs in to as itself. A rule allows a read when everything it names matches.</span></div>
+<button type="button" onclick="openDlg('dlg-add-rule')">Add rule</button></div>
+${perPerson.length ? `<p class="note" style="margin-top:0">${codes(perPerson)} sign${perPerson.length === 1 ? 's' : ''} in as each person: the store's own policies decide, and rules naming ${perPerson.length === 1 ? 'it' : 'them'} narrow that further.</p>` : ''}
+${items.length ? `<div class="list">${items.map((x) => x.row).join('')}</div>` : '<p class="note">No rules yet: nobody can read from stores narado signs in to as itself.</p>'}
+<h4 style="margin-top:16px">Check access</h4>
+<form method="post" action="/admin/secrets/check#rules" class="row" style="align-items:flex-end">${keep('')}
+<label><span>Person (email)</span><input type="text" name="person" placeholder="alice@acme.com" value="${esc(checked ? checked.person : '')}" required></label>
+<label><span>Store</span><select name="store">${ids.map((id) => `<option value="${esc(id)}"${checked && checked.store === id ? ' selected' : ''}>${esc(id)}</option>`).join('')}</select></label>
+<label><span>Secret path</span><input type="text" name="path" placeholder="payments/staging/stripe" value="${esc(checked ? checked.path : '')}" required></label>
+<label><span>Repository (optional)</span><input type="text" name="repo" placeholder="github:acme/payments-api" value="${esc(checked ? checked.repo : '')}"></label>
+<div class="actions" style="flex:0 0 auto"><button type="submit" class="secondary">Check</button></div></form>
+${checked ? `<div class="banner ${checked.ok ? 'ok' : 'err'}" role="status" style="margin:12px 0 0" data-testid="check-result">${esc(checked.text)}</div>` : ''}</div>
+${items.map((x) => x.dialog).join('')}${dialog('dlg-add-rule', 'Add an access rule', '', ruleForm('/admin/secrets/rules/add', 'dlg-add-rule', {}, ids))}`;
+  };
+
   const addStoreDialog = () =>
     dialog(
       'dlg-add-store',
@@ -471,13 +548,13 @@ ${Object.keys(STORE_TYPES)
 
   /* ------------------------------------------------------------------ page */
 
-  const secretsSection = () => {
+  const secretsSection = (checked = null) => {
     const { stores, access } = readSecretsCfg();
     const cards = stores.map((st) => storeCard(st, access));
     return `<section id="secrets"><h2>Secrets stores</h2><p class="lead">Where requests get <code>secret://</code> values from, just before they're sent. Values and store credentials stay on the narado server.</p>
 <div class="grid">${cards.map((x) => x.card).join('\n')}
 <button type="button" class="conn add" onclick="openDlg('dlg-add-store')"><span class="plus">+</span><span>Add Vault, AWS, Google Cloud or Azure</span></button></div>
-${cards.map((x) => x.dialog).join('\n')}${addStoreDialog()}</section>`;
+${cards.map((x) => x.dialog).join('\n')}${addStoreDialog()}${stores.length ? rulesCard(stores, access, checked) : ''}</section>`;
   };
 
   const adminPage = (who, notice) => {
@@ -490,7 +567,7 @@ ${cards.map((x) => x.dialog).join('\n')}${addStoreDialog()}</section>`;
     const steps = who.setup
       ? `<div class="banner">First-time setup. 1. Sign-in: your organisation's SSO. 2. Admins: who manages narado (include your own email). 3. Git: can wait. When sign-in and admins are saved, <a href="/auth/login?return=/admin">sign in</a> as an admin to finish; this setup link then stops working.</div>`
       : '';
-    const banner = notice ? `<div class="banner ${notice.error ? 'err' : 'ok'}" role="${notice.error ? 'alert' : 'status'}">${esc(notice.text)}</div>` : '';
+    const banner = notice && !notice.checked ? `<div class="banner ${notice.error ? 'err' : 'ok'}" role="${notice.error ? 'alert' : 'status'}">${esc(notice.text)}</div>` : '';
     const addDlg = dialog(
       'dlg-add',
       'Add a connector',
@@ -526,7 +603,7 @@ ${field({ name: 'NARADO_ALLOWED_EMAIL_DOMAINS', label: 'Allowed email domains (o
 <button type="button" class="conn add" onclick="openDlg('dlg-add')"><span class="plus">+</span><span>Add GitHub Enterprise or self-managed GitLab</span></button></div>
 ${hosts.map((x) => x.dialog).join('\n')}${addDlg}</section>
 
-${secretsSection()}
+${secretsSection(notice && notice.checked)}
 
 <section id="desktop"><h2>Desktop</h2><p class="lead">What narado desktop may send requests to from people's computers. Cloud metadata addresses are always refused.</p>
 <div class="card"><form method="post" action="/admin/desktop"><label><span>Sends allowed${envTag('NARADO_DESKTOP_SEND')}</span>
@@ -671,7 +748,7 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
     try {
       if (p === '/admin' && req.method === 'GET') {
         const saved = url.searchParams.get('saved');
-        const notice = saved ? { text: { signin: 'Sign-in saved.', admins: 'Admins saved.', git: 'Git settings saved.', desktop: 'Desktop settings saved.', device: 'Signed out.', secrets: 'Secrets store saved.' }[saved] || 'Saved.' } : null;
+        const notice = saved ? { text: { signin: 'Sign-in saved.', admins: 'Admins saved.', git: 'Git settings saved.', desktop: 'Desktop settings saved.', device: 'Signed out.', secrets: 'Secrets store saved.', rules: 'Access rules saved.' }[saved] || 'Saved.' } : null;
         return html(res, 200, adminPage(who, notice)), true;
       }
       const done = /^\/admin\/git\/([a-z0-9-]+)\/github-app-done$/.exec(p);
@@ -721,6 +798,48 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
         saveCreds(creds, who);
         log.log(`[narado] admin: ${who.name} added secrets store ${id} (${type})`);
         return savedAndRestart(res, '/admin?saved=secrets#secrets'), true;
+      }
+      if (p === '/admin/secrets/rules/add') {
+        const { stores, access } = readSecretsCfg();
+        const r = ruleFromForm(form, stores.map((x) => x.id));
+        writeSecretsCfg(stores, [...access, r]);
+        log.log(`[narado] admin: ${who.name} added a secrets access rule: ${JSON.stringify(r)}`);
+        return savedAndRestart(res, '/admin?saved=rules#rules'), true;
+      }
+      const rm = /^\/admin\/secrets\/rules\/(\d+)\/(save|delete)$/.exec(p);
+      if (rm) {
+        const { stores, access } = readSecretsCfg();
+        const i = Number(rm[1]);
+        // The rule must still be the one the page showed (someone may have changed them since).
+        if (!access[i] || JSON.stringify(access[i]) !== form.get('was')) throw new Error('The rules changed since this page was loaded; reload and try again');
+        if (rm[2] === 'delete') {
+          log.log(`[narado] admin: ${who.name} deleted a secrets access rule: ${JSON.stringify(access[i])}`);
+          writeSecretsCfg(stores, access.filter((_, j) => j !== i));
+        } else {
+          const r = ruleFromForm(form, stores.map((x) => x.id));
+          log.log(`[narado] admin: ${who.name} changed a secrets access rule: ${JSON.stringify(access[i])} -> ${JSON.stringify(r)}`);
+          writeSecretsCfg(stores, access.map((x, j) => (j === i ? r : x)));
+        }
+        return savedAndRestart(res, '/admin?saved=rules#rules'), true;
+      }
+      if (p === '/admin/secrets/check') {
+        const { stores, access } = readSecretsCfg();
+        const st = stores.find((x) => x.id === form.get('store'));
+        if (!st) throw new Error('Choose a store');
+        const email = String(form.get('person') || '').trim().toLowerCase();
+        const secretPath = String(form.get('path') || '').trim().replace(/^\/+/, '');
+        const repo = String(form.get('repo') || '').trim() || null;
+        if (!email || !secretPath) throw new Error('Enter a person and a secret path');
+        const { accessMatch } = require('./secrets');
+        const i = accessMatch({ access, storeId: st.id, perPerson: perPersonOf(st), user: { id: email, email }, secretPath, repo });
+        const ask = `${email} reading ${secretPath} from ${st.id}${repo ? ` in ${repo}` : ' outside a repository'}`;
+        const text =
+          i === -2
+            ? `${ask}: left to ${st.id}'s own policies for that person (no rule narrows it).`
+            : i >= 0
+              ? `${ask}: allowed, by rule ${i + 1}: ${ruleText(access[i]).replace(/<[^>]+>/g, '')}`
+              : `${ask}: not allowed; no rule matches.`;
+        return html(res, 200, adminPage(who, { checked: { text, ok: i !== -1, person: email, store: st.id, path: secretPath, repo: repo || '' } })), true;
       }
       const sm = /^\/admin\/secrets\/([A-Za-z0-9_-]+)\/(save|remove|test)$/.exec(p);
       if (sm) {

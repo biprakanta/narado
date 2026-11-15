@@ -312,3 +312,51 @@ test('secrets stores: Test connection shows a count only, and explains failures'
     await a.close();
   }
 });
+
+test('access rules: added, edited and deleted from the admin page, and checked like a real read', async () => {
+  const users = { alice: { id: 'alice', name: 'Alice', email: 'alice@acme.com' } };
+  const dataDir = tmp();
+  const file = path.join(dataDir, 'narado.json');
+  fs.writeFileSync(file, JSON.stringify({ secrets: { stores: [{ id: 'aws', type: 'aws', region: 'x' }, { id: 'vault', type: 'vault', url: 'https://v', auth: { method: 'jwt', role: 'narado' } }] } }));
+  const a = await startAdmin({ users, env: { NARADO_ADMINS: 'alice@acme.com' }, dataDir });
+  const cookie = { cookie: 'sid=alice' };
+  const rules = () => JSON.parse(fs.readFileSync(file, 'utf8')).secrets.access;
+  const check = async (form) => (/data-testid="check-result">([^<]*)</.exec(await (await a.post('/admin/secrets/check', form, cookie)).text())[1]).replace(/&#39;/g, "'");
+  try {
+    await a.post('/admin/secrets/rules/add', { store: 'aws', paths: 'payments/staging/*', repos: 'github:acme/payments-api', people: '*@acme.com' }, cookie);
+    assert.deepEqual(rules(), [{ store: 'aws', paths: ['payments/staging/*'], repos: ['github:acme/payments-api'], people: ['*@acme.com'] }]);
+
+    // Shown as a sentence.
+    await wait(400);
+    const html = await (await fetch(`${a.publicUrl}/admin`, { headers: cookie })).text();
+    assert.match(html, /People matching <code>\*@acme\.com<\/code> may read <code>payments\/staging\/\*<\/code> from <code>aws<\/code>, from <code>github:acme\/payments-api<\/code>\./);
+    assert.match(html, /<code>vault<\/code> signs in as each person/);
+
+    // The checker answers with the same logic as a read.
+    assert.match(await check({ person: 'bob@acme.com', store: 'aws', path: 'payments/staging/stripe', repo: 'github:acme/payments-api' }), /allowed, by rule 1/);
+    assert.match(await check({ person: 'bob@acme.com', store: 'aws', path: 'payments/prod/stripe', repo: 'github:acme/payments-api' }), /not allowed; no rule matches/);
+    assert.match(await check({ person: 'eve@other.com', store: 'aws', path: 'payments/staging/stripe', repo: 'github:acme/payments-api' }), /not allowed/);
+    assert.match(await check({ person: 'bob@acme.com', store: 'aws', path: 'payments/staging/stripe' }), /outside a repository: not allowed/);
+    assert.match(await check({ person: 'bob@acme.com', store: 'vault', path: 'anything' }), /left to vault's own policies/);
+
+    // Bad patterns are refused.
+    assert.match(await (await a.post('/admin/secrets/rules/add', { repos: 'acme/payments-api' }, cookie)).text(), /Repositories look like github:acme\/payments-api/);
+    assert.match(await (await a.post('/admin/secrets/rules/add', { people: 'not an email' }, cookie)).text(), /isn(&#39;|')t a valid pattern/);
+    assert.equal(rules().length, 1);
+
+    // Editing: only the rule the page showed.
+    const was = JSON.stringify(rules()[0]);
+    assert.match(await (await a.post('/admin/secrets/rules/0/save', { was: '{"store":"other"}', store: 'aws', paths: 'x' }, cookie)).text(), /rules changed since this page was loaded/);
+    await a.post('/admin/secrets/rules/0/save', { was, store: 'aws', paths: 'payments/*', people: 'alice@acme.com' }, cookie);
+    assert.deepEqual(rules(), [{ store: 'aws', paths: ['payments/*'], people: ['alice@acme.com'] }]);
+
+    // A broad rule is flagged; deleting removes it.
+    await a.post('/admin/secrets/rules/add', { store: 'vault' }, cookie);
+    await wait(400);
+    assert.match(await (await fetch(`${a.publicUrl}/admin`, { headers: cookie })).text(), /Anyone signed in may read any secret from <code>vault<\/code>, from any repository or none\. <span class="pill"[^>]*>Broad/);
+    await a.post('/admin/secrets/rules/1/delete', { was: JSON.stringify(rules()[1]) }, cookie);
+    assert.equal(rules().length, 1);
+  } finally {
+    await a.close();
+  }
+});

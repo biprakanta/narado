@@ -62,6 +62,24 @@ const loadSecretsConfig = (dataDir) => {
 const globRe = (pattern) => new RegExp(`^${String(pattern).split('*').map((p) => p.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`, 'i');
 const matchesAny = (patterns, value) => value != null && patterns.some((p) => globRe(p).test(value));
 
+/**
+ * The access rules' answer: may `user` read `secretPath` from `storeId` in `repo`
+ * (`<host id>:<owner>/<repo>`, or null outside a repository)? Returns the matching rule's
+ * index, or -1. A per-person store with no rule naming it is left to the store (-2).
+ * Used for every read, and by the admin pages' "who can read this?".
+ */
+const accessMatch = ({ access, storeId, perPerson, user, secretPath, repo }) => {
+  if (perPerson && !access.some((r) => r.store === storeId)) return -2;
+  return access.findIndex(
+    (r) =>
+      (!r.store || r.store === storeId) &&
+      (!r.paths || matchesAny(r.paths, secretPath)) &&
+      (!r.repos || matchesAny(r.repos, repo)) &&
+      (!r.people || (user && (matchesAny(r.people, user.email) || matchesAny(r.people, user.id))))
+  );
+};
+const accessAllows = (args) => accessMatch(args) !== -1;
+
 class SecretsService {
   constructor({ dataDir, env = process.env, fetchImpl, identity = null, cacheSeconds, log = console, config } = {}) {
     const cfg = config || loadSecretsConfig(dataDir);
@@ -85,16 +103,7 @@ class SecretsService {
 
   /** Whether narado's rules let `user` read `secretPath` from `storeId` for this workspace. */
   allowed(user, storeId, secretPath, context) {
-    const store = this.stores.get(storeId);
-    const rules = this.access.filter((r) => !r.store || r.store === storeId);
-    if (store.perPerson && !this.access.some((r) => r.store === storeId)) return true;
-    const repo = this.repoKey(context);
-    return rules.some(
-      (r) =>
-        (!r.paths || matchesAny(r.paths, secretPath)) &&
-        (!r.repos || matchesAny(r.repos, repo)) &&
-        (!r.people || (user && (matchesAny(r.people, user.email) || matchesAny(r.people, user.id))))
-    );
+    return accessAllows({ access: this.access, storeId, perPerson: this.stores.get(storeId).perPerson, user, secretPath, repo: this.repoKey(context) });
   }
 
   /** Whether a folder may hold something the rules allow (for browsing). */
@@ -220,4 +229,4 @@ const secretsService = (service) => async (user, method, args) => {
   }
 };
 
-module.exports = { SecretsService, secretsService, loadSecretsConfig };
+module.exports = { SecretsService, secretsService, loadSecretsConfig, accessMatch, accessAllows };
