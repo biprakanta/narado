@@ -71,6 +71,7 @@ class SecretsService {
     this.access = cfg.access;
     this.cacheMs = (cacheSeconds !== undefined ? cacheSeconds : Number(env.NARADO_SECRETS_CACHE_SECONDS || 60)) * 1000;
     this.cache = new Map();
+    this.revealAllowed = env.NARADO_SECRETS_REVEAL !== '0';
     this.log = log;
   }
 
@@ -171,6 +172,22 @@ class SecretsService {
     return entries.filter((e) => (e.folder ? this.mayContain(user, storeId, e.path, context) : this.allowed(user, storeId, e.path, context)));
   }
 
+  /**
+   * A secret's value, shown to the person on purpose (Secrets, Reveal). Same access rules
+   * as a send, recorded in the log, and off when NARADO_SECRETS_REVEAL=0.
+   */
+  async reveal(user, ref, context = {}) {
+    if (!this.revealAllowed) throw new SecretError(403, 'Showing secret values is turned off on this server');
+    try {
+      const value = await this.readOne(user, ref, context);
+      this.audit(user, ref, context, 'revealed');
+      return { value };
+    } catch (err) {
+      this.audit(user, ref, context, `reveal refused (${err.status || 500})`);
+      throw err;
+    }
+  }
+
   /** Whether a reference resolves, without giving out the value. */
   async check(user, ref, context = {}) {
     try {
@@ -196,6 +213,8 @@ const secretsService = (service) => async (user, method, args) => {
       return service.list(user, String(args[0] || ''), String(args[1] || ''), ctx);
     case 'secrets.check':
       return service.check(user, String(args[0] || ''), ctx);
+    case 'secrets.reveal':
+      return service.reveal(user, String(args[0] || ''), ctx);
     default:
       throw new Error(`Unknown call ${method}`);
   }

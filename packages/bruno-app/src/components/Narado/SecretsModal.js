@@ -23,6 +23,7 @@ const SecretsModal = ({ onClose }) => {
   const [picked, setPicked] = useState(null);
   const [field, setField] = useState('');
   const [check, setCheck] = useState(null);
+  const [revealed, setRevealed] = useState(null); // { ref, value, until }
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -58,7 +59,15 @@ const SecretsModal = ({ onClose }) => {
   useEffect(() => {
     setPicked(null);
     setCheck(null);
+    setRevealed(null);
   }, [store, prefix, wsPath]);
+
+  // A revealed value is shown for 30 seconds, then hidden again.
+  useEffect(() => {
+    if (!revealed) return undefined;
+    const t = setTimeout(() => setRevealed(null), Math.max(0, revealed.until - Date.now()));
+    return () => clearTimeout(t);
+  }, [revealed]);
 
   const ref = picked ? refFor(store, picked.path, field.trim()) : '';
 
@@ -77,6 +86,25 @@ const SecretsModal = ({ onClose }) => {
       setCheck(await call('narado:secrets:check', ref, wsPath || null));
     } catch (err) {
       setCheck({ ok: false, error: errorText(err) });
+    }
+  };
+
+  const reveal = async () => {
+    setCheck(null);
+    try {
+      const res = await call('narado:secrets:reveal', ref, wsPath || null);
+      setRevealed({ ref, value: res.value, until: Date.now() + 30000 });
+    } catch (err) {
+      setCheck({ ok: false, error: errorText(err) });
+    }
+  };
+
+  const copyValue = async () => {
+    try {
+      await navigator.clipboard.writeText(revealed.value);
+      toast.success('Value copied');
+    } catch {
+      toast.error('Copy failed; select the text and copy it');
     }
   };
 
@@ -158,13 +186,27 @@ const SecretsModal = ({ onClose }) => {
               <div className="flex flex-col gap-2" data-testid="narado-secrets-picked">
                 <label className="flex items-center gap-2">
                   Field
-                  <input className="textbox" placeholder="optional, for example api_key" value={field} onChange={(e) => (setField(e.target.value), setCheck(null))} data-testid="narado-secrets-field" />
+                  <input className="textbox" placeholder="optional, for example api_key" value={field} onChange={(e) => (setField(e.target.value), setCheck(null), setRevealed(null))} data-testid="narado-secrets-field" />
                 </label>
                 <div className="flex gap-2 items-center">
                   <code className="flex-1 truncate" data-testid="narado-secrets-ref">{ref}</code>
                   <Button size="sm" variant="ghost" onClick={runCheck} data-testid="narado-secrets-check">Check</Button>
+                  <Button size="sm" variant="ghost" onClick={revealed && revealed.ref === ref ? () => setRevealed(null) : reveal} data-testid="narado-secrets-reveal">
+                    {revealed && revealed.ref === ref ? 'Hide' : 'Reveal'}
+                  </Button>
                   <Button size="sm" onClick={copy} data-testid="narado-secrets-copy">Copy reference</Button>
                 </div>
+                {revealed && revealed.ref === ref && (
+                  <div className="flex flex-col gap-1" data-testid="narado-secrets-revealed">
+                    <div className="flex gap-2 items-center">
+                      <code className="flex-1 break-all px-2 py-1 rounded" style={{ background: 'var(--color-background-secondary, rgba(127,127,127,.15))' }}>
+                        {revealed.value}
+                      </code>
+                      <Button size="sm" variant="ghost" onClick={copyValue}>Copy value</Button>
+                    </div>
+                    <span className="text-xs opacity-70">Shown for 30 seconds. Revealing a secret is recorded in the server log.</span>
+                  </div>
+                )}
                 {check && (
                   <div className="text-xs" data-testid="narado-secrets-check-result" style={{ color: check.pending ? undefined : check.ok ? 'var(--color-text-green, #2f9e44)' : 'var(--color-text-danger, #d9534f)' }}>
                     {check.pending ? 'Checking…' : check.ok ? `You can use this here (${check.length} characters). The value is not shown.` : check.error}

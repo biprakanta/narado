@@ -382,3 +382,26 @@ test('send handlers get values; saving and other handlers keep references; repli
   );
   assert.ok(handlers.has('narado:secrets:list'));
 });
+
+test('reveal: the same access rules as a send, recorded, and can be turned off', async () => {
+  const lines = [];
+  const log = { log: (l) => lines.push(l), warn() {}, error() {} };
+  const svc = new SecretsService({ dataDir: tmp, env: {}, log, config: { stores: [], access: [] } });
+  svc.readOne = async (user, ref) => {
+    if (user.id !== 'u-alice') throw Object.assign(new Error('You may not use vault/prod/payments'), { status: 403 });
+    return 'sk_live_123';
+  };
+  assert.deepEqual(await svc.reveal(alice, 'secret://vault/prod/payments#key', { hostId: 'github', repoPath: 'acme/api' }), { value: 'sk_live_123' });
+  await assert.rejects(svc.reveal(bob, 'secret://vault/prod/payments#key', {}), /may not use/);
+  assert.ok(lines.some((l) => /secret secret:\/\/vault\/prod\/payments#key for alice@acme.test in github:acme\/api: revealed/.test(l)));
+  assert.ok(lines.some((l) => /for bob@other.test: reveal refused \(403\)/.test(l)));
+  assert.ok(!lines.some((l) => l.includes('sk_live_123')), 'the value is never logged');
+
+  const off = new SecretsService({ dataDir: tmp, env: { NARADO_SECRETS_REVEAL: '0' }, log, config: { stores: [], access: [] } });
+  off.readOne = svc.readOne;
+  await assert.rejects(off.reveal(alice, 'secret://vault/prod/payments#key', {}), /turned off/);
+
+  // Workers ask for it as their own person only.
+  const calls = secretsService(svc);
+  assert.deepEqual(await calls(alice, 'secrets.reveal', ['secret://vault/prod/payments#key', { hostId: 'github', repoPath: 'acme/api' }]), { value: 'sk_live_123' });
+});

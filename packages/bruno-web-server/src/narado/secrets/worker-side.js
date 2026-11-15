@@ -78,6 +78,8 @@ class SecretRefs {
     ipcMain.handle('narado:secrets:stores', () => this.secrets.stores());
     ipcMain.handle('narado:secrets:list', (_e, store, prefix, collectionPath) => this.secrets.list(String(store || ''), String(prefix || ''), this.contextFor(collectionPath)));
     ipcMain.handle('narado:secrets:check', (_e, ref, collectionPath) => this.secrets.check(String(ref || ''), this.contextFor(collectionPath)));
+    // The value itself, when the person asks for it (the front checks access and logs it).
+    ipcMain.handle(REVEAL_CHANNEL, (_e, ref, collectionPath) => this.secrets.reveal(String(ref || ''), this.contextFor(collectionPath)));
   }
 
   /** Anything leaving the worker: secret values become references or masks. */
@@ -86,4 +88,6 @@ class SecretRefs {
   }
 }
 
-module.exports = { SecretRefs, SEND_CHANNELS, collectionPathIn };
+const REVEAL_CHANNEL = 'narado:secrets:reveal';
+
+module.exports = { SecretRefs, SEND_CHANNELS, collectionPathIn, REVEAL_CHANNEL };

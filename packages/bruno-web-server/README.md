@@ -238,10 +238,11 @@ secret://<store>/<path>[#<field>]       for example  secret://vault/payments/sta
 ```
 
 - **When a request is sent,** the person's worker asks the front for the values of the references in it. The front checks access, reads the store and answers. The worker swaps the references for values, only for sending: saving an environment never resolves anything.
-- **Values never reach the browser.** In everything a worker sends back (responses, timelines, script output, MCP results), a string that is exactly a secret's value turns back into its reference, and any other occurrence is masked as `••••••`, also when URL- or base64-encoded.
+- **Values reach the browser only when asked for.** In everything a worker sends back (responses, timelines, script output, MCP results), a string that is exactly a secret's value turns back into its reference, and any other occurrence is masked as `••••••`, also when URL- or base64-encoded.
 - **Store credentials never reach a worker.** They are read by the front from `NARADO_SECRETS_<STORE ID>_*` variables, which workers do not get.
 - **Every read is logged** by the front with the person, store, path, repo and outcome, never the value. Values are cached for 60 seconds (`NARADO_SECRETS_CACHE_SECONDS`); access is checked every time.
-- **Picker:** the lock button in the Git section browses the stores (only what you may use), builds a reference and checks it without showing the value.
+- **Picker:** Secrets (in the Git section's menu) browses the stores (only what you may use), builds a reference and checks it without showing the value.
+- **Reveal:** the same dialog can show a value on purpose, for 30 seconds, with the same access rules as a send. Each reveal is logged (`revealed`), and `NARADO_SECRETS_REVEAL=0` turns it off. Reveals never go through MCP.
 
 Configure stores in `<data dir>/narado.json`:
 
@@ -326,6 +327,7 @@ claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Autho
 | `NARADO_REQUESTS_OUTSIDE_REPOS` | `allow` | `refuse` stops sends from collections outside a Git workspace |
 | `NARADO_SECRETS_<STORE ID>_*` | none | Secrets store credentials (see Secrets) |
 | `NARADO_SECRETS_CACHE_SECONDS` | `60` | How long the front keeps a secret's value |
+| `NARADO_SECRETS_REVEAL` | on | `0` stops people seeing secret values in the Secrets dialog (Reveal) |
 
 ## Tests
 
@@ -360,7 +362,6 @@ The workspace tests run real Git against a local repo standing in for the host, 
 - **Secret references and the repo.** The front trusts the worker about which repo a request is in when applying `repos` rules. Now that people have their own Git accounts, it could check that the person can read that repo; it does not yet.
 - **Scripts can read resolved secrets** (for example `bru.getEnvVar`) and could send them on in a request or encode them in ways masking does not catch. Who may change a repo's scripts is controlled by review in Git.
 - **Masking** skips values shorter than 4 characters, and does not catch a value inside Basic auth's encoded `user:password`.
-- **Revealing** a secret's value in the interface is not available yet.
 - **During a conflict**, the affected request shows as unreadable in the sidebar until a side is chosen, because the file holds Git's conflict markers.
 - **No webhooks yet:** merge request status is read when the Git panel opens or is refreshed.
 - **GitLab** is covered by unit tests only so far; it has not been run against a real GitLab instance.

@@ -67,7 +67,7 @@ const CONFIG_DIR = process.env.NARADO_CONFIG_DIR || DATA_DIR;
 
 const ELECTRON_SRC = path.resolve(__dirname, '../../bruno-electron/src');
 const brunoRequire = (rel) => require(path.join(ELECTRON_SRC, rel));
-const { SecretRefs, SEND_CHANNELS, collectionPathIn } = require('./narado/secrets/worker-side');
+const { REVEAL_CHANNEL, SecretRefs, SEND_CHANNELS, collectionPathIn } = require('./narado/secrets/worker-side');
 const { RequestGuard, installSendRules } = require('./narado/requests/guard');
 const { AllowlistReader } = require('./narado/requests/allowlist');
 
@@ -302,7 +302,8 @@ const front = (() => {
       stores: () => call('secrets.stores'),
       resolve: (refs, ctx) => call('secrets.resolve', refs, ctx),
       list: (store, prefix, ctx) => call('secrets.list', store, prefix, ctx),
-      check: (ref, ctx) => call('secrets.check', ref, ctx)
+      check: (ref, ctx) => call('secrets.check', ref, ctx),
+      reveal: (ref, ctx) => call('secrets.reveal', ref, ctx)
     }
   };
 })();
@@ -481,7 +482,8 @@ const main = async () => {
         } else {
           try {
             const value = await handler(event(), ...decodeArgs(msg.args, msg.u));
-            reply = { t: 'res', id: msg.id, ok: true, value: secretRefs.clean(value) };
+            // A reveal is the one reply that carries a value on purpose; everything else is cleaned.
+            reply = { t: 'res', id: msg.id, ok: true, value: msg.ch === REVEAL_CHANNEL ? value : secretRefs.clean(value) };
           } catch (err) {
             console.error(`[bruno-web] ${msg.ch} failed:`, err && err.stack ? err.stack : err);
             reply = { t: 'res', id: msg.id, ok: false, error: secretRefs.clean(errorMessage(msg.ch, err)) };
