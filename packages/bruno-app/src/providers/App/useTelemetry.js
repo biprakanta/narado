@@ -10,6 +10,7 @@ import { useEffect } from 'react';
 import { PostHog } from 'posthog-node';
 import platformLib from 'platform';
 import { uuid } from 'utils/common';
+import { isNarado } from 'utils/common/product';
 
 const posthogApiKey = process.env.NEXT_PUBLIC_POSTHOG_API_KEY;
 let posthogClient = null;
@@ -43,6 +44,8 @@ const getAnonymousTrackingId = () => {
 };
 
 const trackStart = (version) => {
+  // narado sends no usage data to Bruno.
+  if (isNarado()) return;
   if (isPlaywrightTestRunning()) {
     return;
   }

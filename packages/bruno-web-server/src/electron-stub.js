@@ -222,7 +222,7 @@ class App extends EventEmitter {
     super();
     this.setMaxListeners(0);
     this.isPackaged = false;
-    this.name = 'Bruno';
+    this.name = 'narado';
     this.commandLine = { appendSwitch: () => {}, hasSwitch: () => false, getSwitchValue: () => '' };
     this.dock = withFallback({});
     this._ready = false;

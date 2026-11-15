@@ -13,6 +13,7 @@ import { multiLineMsg } from 'utils/common/index';
 import { formatIpcError } from 'utils/common/error';
 import { sanitizeName, validateName, validateNameError } from 'utils/common/regex';
 import get from 'lodash/get';
+import { isNarado, naradoWhere, productName } from 'utils/common/product';
 
 const CreateWorkspace = ({ onClose }) => {
   const inputRef = useRef();
@@ -186,7 +187,7 @@ const CreateWorkspace = ({ onClose }) => {
               Location
               <Help>
                 <p>
-                  Bruno stores your workspaces on your computer's filesystem.
+                  {productName()} stores your workspaces {isNarado() ? naradoWhere() : 'on your computer\'s filesystem'}.
                 </p>
                 <p className="mt-2">
                   Choose the location where you want to store this workspace.

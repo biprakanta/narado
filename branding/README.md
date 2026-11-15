@@ -118,3 +118,19 @@ All of it applies only to the web build (`window.isBrunoWeb`). The Electron app 
 - The app's JavaScript has to download before the start-up screen can show, so a slow first load is briefly blank.
 
 The veena is narado's mark, not an icon for a feature: keep it off sections and buttons such as Git, which use ordinary icons.
+
+## Where Bruno still shows, on purpose
+
+Audited 15 Nov 2026. In narado, Bruno appears only where narado means Bruno itself:
+
+- **Credits:** "Built on Bruno" on the sign-in page, in the About window and in the status bar's tooltip, as Bruno's MIT licence asks. Preferences → Support also links Bruno's repository.
+- **The file format:** "Bruno collection", `.bru` files and `bruno.json` name the format narado reads and writes. Exports say `exportedUsing: narado (Bruno/<version>)`.
+- **The User-Agent:** requests say `narado bruno-runtime/<version>`, so APIs that recognise Bruno's runtime still do.
+- **Bruno's CDN:** Generate Documentation says, correctly, that it loads Bruno's scripts from a CDN.
+
+Hidden in narado: Bruno's documentation links (menu, search, Preferences → Beta, the apps' empty state), Bruno's announcements (the bell; narado doesn't contact appinfo.usebruno.com), usage data, and the `bruno://` link handler.
+
+Icons in the page: narado's favicon, icons, title, theme colour and manifest are in the HTML itself (`packages/bruno-app/rsbuild.config.mjs`), and the server answers `/favicon.ico` with narado's. Bump `ICON_VERSION` when the icons change. A paper-aeroplane icon on a tab is the Claude browser extension marking a tab it controls, not narado.
+
+Server pages (sign-in, setup, admin, the desktop's sign-in page) use Inter and Space Grotesk from `/auth/assets` and solid saffron buttons.
+

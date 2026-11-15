@@ -17,6 +17,7 @@ import CompatEndpointCard from './CompatEndpointCard';
 import AutocompletePane from './AutocompletePane';
 import SecurityPane from './SecurityPane';
 import StyledWrapper from './StyledWrapper';
+import { isNaradoWeb, productName } from 'utils/common/product';
 
 const OPENAI_COMPATIBLE_PREFIX = 'openai-compatible:';
 const isCompatProviderId = (id) => typeof id === 'string' && id.startsWith(OPENAI_COMPATIBLE_PREFIX);
@@ -370,7 +371,7 @@ const AI = () => {
 
           {!formik.values.enabled && !statusError && (
             <div className="ai-empty-notice px-3.5 py-3 text-xs">
-              Bring your own API key. Bruno talks to providers directly, your keys never leave your machine.
+              Bring your own API key. {isNaradoWeb() ? 'narado talks to providers from its server, where your keys are kept; they never reach the browser.' : `${productName()} talks to providers directly, your keys never leave your machine.`}
             </div>
           )}
 
@@ -425,7 +426,7 @@ const AI = () => {
 
               {endpoints.length === 0 && (
                 <div className="ai-empty-notice px-3.5 py-3 text-xs">
-                  Point Bruno at any OpenAI-compatible API — Ollama, LM Studio, Together, Groq, OpenRouter, vLLM, and more.
+                  Point {productName()} at any OpenAI-compatible API — Ollama, LM Studio, Together, Groq, OpenRouter, vLLM, and more.
                 </div>
               )}
 

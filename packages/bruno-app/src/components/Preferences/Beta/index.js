@@ -16,6 +16,7 @@ import useMockServerBetaToggle from './useMockServerBetaToggle';
 
 import { BETA_FEATURES as BETA_FEATURE_IDS } from 'utils/beta-features';
 import { getDocsUrlWithVersion } from 'utils/url';
+import { isNarado } from 'utils/common/product';
 
 /**
  * UI metadata for the Beta Features section in Preferences — one entry per toggle.
@@ -228,7 +229,8 @@ const Beta = ({ close }) => {
                       <IconArrowRight size={14} strokeWidth={1.5} />
                     </button>
                   )}
-                  {feature.docsUrl && (
+                  {/* Bruno's documentation; not linked from narado. */}
+                  {feature.docsUrl && !isNarado() && (
                     <a
                       className="beta-feature-link"
                       href={getDocsUrlWithVersion(feature.docsUrl)}

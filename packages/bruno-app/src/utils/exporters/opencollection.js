@@ -1,6 +1,7 @@
 import jsyaml from 'js-yaml';
 import { brunoToOpenCollection } from '@usebruno/converters';
 import { filterTransientItems } from 'utils/collections';
+import { isNarado } from 'utils/common/product';
 
 export const exportCollection = (collection, version) => {
   // Filter out transient items before export
@@ -15,7 +16,7 @@ export const exportCollection = (collection, version) => {
     openCollection.extensions.bruno = {};
   }
   openCollection.extensions.bruno.exportedAt = new Date().toISOString();
-  openCollection.extensions.bruno.exportedUsing = version ? `Bruno/${version}` : 'Bruno';
+  openCollection.extensions.bruno.exportedUsing = isNarado() ? `narado (Bruno/${version || '?'})` : version ? `Bruno/${version}` : 'Bruno';
 
   return jsyaml.dump(openCollection, {
     indent: 2,

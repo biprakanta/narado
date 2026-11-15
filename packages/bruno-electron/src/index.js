@@ -178,12 +178,15 @@ if (useSingleInstance && !gotTheLock) {
 } else {
   // This is the primary instance (or single instance is disabled)
 
-  // Try to remove any existing registrations
-  app.removeAsDefaultProtocolClient('bruno');
-  // Register as default handler for `bruno://` protocol URLs
-  app.setAsDefaultProtocolClient('bruno');
+  // bruno:// links belong to an installed Bruno; narado desktop leaves them alone.
+  if (!NARADO_DESKTOP) {
+    // Try to remove any existing registrations
+    app.removeAsDefaultProtocolClient('bruno');
+    // Register as default handler for `bruno://` protocol URLs
+    app.setAsDefaultProtocolClient('bruno');
+  }
 
-  if (isLinux) {
+  if (isLinux && !NARADO_DESKTOP) {
     try {
       execSync('xdg-mime default bruno.desktop x-scheme-handler/bruno');
     } catch (err) {}
@@ -367,16 +370,18 @@ app.on('ready', async () => {
 
   ipcMain.handle('renderer:open-about', () => {
     const { version } = require('../package.json');
-    const aboutBruno = require('./app/about-bruno');
+    const about = NARADO_DESKTOP ? require('./app/about-narado') : require('./app/about-bruno');
     const aboutWindow = new BrowserWindow({
-      width: 350,
-      height: 250,
+      width: NARADO_DESKTOP ? 360 : 350,
+      height: NARADO_DESKTOP ? 300 : 250,
+      title: NARADO_DESKTOP ? 'About narado' : 'About Bruno',
+      backgroundColor: NARADO_DESKTOP ? '#17121F' : undefined,
       webPreferences: {
         nodeIntegration: false
       }
     });
     aboutWindow.removeMenu();
-    aboutWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(aboutBruno({ version }))}`);
+    aboutWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(about({ version }))}`);
   });
 
   mainWindow.once('ready-to-show', () => {

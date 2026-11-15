@@ -14,6 +14,7 @@ import get from 'lodash/get';
 
 import Bruno from 'components/Bruno';
 import { NaradoMark } from 'components/Narado/Brand';
+import { isNaradoWeb } from 'utils/common/product';
 import { isNaradoAvailable } from 'components/Narado/api';
 import MenuDropdown from 'ui/MenuDropdown';
 import ActionIcon from 'ui/ActionIcon';
@@ -48,7 +49,8 @@ const AppTitleBar = () => {
   const osClass = getOsClass();
   const isWindows = osClass === 'os-windows';
   const isLinux = osClass === 'os-linux';
-  const showWindowControls = isWindows || isLinux;
+  // In a browser (narado web) there's no window to control and no app menu.
+  const showWindowControls = (isWindows || isLinux) && !isNaradoWeb();
 
   // Listen for fullscreen changes
   useEffect(() => {

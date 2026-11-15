@@ -11,6 +11,7 @@ import { useSelector } from 'react-redux';
 import { findCollectionByUid, areItemsLoading } from 'utils/collections/index';
 import toast from 'react-hot-toast';
 import { formatIpcError } from 'utils/common/error';
+import { productName } from 'utils/common/product';
 
 const EXPORT_FORMATS = {
   ZIP: 'zip',
@@ -121,7 +122,7 @@ const ShareCollection = ({ onClose, collectionUid }) => {
       <Modal size="lg" title="Share Collection" handleCancel={onClose} hideFooter>
         <StyledWrapper className="flex flex-col">
           <p className="text-sm mb-4">
-            Bruno uses{' '}
+            {productName()} uses{' '}
             <a
               href="https://opencollection.com"
               target="_blank"

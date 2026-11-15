@@ -18,6 +18,7 @@ import { getDefaultRequestPaneTab } from 'utils/collections';
 import { normalizePath } from 'utils/common/path';
 import { normalizeQuery, isValidQuery, highlightText, sortResults, getTypeLabel, getItemPath } from './utils/searchUtils';
 import { SEARCH_TYPES, MATCH_TYPES, SEARCH_CONFIG, DOCUMENTATION_RESULT } from './constants';
+import { isNarado } from 'utils/common/product';
 import StyledWrapper from './StyledWrapper';
 
 const GlobalSearchModal = ({ isOpen, onClose }) => {
@@ -57,7 +58,8 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
     }));
 
     collectionResults.sort((a, b) => a.name.localeCompare(b.name));
-    return [DOCUMENTATION_RESULT, ...collectionResults];
+    // Bruno's documentation; not offered in narado.
+    return isNarado() ? collectionResults : [DOCUMENTATION_RESULT, ...collectionResults];
   };
 
   const searchInCollections = (searchTerms, enablePathMatch) => {
@@ -65,7 +67,7 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
 
     // Check for documentation match
     const queryLower = searchTerms.join(' ');
-    if (['documentation', 'docs', 'bruno docs'].some((term) => term.includes(queryLower))) {
+    if (!isNarado() && ['documentation', 'docs', 'bruno docs'].some((term) => term.includes(queryLower))) {
       results.push(DOCUMENTATION_RESULT);
     }
 
@@ -378,7 +380,7 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
         <div className="command-k-modal" onClick={(e) => e.stopPropagation()}>
           <h1 id="search-modal-title" className="sr-only">Global Search</h1>
           <p id="search-modal-description" className="sr-only">
-            Search through collections, requests, folders, and documentation. Use arrow keys to navigate results and Enter to select.
+            {isNarado() ? 'Search through collections, requests and folders.' : 'Search through collections, requests, folders, and documentation.'} Use arrow keys to navigate results and Enter to select.
           </p>
           <div aria-live="polite" aria-atomic="true" className="sr-only">
             {results.length > 0 && query
@@ -393,7 +395,7 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
               <input
                 ref={inputRef}
                 type="text"
-                placeholder="Search collections, requests, or documentation..."
+                placeholder={isNarado() ? 'Search collections and requests...' : 'Search collections, requests, or documentation...'}
                 value={query}
                 onChange={handleQueryChange}
                 onKeyDown={handleKeyNavigation}
@@ -402,7 +404,7 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck="false"
-                aria-label="Search collections, requests, or documentation"
+                aria-label={isNarado() ? 'Search collections and requests' : 'Search collections, requests, or documentation'}
                 aria-expanded={results.length > 0}
                 aria-controls="search-results"
                 aria-activedescendant={results.length > 0 ? `search-result-${selectedIndex}` : undefined}

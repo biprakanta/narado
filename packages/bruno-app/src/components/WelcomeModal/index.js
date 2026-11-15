@@ -13,7 +13,7 @@ import StorageStep from './StorageStep';
 import GetStartedStep from './GetStartedStep';
 import StyledWrapper from './StyledWrapper';
 import { productName, isNarado } from 'utils/common/product';
-import { NaradoIllustration } from 'components/Narado/Brand';
+import { DISPLAY_FONT, NaradoIllustration } from 'components/Narado/Brand';
 
 const TOTAL_STEPS = 4;
 
@@ -108,7 +108,7 @@ const WelcomeModal = ({ onDismiss, onImportCollection, onCreateCollection, onOpe
           <div className="logo-container">
             {isNarado() ? <NaradoIllustration size={96} /> : <Bruno width={48} />}
           </div>
-          <h1 className="welcome-heading">
+          <h1 className="welcome-heading" style={isNarado() ? { fontFamily: DISPLAY_FONT, fontWeight: 700 } : undefined}>
             {step === 1 ? `Welcome to ${productName()}` : step === 4 ? 'Ready to go!' : `Set up ${productName()}`}
           </h1>
           {step === 1 && (

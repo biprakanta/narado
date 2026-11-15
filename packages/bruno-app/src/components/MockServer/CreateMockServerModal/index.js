@@ -39,6 +39,7 @@ import {
   toMockServerDelayInputValue,
   blockMockServerDelayKeys
 } from 'utils/mock-server/mock-server-instances';
+import { productName } from 'utils/common/product';
 
 const resolveSelectedSpecUid = (editingInstance, apiSpecs) => {
   if (!editingInstance?.specPath) {
@@ -762,7 +763,7 @@ const CreateMockServerModal = ({
               </>
             ) : (
               <div className="text-xs mt-2 opacity-70">
-                Bruno will pick the next available port automatically.
+                {productName()} will pick the next available port automatically.
               </div>
             )}
           </div>

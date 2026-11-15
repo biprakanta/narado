@@ -12,7 +12,7 @@ import { clearSelectedError } from 'providers/ReduxStore/slices/logs';
 import { useApp } from 'providers/App';
 import platformLib from 'platform';
 import StyledWrapper from './StyledWrapper';
-import { productName, isNarado, repoUrl } from 'utils/common/product';
+import { isNarado, productName, repoUrl } from 'utils/common/product';
 
 const ErrorInfoTab = ({ error }) => {
   const { version } = useApp();
@@ -34,7 +34,7 @@ const ErrorInfoTab = ({ error }) => {
 - **Timestamp**: ${formatTimestamp(error.timestamp)}
 
 ### Environment
-- **Bruno Version**: ${version}
+- **${isNarado() ? 'narado on Bruno' : 'Bruno'} Version**: ${version}
 - **OS**: ${platformLib.os.family} ${platformLib.os.version || ''}
 - **Browser**: ${platformLib.name} ${platformLib.version || ''}
 

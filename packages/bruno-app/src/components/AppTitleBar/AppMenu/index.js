@@ -3,6 +3,7 @@ import { IconMenu2 } from '@tabler/icons';
 import MenuDropdown from 'ui/MenuDropdown';
 import ActionIcon from 'ui/ActionIcon';
 import StyledWrapper from './StyledWrapper';
+import { isNarado, productName } from 'utils/common/product';
 
 const AppMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -122,14 +123,19 @@ const AppMenu = () => {
       submenu: [
         {
           id: 'about',
-          label: 'About Bruno',
+          label: `About ${productName()}`,
           onClick: () => ipcRenderer?.invoke('renderer:open-about')
         },
-        {
-          id: 'documentation',
-          label: 'Documentation',
-          onClick: () => ipcRenderer?.invoke('renderer:open-docs')
-        }
+        // Bruno's documentation; not shown in narado.
+        ...(isNarado()
+          ? []
+          : [
+              {
+                id: 'documentation',
+                label: 'Documentation',
+                onClick: () => ipcRenderer?.invoke('renderer:open-docs')
+              }
+            ])
       ]
     }
   ];

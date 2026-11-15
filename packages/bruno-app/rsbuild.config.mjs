@@ -17,6 +17,10 @@ const remoteImageDomains = (process.env.BRUNO_REMOTE_IMAGE_DOMAINS || 'd3icksk7s
   .map((d) => d.trim())
   .filter(Boolean);
 
+const NARADO_BRAND = process.env.BRUNO_BRAND !== 'bruno';
+// Bump when narado's icons change, so browsers don't keep showing a cached one.
+const ICON_VERSION = '2';
+
 export default defineConfig({
   plugins: [
     pluginNodePolyfill(),
@@ -53,9 +57,24 @@ export default defineConfig({
       immutable$: swaggerImmutable
     }
   },
-  html: {
-    title: 'Bruno'
-  },
+  // narado's page title and icons in the HTML itself (not only set later by script), so the
+  // browser never shows another icon first. BRUNO_BRAND=bruno builds Bruno's own look.
+  html: NARADO_BRAND
+    ? {
+        title: 'narado',
+        // rsbuild links /favicon.ico by itself; make that narado's too.
+        favicon: './public/narado/favicon.ico',
+        tags: [
+          { tag: 'link', attrs: { rel: 'icon', type: 'image/svg+xml', href: `/narado/narado-favicon.svg?v=${ICON_VERSION}` }, head: true },
+          { tag: 'link', attrs: { rel: 'alternate icon', sizes: '16x16 32x32 48x48', href: `/narado/favicon.ico?v=${ICON_VERSION}` }, head: true },
+          { tag: 'link', attrs: { rel: 'apple-touch-icon', href: `/narado/favicon-180.png?v=${ICON_VERSION}` }, head: true },
+          { tag: 'meta', attrs: { name: 'theme-color', content: '#21004B' }, head: true },
+          { tag: 'meta', attrs: { name: 'application-name', content: 'narado' }, head: true },
+          { tag: 'meta', attrs: { name: 'description', content: 'API collections in Git, for your whole team.' }, head: true },
+          { tag: 'link', attrs: { rel: 'manifest', href: `/narado/manifest.webmanifest?v=${ICON_VERSION}` }, head: true }
+        ]
+      }
+    : { title: 'Bruno' },
   // Web build: forward the IPC WebSocket to packages/bruno-web-server.
   // Unused by the Electron app, which talks to its main process directly.
   server: {
@@ -70,6 +89,10 @@ export default defineConfig({
       },
       // narado desktop's channel to the server (desktop phase D2).
       '/desktop/api': {
+        target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100'
+      },
+      // narado's /favicon.ico (the browser asks for it on its own).
+      '/favicon.ico': {
         target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100'
       },
       // Setup and admin pages.

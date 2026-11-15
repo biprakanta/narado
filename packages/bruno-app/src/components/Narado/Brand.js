@@ -74,9 +74,6 @@ export const NaradoHome = () => (
   </div>
 );
 
-/** The veena as a sidebar section icon (same props as the Tabler icons it sits beside). */
-export const VeenaIcon = ({ size = 16, className }) => <NaradoVeena size={size} className={className} />;
-
 const greeting = () => {
   const h = new Date().getHours();
   return h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';

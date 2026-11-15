@@ -24,6 +24,7 @@ import useWsEventListeners from 'utils/network/ws-event-listeners';
 import Portal from 'components/Portal';
 import SaveTransientRequestContainer from 'components/SaveTransientRequest/Container';
 import SaveTransientRequest from 'components/SaveTransientRequest';
+import { productName } from 'utils/common/product';
 
 const TransientRequestModalsRenderer = ({ modals }) => {
   if (modals.length === 0) {
@@ -104,7 +105,7 @@ export default function Main() {
           <div className="fixed bottom-0 left-0 right-0 z-10 bg-amber-100 border border-amber-400 text-amber-700 px-4 py-3" role="alert">
             <strong className="font-bold">WARNING:</strong>
             <div>
-              It looks like Bruno was launched as the Intel (x64) build under Rosetta on your Apple Silicon Mac. This can cause reduced performance and unexpected behavior.
+              It looks like {productName()} was launched as the Intel (x64) build under Rosetta on your Apple Silicon Mac. This can cause reduced performance and unexpected behavior.
             </div>
             <button className="absolute right-2 top-0 text-xl" onClick={() => setShowRosettaBanner(!showRosettaBanner)}>
               &times;

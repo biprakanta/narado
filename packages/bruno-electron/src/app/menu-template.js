@@ -3,6 +3,9 @@ const os = require('os');
 const { BrowserWindow } = require('electron');
 const { version } = require('../../package.json');
 const aboutBruno = require('./about-bruno');
+const aboutNarado = require('./about-narado');
+
+const NARADO = process.env.NARADO_DESKTOP === '1';
 
 const template = [
   {
@@ -96,20 +99,24 @@ const template = [
     role: 'help',
     submenu: [
       {
-        label: 'About Bruno',
+        label: NARADO ? 'About narado' : 'About Bruno',
         click: () => {
           const aboutWindow = new BrowserWindow({
-            width: 350,
-            height: 250,
+            width: NARADO ? 360 : 350,
+            height: NARADO ? 300 : 250,
+            title: NARADO ? 'About narado' : 'About Bruno',
+            backgroundColor: NARADO ? '#17121F' : undefined,
             webPreferences: {
               nodeIntegration: false
             }
           });
           aboutWindow.removeMenu();
-          aboutWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(aboutBruno({ version }))}`);
+          const html = NARADO ? aboutNarado({ version }) : aboutBruno({ version });
+          aboutWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
         }
       },
-      { label: 'Documentation', click: () => ipcMain.emit('main:open-docs') }
+      // Bruno's documentation; narado's own help comes from the team's server.
+      ...(NARADO ? [] : [{ label: 'Documentation', click: () => ipcMain.emit('main:open-docs') }])
     ]
   }
 ];

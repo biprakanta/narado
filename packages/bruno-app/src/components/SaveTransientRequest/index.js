@@ -24,6 +24,7 @@ import { itemSchema } from '@usebruno/schema';
 import { uuid } from 'utils/common';
 import { formatIpcError } from 'utils/common/error';
 import get from 'lodash/get';
+import { isNarado, naradoWhere, productName } from 'utils/common/product';
 
 const SaveTransientRequest = ({ item: itemProp, collection: collectionProp, isOpen = false, onClose, closeAfterSave = false }) => {
   const dispatch = useDispatch();
@@ -499,7 +500,7 @@ const SaveTransientRequest = ({ item: itemProp, collection: collectionProp, isOp
                             Location
                             <Help width={250} placement="top">
                               <p>
-                                Bruno stores your collections on your computer's filesystem.
+                                {productName()} stores your collections {isNarado() ? naradoWhere() : 'on your computer\'s filesystem'}.
                               </p>
                               <p className="mt-2">
                                 Choose the location where you want to store this collection.

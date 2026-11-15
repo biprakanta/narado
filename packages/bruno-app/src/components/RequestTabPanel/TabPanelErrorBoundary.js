@@ -6,6 +6,7 @@ import { NON_CLOSABLE_TAB_TYPES } from 'providers/ReduxStore/slices/tabs';
 import { selectTabByUid } from 'src/selectors/tab';
 import Button from 'ui/Button';
 import { useTheme } from 'providers/Theme';
+import { isNaradoWeb, productName } from 'utils/common/product';
 
 class TabPanelErrorBoundaryInner extends React.Component {
   constructor(props) {
@@ -39,7 +40,7 @@ class TabPanelErrorBoundaryInner extends React.Component {
             </p>
           ) : (
             <p className="text-sm opacity-70 max-w-md">
-              This panel encountered an unexpected error. Restart Bruno to recover.
+              This panel encountered an unexpected error. {isNaradoWeb() ? 'Reload the page to recover.' : `Restart ${productName()} to recover.`}
             </p>
           )}
           {errorMessage && (

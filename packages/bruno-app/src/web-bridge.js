@@ -206,9 +206,9 @@ const installWebBridge = () => {
     document.head.appendChild(link);
   };
   document.querySelectorAll('link[rel~="icon"]').forEach((l) => l.remove());
-  icon('icon', '/narado/narado-favicon.svg', { type: 'image/svg+xml' });
-  icon('alternate icon', '/narado/favicon.ico', { sizes: '16x16 32x32 48x48' });
-  icon('apple-touch-icon', '/narado/favicon-180.png');
+  icon('icon', '/narado/narado-favicon.svg?v=2', { type: 'image/svg+xml' });
+  icon('alternate icon', '/narado/favicon.ico?v=2', { sizes: '16x16 32x32 48x48' });
+  icon('apple-touch-icon', '/narado/favicon-180.png?v=2');
 
   // Start-up screen: the veena loader until Bruno's main process says the app has loaded.
   const bootScreen = (() => {

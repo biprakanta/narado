@@ -13,7 +13,9 @@ const ASSETS = {
   'narado-loader-dark.svg': 'image/svg+xml',
   'narado-favicon.svg': 'image/svg+xml',
   'favicon.ico': 'image/x-icon',
-  'space-grotesk-700.woff2': 'font/woff2'
+  'space-grotesk-700.woff2': 'font/woff2',
+  'inter-400.woff2': 'font/woff2',
+  'inter-600.woff2': 'font/woff2'
 };
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -35,10 +37,12 @@ const serveAsset = (pathname, res) => {
 
 const STYLE = `
 @font-face{font-family:"Space Grotesk";font-style:normal;font-weight:700;font-display:swap;src:url(/auth/assets/space-grotesk-700.woff2) format("woff2")}
+@font-face{font-family:Inter;font-style:normal;font-weight:400;font-display:swap;src:url(/auth/assets/inter-400.woff2) format("woff2")}
+@font-face{font-family:Inter;font-style:normal;font-weight:600;font-display:swap;src:url(/auth/assets/inter-600.woff2) format("woff2")}
 :root{color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;
-  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   color:#EDE4D8;background:#17121F;
   background-image:radial-gradient(60rem 40rem at 70% 10%,rgba(253,110,21,.16),transparent 60%),
     radial-gradient(50rem 40rem at 10% 100%,rgba(101,7,72,.45),transparent 60%)}
@@ -50,8 +54,8 @@ h1{margin:0;font-family:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;font-
 .note{margin:0 0 16px;font-size:14px;line-height:1.5;color:#EDE4D8}
 .note.error{color:#FDB55A}
 .btn{display:block;width:100%;padding:12px 16px;border-radius:10px;border:0;cursor:pointer;
-  font:600 15px/1.2 inherit;color:#17121F;text-decoration:none;
-  background:linear-gradient(135deg,#FB9B1A,#FD6E15 60%,#EC2B26)}
+  font-family:inherit;font-weight:600;font-size:15px;line-height:1.2;color:#17121F;text-decoration:none;
+  background:#FB9B1A}
 .btn:hover{filter:brightness(1.06)}
 .btn:focus-visible{outline:3px solid #FDEED2;outline-offset:3px}
 .loading{display:none;flex-direction:column;align-items:center;gap:6px;color:#C7BCCB;font-size:14px}
@@ -59,7 +63,7 @@ h1{margin:0;font-family:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;font-
 .going .btn{display:none}.going .loading{display:flex}
 .foot{margin-top:18px;font-size:12px;color:#958A9B}
 .secondary{display:block;width:100%;margin-top:10px;padding:11px 16px;border-radius:10px;cursor:pointer;
-  font:600 15px/1.2 inherit;color:#EDE4D8;background:transparent;border:1px solid #4A3F57}
+  font-family:inherit;font-weight:600;font-size:15px;line-height:1.2;color:#EDE4D8;background:transparent;border:1px solid #4A3F57}
 .secondary:hover{background:rgba(255,255,255,.04)}
 .device{margin:0 0 18px;font-size:14px;line-height:1.6;color:#C7BCCB;text-align:left}
 .device b{color:#EDE4D8;font-weight:600}
@@ -68,7 +72,7 @@ h1{margin:0;font-family:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;font-
 const shell = ({ title, body }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
-<link rel="icon" type="image/svg+xml" href="/auth/assets/narado-favicon.svg"><link rel="alternate icon" href="/auth/assets/favicon.ico">
+<link rel="icon" type="image/svg+xml" href="/auth/assets/narado-favicon.svg?v=2"><link rel="alternate icon" href="/auth/assets/favicon.ico?v=2">
 <style>${STYLE}</style></head>
 <body><main>
 <img class="art" src="/auth/assets/narado-illustration-256.png" srcset="/auth/assets/narado-illustration-512.png 2x" alt="narado: the sage Narada with his veena">

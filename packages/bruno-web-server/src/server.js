@@ -16,6 +16,7 @@ const HOST = process.env.BRUNO_WEB_HOST || '127.0.0.1';
 const PORT = Number(process.env.BRUNO_WEB_PORT || 4100);
 const DATA_DIR = path.resolve(process.env.BRUNO_WEB_DATA_DIR || path.join(os.homedir(), '.bruno-web'));
 const STATIC_DIR = path.resolve(__dirname, '../../bruno-app/dist');
+const NARADO_FAVICON = path.resolve(__dirname, '../../bruno-app/public/narado/favicon.ico');
 // Browser origins allowed to connect. The rsbuild dev server (3000) and this server.
 const ALLOWED_ORIGINS = new Set(
   (process.env.BRUNO_WEB_ORIGINS || `http://localhost:3000,http://127.0.0.1:3000,http://localhost:${PORT},http://127.0.0.1:${PORT}`)
@@ -161,6 +162,12 @@ const start = async ({ settings, restart }) => {
   const server = http.createServer(async (req, res) => {
     try {
       const { pathname } = new URL(req.url, 'http://x');
+      // Browsers ask for /favicon.ico on their own: narado's, not the interface build's default.
+      if (pathname === '/favicon.ico' && req.method === 'GET') {
+        res.writeHead(200, { 'content-type': 'image/x-icon', 'cache-control': 'public, max-age=86400' });
+        fs.createReadStream(NARADO_FAVICON).pipe(res);
+        return;
+      }
       if (await admin.handle(req, res)) return;
       // Not set up yet (no sign-in, not on this computer only): the setup pages and their images only.
       if (setupOnly && !pathname.startsWith('/auth/assets/')) {

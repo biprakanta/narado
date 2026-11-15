@@ -50,8 +50,15 @@ const normaliseServer = (input) => {
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`;
 };
 
-const htmlPage = (title, text) =>
-  `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font-family:system-ui;background:#17121F;color:#EDE4D8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p style="max-width:420px;text-align:center;line-height:1.5">${text}</p></body>`;
+/** The page the system browser shows after signing in narado desktop (served on 127.0.0.1). */
+const htmlPage = (title, text, server) => {
+  const asset = (f) => (server ? `${server}/auth/assets/${f}?v=2` : '');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>${server ? `<link rel="icon" type="image/svg+xml" href="${asset('narado-favicon.svg')}">` : ''}
+<style>@font-face{font-family:"Space Grotesk";font-weight:700;src:url(${asset('space-grotesk-700.woff2')}) format("woff2")}@font-face{font-family:Inter;font-weight:400;src:url(${asset('inter-400.woff2')}) format("woff2")}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#EDE4D8;background:#17121F;background-image:radial-gradient(60rem 40rem at 70% 10%,rgba(253,110,21,.16),transparent 60%),radial-gradient(50rem 40rem at 10% 100%,rgba(101,7,72,.45),transparent 60%)}
+main{max-width:400px;text-align:center;padding:24px}img{width:160px;height:160px}h1{margin:0 0 12px;font:700 32px "Space Grotesk",ui-sans-serif,sans-serif;color:#FDEED2}</style></head>
+<body><main>${server ? `<img src="${asset('narado-illustration-256.png')}" alt="">` : ''}<h1>narado</h1><p>${text}</p></main></body></html>`;
+};
 
 class RemoteFront {
   /**
@@ -323,12 +330,12 @@ class RemoteFront {
       const url = new URL(req.url, 'http://127.0.0.1');
       if (url.pathname !== '/callback') return res.writeHead(404).end();
       if (url.searchParams.get('state') !== state) {
-        res.writeHead(400, { 'content-type': 'text/html; charset=utf-8' }).end(htmlPage('narado', 'This sign-in is out of date. Start again from narado desktop.'));
+        res.writeHead(400, { 'content-type': 'text/html; charset=utf-8' }).end(htmlPage('narado', 'This sign-in is out of date. Start again from narado desktop.', server));
         return;
       }
       const error = url.searchParams.get('error');
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(htmlPage('narado', error ? 'Sign-in cancelled. You can close this tab.' : 'narado desktop is signed in. You can close this tab and go back to the app.'));
+      res.end(htmlPage('narado', error ? 'Sign-in cancelled. You can close this tab.' : 'narado desktop is signed in. You can close this tab and go back to the app.', server));
       if (error) finish.reject(new Error(error === 'access_denied' ? 'Sign-in was cancelled in the browser' : `Sign-in failed: ${error}`));
       else finish.resolve(url.searchParams.get('code'));
     });

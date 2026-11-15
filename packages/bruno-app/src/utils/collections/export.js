@@ -2,6 +2,7 @@ import * as FileSaver from 'file-saver';
 import get from 'lodash/get';
 import each from 'lodash/each';
 import { filterTransientItems } from 'utils/collections';
+import { isNarado } from 'utils/common/product';
 
 export const deleteUidsInItems = (items) => {
   each(items, (item) => {
@@ -107,7 +108,7 @@ export const prepareCollectionForExport = (collection, version) => {
   transformItem(collection.items);
 
   collection.exportedAt = new Date().toISOString();
-  collection.exportedUsing = version ? `Bruno/${version}` : 'Bruno';
+  collection.exportedUsing = isNarado() ? `narado (Bruno/${version || '?'})` : version ? `Bruno/${version}` : 'Bruno';
 
   return collection;
 };

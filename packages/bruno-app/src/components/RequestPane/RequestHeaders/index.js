@@ -10,6 +10,7 @@ import {
   IconInfoCircle
 } from '@tabler/icons';
 import { BRUNO_DEFAULT_HEADERS, getBrunoRuntimeUserAgent } from '@usebruno/common';
+import { isNarado } from 'utils/common/product';
 import { useTheme } from 'providers/Theme';
 import {
   moveRequestHeader,
@@ -76,7 +77,8 @@ const HeaderHint = ({ id, text, className, place = 'top', testId, tooltipTestId,
 
 const getDefaultHeaderValue = (header, requestUrl) => {
   if (header.name === 'User-Agent') {
-    return getBrunoRuntimeUserAgent(appVersion);
+    // narado names itself first (bruno-electron/src/ipc/network/axios-instance.js).
+    return isNarado() ? `narado ${getBrunoRuntimeUserAgent(appVersion)}` : getBrunoRuntimeUserAgent(appVersion);
   }
 
   return header.previewValue || '';

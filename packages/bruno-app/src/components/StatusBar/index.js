@@ -14,7 +14,7 @@ import { addTab } from 'providers/ReduxStore/slices/tabs';
 import { useApp } from 'providers/App';
 import StyledWrapper from './StyledWrapper';
 import { repoUrl, isNarado } from 'utils/common/product';
-import { NaradoMark } from 'components/Narado/Brand';
+import { DISPLAY_FONT, NaradoMark } from 'components/Narado/Brand';
 
 const StatusBar = () => {
   const dispatch = useDispatch();
@@ -95,11 +95,14 @@ const StatusBar = () => {
               </button>
             </ThemeDropdown>
 
-            <ToolHint text="Notifications" toolhintId="Notifications" place="top" offset={10}>
-              <div className="status-bar-button">
-                <Notifications />
-              </div>
-            </ToolHint>
+            {/* Bruno's announcements; narado has none. */}
+            {!isNarado() && (
+              <ToolHint text="Notifications" toolhintId="Notifications" place="top" offset={10}>
+                <div className="status-bar-button">
+                  <Notifications />
+                </div>
+              </ToolHint>
+            )}
 
             <ToolHint text="GitHub Repository" toolhintId="GitHub" place="top" offset={10}>
               <button
@@ -171,7 +174,7 @@ const StatusBar = () => {
               {isNarado() ? (
                 <>
                   <NaradoMark size={14} />
-                  <span style={{ fontWeight: 600 }}>narado</span>
+                  <span style={{ fontFamily: DISPLAY_FONT, fontWeight: 700 }}>narado</span>
                 </>
               ) : (
                 <>v{version}</>

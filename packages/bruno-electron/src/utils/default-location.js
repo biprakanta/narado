@@ -2,11 +2,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { app } = require('electron');
 
-const BRUNO_DIR_NAME = 'bruno';
+// narado desktop keeps its collections apart from an installed Bruno's.
+const BRUNO_DIR_NAME = process.env.NARADO_DESKTOP === '1' ? 'narado' : 'bruno';
 
 /**
  * Returns the default location where new workspaces and collections are stored.
- * Checks ~/Documents/bruno if available, otherwise falls back to the app's data directory
+ * Checks ~/Documents/bruno (narado desktop: ~/Documents/narado) if available, otherwise falls back to the app's data directory
  */
 function resolveDefaultLocation() {
   const defaultPaths = [

@@ -37,9 +37,11 @@ const when = (ms) => (ms ? new Date(ms).toISOString().replace('T', ' ').slice(0,
 
 const STYLE = `
 @font-face{font-family:"Space Grotesk";font-style:normal;font-weight:700;font-display:swap;src:url(/auth/assets/space-grotesk-700.woff2) format("woff2")}
+@font-face{font-family:Inter;font-style:normal;font-weight:400;font-display:swap;src:url(/auth/assets/inter-400.woff2) format("woff2")}
+@font-face{font-family:Inter;font-style:normal;font-weight:600;font-display:swap;src:url(/auth/assets/inter-600.woff2) format("woff2")}
 :root{color-scheme:dark;--bg:#17121F;--card:#211A2B;--line:#342B40;--text:#EDE4D8;--muted:#B5AABB;--accent:#FD6E15;--warn:#FDB55A;--ok:#7BD88F}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 header{display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid var(--line)}
 header img{width:22px;height:22px}
 header h1{margin:0;font:700 18px "Space Grotesk",ui-sans-serif,sans-serif;color:#FDEED2}
@@ -57,7 +59,7 @@ input[type=text],input[type=password],input[type=url],textarea,select{width:100%
 input:disabled,textarea:disabled,select:disabled{opacity:.6}
 .row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1 1 220px}
 .actions{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-button,.btn{padding:8px 14px;border-radius:8px;border:0;cursor:pointer;font:600 14px inherit;color:#17121F;background:linear-gradient(135deg,#FB9B1A,#FD6E15 60%,#EC2B26);text-decoration:none;display:inline-block}
+button,.btn{padding:8px 14px;border-radius:8px;border:0;cursor:pointer;font-family:inherit;font-weight:600;font-size:14px;color:#17121F;background:#FB9B1A;text-decoration:none;display:inline-block}
 button.secondary,.btn.secondary{background:transparent;color:var(--text);border:1px solid var(--line)}
 button.danger{background:transparent;color:var(--warn);border:1px solid var(--line);padding:4px 10px;font-size:13px}
 code,.copy{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:#17121F;border:1px solid var(--line);border-radius:6px;padding:2px 6px}
@@ -72,7 +74,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px 4px;
 
 const page = ({ title, who, body }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)} · narado</title><link rel="icon" type="image/svg+xml" href="/auth/assets/narado-favicon.svg">
+<title>${esc(title)} · narado</title><link rel="icon" type="image/svg+xml" href="/auth/assets/narado-favicon.svg?v=2"><link rel="alternate icon" href="/auth/assets/favicon.ico?v=2">
 <style>${STYLE}</style></head><body>
 <header><img src="/auth/assets/narado-favicon.svg" alt=""><h1>narado</h1><span class="tag">${esc(title)}</span>${who ? `<span class="who">${esc(who)}</span>` : ''}</header>
 <main>${body}</main></body></html>`;

@@ -8,7 +8,12 @@ const fetchNotifications = async () => {
   return data?.notifications || [];
 };
 
+// narado (its desktop app, or a person's worker on the server) doesn't show Bruno's
+// announcements, and doesn't contact Bruno's server for them.
+const isNarado = () => process.env.NARADO_DESKTOP === '1' || !!process.env.NARADO_WORKER_SECRET;
+
 const pushNotifications = async (mainWindow) => {
+  if (isNarado()) return mainWindow.webContents.send('main:load-notifications', []);
   try {
     const notifications = await fetchNotifications();
     mainWindow.webContents.send('main:load-notifications', notifications);

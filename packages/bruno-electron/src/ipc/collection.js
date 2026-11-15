@@ -1039,7 +1039,7 @@ const registerRendererEventHandlers = (mainWindow, watcher) => {
         info: {
           type: 'bruno-environment',
           exportedAt: new Date().toISOString(),
-          exportedUsing: `Bruno/v${appVersion}`
+          exportedUsing: process.env.NARADO_DESKTOP === '1' || process.env.NARADO_WORKER_SECRET ? `narado (Bruno/v${appVersion})` : `Bruno/v${appVersion}`
         }
       });
 
@@ -1070,7 +1070,7 @@ const registerRendererEventHandlers = (mainWindow, watcher) => {
           info: {
             type: 'bruno-environment',
             exportedAt: new Date().toISOString(),
-            exportedUsing: `Bruno/v${appVersion}`
+            exportedUsing: process.env.NARADO_DESKTOP === '1' || process.env.NARADO_WORKER_SECRET ? `narado (Bruno/v${appVersion})` : `Bruno/v${appVersion}`
           },
           environments
         };

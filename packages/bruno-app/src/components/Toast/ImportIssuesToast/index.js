@@ -2,8 +2,10 @@ import React, { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { IconAlertCircle, IconBrandGithub, IconCopy, IconX } from '@tabler/icons';
 import StyledWrapper from './StyledWrapper';
+import { repoUrl } from 'utils/common/product';
 
-const GITHUB_ISSUES_URL = 'https://github.com/usebruno/bruno/issues/new';
+// Bruno's tracker, or narado's own repository's.
+const issuesUrl = () => `${repoUrl()}/issues/new`;
 const MAX_URL_LENGTH = 8000;
 
 const ImportIssuesToastContent = ({ t, issues, summary }) => {
@@ -57,7 +59,7 @@ const ImportIssuesToastContent = ({ t, issues, summary }) => {
     const title = `Postman import: ${summary}`;
     const body = buildIssueBody();
     const params = new URLSearchParams({ title, body, labels: 'bug' });
-    return `${GITHUB_ISSUES_URL}?${params.toString()}`.length > MAX_URL_LENGTH;
+    return `${issuesUrl()}?${params.toString()}`.length > MAX_URL_LENGTH;
   }, [issues, summary, includeItems]);
 
   const handleCopy = async () => {
@@ -75,7 +77,7 @@ const ImportIssuesToastContent = ({ t, issues, summary }) => {
 
     if (!isUrlTooLong) {
       const params = new URLSearchParams({ title, body, labels: 'bug' });
-      window.open(`${GITHUB_ISSUES_URL}?${params.toString()}`, '_blank');
+      window.open(`${issuesUrl()}?${params.toString()}`, '_blank');
       return;
     }
 
@@ -86,7 +88,7 @@ const ImportIssuesToastContent = ({ t, issues, summary }) => {
       toast.error('Failed to copy to clipboard', { duration: 3000 });
     }
     const params = new URLSearchParams({ title, labels: 'bug' });
-    window.open(`${GITHUB_ISSUES_URL}?${params.toString()}`, '_blank');
+    window.open(`${issuesUrl()}?${params.toString()}`, '_blank');
   };
 
   return (

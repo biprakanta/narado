@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import { IconAppWindow } from '@tabler/icons';
 import Button from 'ui/Button';
 import StyledWrapper from './StyledWrapper';
+import { isNarado } from 'utils/common/product';
 
 const APPS_DOCS_URL = 'https://link.usebruno.com/apps';
 
@@ -27,15 +28,18 @@ const EmptyAppState = ({ title = 'No app yet', hint, onAddCode }) => {
             >
               Add app code
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              color="secondary"
-              onClick={openAppsDocs}
-              data-testid="empty-app-learn-more"
-            >
-              Learn more
-            </Button>
+            {/* Bruno's documentation; not linked from narado. */}
+            {!isNarado() && (
+              <Button
+                size="sm"
+                variant="outline"
+                color="secondary"
+                onClick={openAppsDocs}
+                data-testid="empty-app-learn-more"
+              >
+                Learn more
+              </Button>
+            )}
           </div>
         ) : null}
       </div>
