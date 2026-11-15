@@ -221,3 +221,29 @@ test('code-owner review on the default branch: rulesets, classic protection, or 
   r = await gl({}).reviewRules('acme/api', 'main');
   assert.deepEqual([r.protected, r.codeOwnerReview], [false, false]);
 });
+
+test('listing one namespace only: GitLab users and groups, GitHub owner, organisation, other user', async () => {
+  const glFetch = fakeFetch({
+    'GET /api/v4/namespaces/me.personal': () => [200, { kind: 'user' }],
+    'GET /api/v4/namespaces/acme': () => [200, { kind: 'group' }],
+    'GET /api/v4/users/me.personal/projects': () => [200, [{ path_with_namespace: 'me.personal/api', name: 'api', visibility: 'private', default_branch: 'main', permissions: { project_access: { access_level: 50 } } }]],
+    'GET /api/v4/groups/acme/projects': () => [200, [{ path_with_namespace: 'acme/svc', name: 'svc', visibility: 'private', default_branch: 'main', permissions: { group_access: { access_level: 30 } } }]]
+  });
+  const gl = new GitLabProvider({ id: 'gitlab', token: 't', fetchImpl: glFetch });
+  assert.deepEqual((await gl.listReposIn('me.personal')).map((r) => [r.path, r.access]), [['me.personal/api', 'admin']]);
+  assert.deepEqual((await gl.listReposIn('acme')).map((r) => r.path), ['acme/svc']);
+  assert.ok(glFetch.calls.some((c) => c.url.includes('/groups/acme/projects') && c.url.includes('include_subgroups=true')));
+  assert.ok(!glFetch.calls.some((c) => c.url.includes('membership=true')), 'never the full membership list');
+  await assert.rejects(gl.listReposIn('ghost'), /No GitLab user or group "ghost"/);
+
+  const ghFetch = fakeFetch({
+    'GET /users/acme': () => [200, { type: 'Organization' }],
+    'GET /orgs/acme/repos': () => [200, [{ full_name: 'acme/svc', name: 'svc', private: true, default_branch: 'main', permissions: { push: true } }]],
+    'GET /user/repos?affiliation=owner': () => [200, [{ full_name: 'me/api', name: 'api', private: true, default_branch: 'main', permissions: { admin: true } }]],
+    'GET /user': () => [200, { id: 1, login: 'me' }]
+  });
+  const gh = new GitHubProvider({ id: 'github', token: 't', fetchImpl: ghFetch });
+  assert.deepEqual((await gh.listReposIn('me')).map((r) => [r.path, r.access]), [['me/api', 'admin']]);
+  assert.deepEqual((await gh.listReposIn('acme')).map((r) => [r.path, r.access]), [['acme/svc', 'write']]);
+  assert.ok(!ghFetch.calls.some((c) => c.url.includes('affiliation=owner,collaborator')), 'never the full list');
+});

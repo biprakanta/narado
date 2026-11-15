@@ -66,6 +66,21 @@ describe('Explore APIs', () => {
     expect(await screen.findByText('Connect GitHub')).toBeInTheDocument();
   });
 
+  it('shows where it looks, and narrows it to chosen namespaces', async () => {
+    const calls = fakeServer({
+      'narado:hosts': () => [host],
+      'narado:catalogue': () => ({ ...catalogue, namespaces: [], source: null }),
+      'narado:catalogue-namespaces': () => ({ namespaces: ['me.personal', 'acme'], source: 'you' })
+    });
+    renderWithApp(<ExploreModal onClose={() => {}} />);
+    expect(await screen.findByTestId('narado-explore-where')).toHaveTextContent('every repository you can see');
+    fireEvent.click(screen.getByTestId('narado-explore-where-change'));
+    fireEvent.change(screen.getByTestId('narado-explore-where-input'), { target: { value: 'me.personal, acme ,' } });
+    fireEvent.click(screen.getByTestId('narado-explore-where-save'));
+    await waitFor(() => expect(calls.some(([c]) => c === 'narado:catalogue-namespaces')).toBe(true));
+    expect(calls.find(([c]) => c === 'narado:catalogue-namespaces')[1]).toEqual({ hostId: 'github', namespaces: ['me.personal', 'acme'] });
+  });
+
   it('says what a sync did', () => {
     expect(syncSummary({ first: true, name: 'X (synced)', branch: 'main', commit: 'abc' })).toBe('X (synced) is in your workspace (main at abc)');
     expect(syncSummary({ first: false, name: 'X (synced)', added: 1, updated: 2, removed: 0, kept: ['a.bru'] })).toBe('Synced X (synced): 1 new, 2 updated; kept your edits to 1 file');

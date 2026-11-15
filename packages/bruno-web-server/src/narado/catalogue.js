@@ -13,6 +13,11 @@
  *   - openapi.yaml, openapi.yml or openapi.json (an OpenAPI spec without a config).
  * A repository whose collection is at its root is an "API repo"; one whose collections
  * are in subfolders is "code + API" (a service repository carrying its own API).
+ *
+ * Where to look: by default every repository the person can see. A person can name the
+ * namespaces (users, organisations, groups) to look through instead, and a host in
+ * narado.json can set a default (`exploreNamespaces`). With namespaces set, only those are
+ * listed: nothing else the account can see is asked for.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -162,7 +167,25 @@ class Catalogue {
     const state = { total: 0, done: 0, errors: [], startedAt: Date.now(), finished: false, repos: null };
     state.promise = (async () => {
       const provider = this.registry.get(hostId);
-      const list = await provider.listRepos();
+      const { namespaces } = this.namespacesFor(hostId);
+      let list;
+      if (namespaces.length && provider.listReposIn) {
+        list = [];
+        const seen = new Set();
+        for (const ns of namespaces) {
+          try {
+            for (const r of await provider.listReposIn(ns)) {
+              if (seen.has(r.path)) continue;
+              seen.add(r.path);
+              list.push(r);
+            }
+          } catch (err) {
+            state.errors.push(`${ns}: ${err.message}`);
+          }
+        }
+      } else {
+        list = await provider.listRepos();
+      }
       const hc = this.hostCache(hostId);
       state.repos = list;
       hc.listedAt = Date.now();
@@ -205,6 +228,27 @@ class Catalogue {
     return state;
   }
 
+  /** The namespaces to look through on a host: the person's choice, else the server's default. */
+  namespacesFor(hostId) {
+    const mine = (this.cache.settings && this.cache.settings.namespaces && this.cache.settings.namespaces[hostId]) || null;
+    if (mine && mine.length) return { namespaces: mine, source: 'you' };
+    const host = (this.registry.hosts || []).find((h) => h.id === hostId);
+    const server = host && Array.isArray(host.exploreNamespaces) ? host.exploreNamespaces.map(String).filter(Boolean) : [];
+    return { namespaces: server, source: server.length ? 'server' : null };
+  }
+
+  /** Set (or clear, with an empty list) the person's namespaces for a host, and look again. */
+  setNamespaces(hostId, list) {
+    const clean = [...new Set((list || []).map((x) => String(x).trim().replace(/^\/+|\/+$/g, '')).filter((x) => /^[\w.\-/]+$/.test(x)))].slice(0, 50);
+    this.cache.settings = this.cache.settings || {};
+    this.cache.settings.namespaces = { ...(this.cache.settings.namespaces || {}), [hostId]: clean };
+    // What was found elsewhere no longer applies.
+    this.cache.hosts[hostId] = { repos: {}, listedAt: null };
+    this.save();
+    this.scan(hostId, { force: true });
+    return this.namespacesFor(hostId);
+  }
+
   /** What is known now, plus scan progress. Starts a scan when nothing is known or it is stale. */
   get(hostId, { maxAgeMs = 10 * 60 * 1000 } = {}) {
     const hc = this.hostCache(hostId);
@@ -231,7 +275,8 @@ class Catalogue {
       scanning: !!(current && !current.finished),
       progress: current && !current.finished ? { done: current.done, total: current.total } : null,
       errors: current ? current.errors.slice(0, 5) : [],
-      listedAt: hc.listedAt
+      listedAt: hc.listedAt,
+      ...this.namespacesFor(hostId)
     };
   }
 }

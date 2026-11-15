@@ -147,3 +147,43 @@ test('CODEOWNERS coverage is checked for allowlists next to collections too', ()
   assert.equal(codeownersCovers('services/payments/ @acme/payments\n', nested), true);
   assert.equal(codeownersCovers('*.yml @acme/yaml\nservices/payments/api/.client/allowed-hosts.yml\n', nested), false, 'the last match wins, and it has no owner');
 });
+
+test('with namespaces chosen, only those are listed: nothing else the account can see is asked for', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'narado-cat-'));
+  const asked = [];
+  const provider = {
+    name: 'GitLab',
+    listRepos: async () => {
+      throw new Error('must not list everything');
+    },
+    listReposIn: async (ns) => {
+      asked.push(ns);
+      if (ns === 'nobody') throw new Error('No GitLab user or group "nobody" that you can see');
+      return [{ path: `${ns}/api`, name: 'api', defaultBranch: 'main', updatedAt: '1', access: 'admin', private: true }];
+    },
+    listFiles: async () => ({ files: ['openapi.yaml'], truncated: false }),
+    readFile: async () => 'info: {title: Mine}'
+  };
+  const registry = { get: () => provider, hosts: [{ id: 'gitlab', exploreNamespaces: ['acme'] }] };
+  const cat = new Catalogue({ registry, dataDir: dir, log: quiet });
+
+  // The server's default applies until the person chooses.
+  assert.deepEqual(cat.namespacesFor('gitlab'), { namespaces: ['acme'], source: 'server' });
+  await cat.scan('gitlab').promise;
+  assert.deepEqual(cat.get('gitlab').repos.map((r) => r.path), ['acme/api']);
+
+  // The person's own choice; a name that doesn't exist is reported, the rest still works.
+  cat.setNamespaces('gitlab', ['me.personal', ' nobody ', 'me.personal', 'bad name!']);
+  await cat.scans.get('gitlab').promise;
+  const got = cat.get('gitlab');
+  assert.deepEqual(got.namespaces, ['me.personal', 'nobody']);
+  assert.equal(got.source, 'you');
+  assert.deepEqual(got.repos.map((r) => r.path), ['me.personal/api'], 'what was found in acme is forgotten');
+  assert.match(got.errors.join(' '), /nobody/);
+  assert.deepEqual(asked, ['acme', 'me.personal', 'nobody']);
+
+  // Clearing goes back to the server's default.
+  cat.setNamespaces('gitlab', []);
+  await cat.scans.get('gitlab').promise;
+  assert.equal(cat.get('gitlab').source, 'server');
+});

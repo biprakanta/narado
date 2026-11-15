@@ -166,6 +166,30 @@ class GitLabProvider {
     return repos;
   }
 
+  /**
+   * Repositories in one namespace only (a user or a group, with its subgroups), so a scan
+   * can stay out of everything else the account can see.
+   */
+  async listReposIn(namespace) {
+    const ns = String(namespace).replace(/^\/+|\/+$/g, '');
+    let kind;
+    try {
+      ({ data: { kind } } = await this.api(`/namespaces/${encodeURIComponent(ns)}`));
+    } catch (err) {
+      if (err.status === 404) throw new Error(`No GitLab user or group "${ns}" that you can see`);
+      throw err;
+    }
+    const base = kind === 'user' ? `/users/${encodeURIComponent(ns)}/projects` : `/groups/${encodeURIComponent(ns)}/projects`;
+    const repos = [];
+    for (let page = 1; page <= MAX_REPO_PAGES; page++) {
+      const extra = kind === 'user' ? '' : '&include_subgroups=true';
+      const { data } = await this.api(`${base}?simple=false&per_page=100&page=${page}&order_by=last_activity_at&archived=false${extra}`);
+      repos.push(...data.map((p) => GitLabProvider.toRepo(p, this)));
+      if (data.length < 100) break;
+    }
+    return repos;
+  }
+
   async getRepo(repoPath) {
     const { data } = await this.api(`/projects/${encodeURIComponent(repoPath)}`);
     return GitLabProvider.toRepo(data, this);

@@ -204,6 +204,13 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
   ipcMain.handle('narado:me', async (_e, { hostId }) => me(hostId));
 
   /** The API catalogue: the person's repositories that hold collections (found through the host's API). */
+  /** Which namespaces Explore APIs looks through on a host (empty: everything you can see). */
+  ipcMain.handle('narado:catalogue-namespaces', async (_e, { hostId, namespaces } = {}) => {
+    registry.get(hostId);
+    if (!Array.isArray(namespaces)) throw new Error('namespaces must be a list');
+    return catalogue.setNamespaces(hostId, namespaces);
+  });
+
   ipcMain.handle('narado:catalogue', async (_e, { hostId, refresh = false } = {}) => {
     registry.get(hostId); // unknown host -> error
     if (refresh) catalogue.scan(hostId);

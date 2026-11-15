@@ -33,6 +33,8 @@ const ExploreModal = ({ onClose, onOpened, onMoreOptions, onSynced }) => {
   const [filter, setFilter] = useState('');
   const [opening, setOpening] = useState(null);
   const [error, setError] = useState('');
+  const [editingWhere, setEditingWhere] = useState(false);
+  const [whereText, setWhereText] = useState('');
   const timer = useRef(null);
   const store = useStore();
 
@@ -99,6 +101,19 @@ const ExploreModal = ({ onClose, onOpened, onMoreOptions, onSynced }) => {
       await disconnectGitAccount(h.id);
       toast.success(`Disconnected ${h.name}`);
       onClose();
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+
+  /** Look through only these namespaces (users, organisations, groups); empty for everything. */
+  const saveWhere = async (list) => {
+    setError('');
+    try {
+      await naradoApi.catalogueNamespaces(hostId, list);
+      setEditingWhere(false);
+      setData(null);
+      load(false);
     } catch (err) {
       setError(errorText(err));
     }
@@ -185,6 +200,55 @@ const ExploreModal = ({ onClose, onOpened, onMoreOptions, onSynced }) => {
         {current && current.via === 'account' && current.emailMatch === false && (
           <div className="text-xs" style={{ color: 'var(--color-text-warning, #d4a106)' }} data-testid="narado-explore-email-mismatch">
             {current.login}'s verified emails on {current.name} don't include your sign-in email. If this isn't your own account, disconnect it.
+          </div>
+        )}
+
+        {hostId && data && !editingWhere && (
+          <div className="text-xs opacity-80 flex flex-wrap gap-x-2" data-testid="narado-explore-where">
+            <span>
+              Looking in:{' '}
+              {data.namespaces && data.namespaces.length ? (
+                <>
+                  <strong>{data.namespaces.join(', ')}</strong>
+                  {data.source === 'server' ? ' (set by this server)' : ''}
+                </>
+              ) : (
+                'every repository you can see'
+              )}
+            </span>
+            <button
+              type="button"
+              className="underline"
+              onClick={() => {
+                setWhereText((data.namespaces || []).join(', '));
+                setEditingWhere(true);
+              }}
+              data-testid="narado-explore-where-change"
+            >
+              Change
+            </button>
+          </div>
+        )}
+        {hostId && editingWhere && (
+          <div className="flex flex-col gap-1 text-xs" data-testid="narado-explore-where-edit">
+            <span className="opacity-80">Users, organisations or groups to look through, separated by commas. Leave empty for every repository you can see.</span>
+            <div className="flex gap-2">
+              <input
+                className="block textbox w-full"
+                value={whereText}
+                placeholder="for example acme, acme-platform"
+                onChange={(e) => setWhereText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && saveWhere(whereText.split(',').map((x) => x.trim()).filter(Boolean))}
+                data-testid="narado-explore-where-input"
+                autoFocus
+              />
+              <button type="button" className="btn btn-sm btn-secondary shrink-0" onClick={() => saveWhere(whereText.split(',').map((x) => x.trim()).filter(Boolean))} data-testid="narado-explore-where-save">
+                Save
+              </button>
+              <button type="button" className="btn btn-sm btn-secondary shrink-0" onClick={() => setEditingWhere(false)}>
+                Cancel
+              </button>
+            </div>
           </div>
         )}
 

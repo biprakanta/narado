@@ -6,7 +6,8 @@
  *   { "hosts": [
  *       { "id": "github", "type": "github" },
  *       { "id": "gitlab", "type": "gitlab", "url": "https://gitlab.com" },
- *       { "id": "acme-gitlab", "type": "gitlab", "url": "https://gitlab.acme.internal", "tokenEnv": "ACME_GITLAB_TOKEN" }
+ *       { "id": "acme-gitlab", "type": "gitlab", "url": "https://gitlab.acme.internal", "tokenEnv": "ACME_GITLAB_TOKEN" },
+ *       { "id": "gitlab", "type": "gitlab", "exploreNamespaces": ["acme", "acme-platform"] }
  *   ] }
  *
  * Without the file, GitHub.com and GitLab.com are configured. Credentials never come
@@ -38,6 +39,9 @@ const loadHostConfig = (dataDir) => {
       throw new Error(`${file}: each host needs an "id" and a "type" of github or gitlab`);
     }
     if ('token' in h) throw new Error(`${file}: tokens must come from environment variables, not this file`);
+    if (h.exploreNamespaces !== undefined && (!Array.isArray(h.exploreNamespaces) || h.exploreNamespaces.some((n) => typeof n !== 'string'))) {
+      throw new Error(`${file}: "exploreNamespaces" on host "${h.id}" must be a list of user, organisation or group names`);
+    }
   }
   return parsed.hosts;
 };

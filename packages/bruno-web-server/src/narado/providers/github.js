@@ -97,6 +97,34 @@ class GitHubProvider {
     return repos;
   }
 
+  /**
+   * Repositories of one owner only (your own account, an organisation, or another user's
+   * public ones), so a scan can stay out of everything else the account can see.
+   */
+  async listReposIn(namespace) {
+    const ns = String(namespace).replace(/^\/+|\/+$/g, '');
+    const me = await this.getCurrentUser();
+    let path;
+    if (ns.toLowerCase() === me.login.toLowerCase()) path = '/user/repos?affiliation=owner&sort=pushed';
+    else {
+      let type;
+      try {
+        ({ data: { type } } = await this.api(`/users/${encodeURIComponent(ns)}`));
+      } catch (err) {
+        if (err.status === 404) throw new Error(`No GitHub user or organisation "${ns}"`);
+        throw err;
+      }
+      path = type === 'Organization' ? `/orgs/${encodeURIComponent(ns)}/repos?type=all&sort=pushed` : `/users/${encodeURIComponent(ns)}/repos?sort=pushed`;
+    }
+    const repos = [];
+    for (let page = 1; page <= MAX_REPO_PAGES; page++) {
+      const { data } = await this.api(`${path}&per_page=100&page=${page}`);
+      repos.push(...data.map((r) => GitHubProvider.toRepo(r, this)));
+      if (data.length < 100) break;
+    }
+    return repos;
+  }
+
   async getRepo(repoPath) {
     const { data } = await this.api(`/repos/${repoPath}`);
     return GitHubProvider.toRepo(data, this);

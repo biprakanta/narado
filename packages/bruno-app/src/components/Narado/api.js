@@ -14,6 +14,7 @@ export const naradoApi = {
   repos: (hostId) => invoke('narado:repos', { hostId }),
   me: (hostId) => invoke('narado:me', { hostId }),
   catalogue: (hostId, refresh = false) => invoke('narado:catalogue', { hostId, refresh }),
+  catalogueNamespaces: (hostId, namespaces) => invoke('narado:catalogue-namespaces', { hostId, namespaces }),
   sync: (hostId, repoPath, dir = '') => invoke('narado:sync', { hostId, repoPath, dir }),
   synced: () => invoke('narado:synced'),
   repo: (hostId, repoPath) => invoke('narado:repo', { hostId, repoPath }),
