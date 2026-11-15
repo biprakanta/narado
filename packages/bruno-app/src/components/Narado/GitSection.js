@@ -102,6 +102,8 @@ const GitSection = () => {
   // one, go straight to connecting it (once per browser session, so declining is respected).
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('git-connect')) return;
+    // On the desktop, accounts are connected through the team's server (desktop phase D2).
+    if (window.isNaradoDesktop) return;
     let offered = false;
     try {
       offered = sessionStorage.getItem(OFFERED_KEY) === '1';

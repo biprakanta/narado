@@ -7,7 +7,8 @@ const invoke = (channel, payload) => window.ipcRenderer.invoke(channel, payload)
 export const errorText = (err) =>
   String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (?:\w*Error: )?/, '');
 
-export const isNaradoAvailable = () => typeof window !== 'undefined' && !!window.isBrunoWeb;
+// narado's features: in a browser (talking to the server) or in narado desktop.
+export const isNaradoAvailable = () => typeof window !== 'undefined' && !!(window.isBrunoWeb || window.isNaradoDesktop);
 
 export const naradoApi = {
   hosts: () => invoke('narado:hosts'),

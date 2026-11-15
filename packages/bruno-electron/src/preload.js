@@ -9,6 +9,8 @@ const {
 const benchmarkEnabled = isBenchmarkEnabled();
 
 contextBridge.exposeInMainWorld('isPlaywright', process.env.PLAYWRIGHT === 'true');
+// narado desktop (packages/bruno-web-server/src/desktop.js): the interface shows narado.
+contextBridge.exposeInMainWorld('isNaradoDesktop', process.argv.includes('--narado-desktop'));
 contextBridge.exposeInMainWorld('isBenchmarkBuild', benchmarkEnabled);
 
 if (benchmarkEnabled) {

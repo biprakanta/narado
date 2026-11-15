@@ -29,6 +29,14 @@ if (isDev && process.env.ELECTRON_USER_DATA_PATH) {
   app.setPath('userData', process.env.ELECTRON_USER_DATA_PATH);
 }
 
+// narado desktop: the same Electron app, run as narado (packages/bruno-web-server/src/desktop.js).
+// Its data lives apart from Bruno desktop's, so both can be installed side by side.
+const NARADO_DESKTOP = process.env.NARADO_DESKTOP === '1';
+if (NARADO_DESKTOP) {
+  app.setName('narado');
+  if (!process.env.ELECTRON_USER_DATA_PATH) app.setPath('userData', path.join(app.getPath('appData'), 'narado'));
+}
+
 // Command line switches
 if (os.platform() === 'linux') {
   // Use portal version 4 that supports current_folder option
@@ -263,9 +271,10 @@ app.on('ready', async () => {
       nodeIntegration: true,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
-      webviewTag: true
+      webviewTag: true,
+      additionalArguments: NARADO_DESKTOP ? ['--narado-desktop'] : []
     },
-    title: 'Bruno',
+    title: NARADO_DESKTOP ? 'narado' : 'Bruno',
     icon: path.join(__dirname, 'about/256x256.png'),
     titleBarStyle: isMac ? 'hiddenInset' : isWindows ? 'hidden' : undefined,
     frame: isLinux ? false : true,
@@ -572,6 +581,16 @@ app.on('ready', async () => {
   appDocuments.handleProtocol();
   registerAppDocumentIpc(appDocuments, mainWindow);
   registerWsdlIpc();
+
+  // narado desktop: narado's Git workspaces, OpenAPI views, Explore APIs and Sync, run here
+  // as they run in a person's worker on the server.
+  if (NARADO_DESKTOP) {
+    try {
+      await require('../../bruno-web-server/src/desktop').start({ app, ipcMain, mainWindow, collectionWatcher, openCollection });
+    } catch (err) {
+      console.error('[narado] desktop start failed:', err);
+    }
+  }
 
   // Internal delegator
   ipcMain.handle('main:cache-clear', async () => {

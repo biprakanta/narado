@@ -26,8 +26,8 @@ const applyThemeToRoot = (theme) => {
   root.classList.add(theme);
 };
 
-// narado (the web build) defaults to its brand themes; the Electron app keeps Bruno's.
-const isWeb = typeof window !== 'undefined' && !!window.isBrunoWeb;
+// narado (web and desktop) defaults to its brand themes; Bruno's Electron app keeps Bruno's.
+const isWeb = typeof window !== 'undefined' && !!(window.isBrunoWeb || window.isNaradoDesktop);
 const DEFAULT_LIGHT = isWeb ? 'narado-light' : 'light';
 const DEFAULT_DARK = isWeb ? 'narado-dark' : 'dark';
 

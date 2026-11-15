@@ -1,4 +1,7 @@
 import './web-bridge';
+
+// narado desktop: its own window title (the browser build sets it in web-bridge).
+if (typeof window !== 'undefined' && window.isNaradoDesktop) document.title = 'narado';
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './pages/index';
