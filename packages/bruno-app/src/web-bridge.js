@@ -264,7 +264,7 @@ const installWebBridge = () => {
     .then(async (res) => {
       const data = await res.json().catch(() => ({}));
       if (res.status === 401) return signIn();
-      window.naradoAuth = { ...window.naradoAuth, mode: data.mode || 'local', user: data.user || null };
+      window.naradoAuth = { ...window.naradoAuth, mode: data.mode || 'local', user: data.user || null, isAdmin: !!data.isAdmin };
       window.dispatchEvent(new CustomEvent('narado:auth', { detail: window.naradoAuth }));
       connect();
     })

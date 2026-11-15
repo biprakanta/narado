@@ -30,7 +30,13 @@ Fill in `narado.env`, then:
 NARADO_DOMAIN=narado.example.com docker compose up -d --build
 ```
 
-Open `https://narado.example.com`. The first build takes several minutes (it installs and builds the whole monorepo).
+The first build takes several minutes (it installs and builds the whole monorepo). Then open the setup link narado prints in its log:
+
+```bash
+docker compose logs narado | grep SETUP
+```
+
+It sets up sign-in, the admins and the Git apps from the browser. On GitHub, narado creates its own GitHub App through GitHub's app-manifest flow, so steps 2 and 3 above become optional: values set in `narado.env` still win.
 
 Secrets stores, extra Git hosts (self-managed GitLab) and their settings go in `narado.json` in the data volume:
 

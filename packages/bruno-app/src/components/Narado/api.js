@@ -47,6 +47,7 @@ export const desktopApi = {
   status: () => invoke('narado:desktop-status'),
   signIn: (server) => invoke('narado:desktop-sign-in', { server }),
   signInLink: () => invoke('narado:desktop-sign-in-link'),
+  openAdmin: () => invoke('narado:desktop-open-admin'),
   signOut: () => invoke('narado:desktop-sign-out'),
   /** Status changes pushed by the app (signed in, signed out, session refreshed). */
   onStatus: (fn) => (window.ipcRenderer && window.ipcRenderer.on ? window.ipcRenderer.on('narado:desktop-status', fn) : () => {})
@@ -74,3 +75,6 @@ export const signOut = async () => {
   const data = await res.json().catch(() => ({}));
   window.location.assign(data.redirect || '/');
 };
+
+/** narado's admin pages: a new tab on the web, the system browser on the desktop. */
+export const openAdmin = () => (window.isNaradoDesktop ? desktopApi.openAdmin() : window.open('/admin', '_blank', 'noopener'));

@@ -32,6 +32,11 @@ const { SecretsService, secretsService } = require('./narado/secrets');
 const { Identity } = require('./narado/secrets/identity');
 const { GitAccounts, gitService } = require('./narado/git-accounts');
 const { createDesktopAuth } = require('./narado/devices');
+const { SettingsStore, adminsFrom } = require('./narado/settings');
+const { createAdmin } = require('./narado/admin');
+const { messagePage } = require('./narado/pages');
+
+const LOOPBACK = ['127.0.0.1', '::1', 'localhost'].includes(HOST);
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -66,23 +71,26 @@ const serveStatic = (req, res) => {
   fs.createReadStream(file).pipe(res);
 };
 
-const main = async () => {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+/**
+ * Start narado's front with the current settings (the environment, over what admins saved
+ * in the admin pages). Returns { close } so saving settings can restart it in place.
+ */
+const start = async ({ settings, restart }) => {
+  const env = settings.effectiveEnv(process.env);
 
-  // Sign-in (Phase 4b). Without a provider, narado is a single-user local tool and may
-  // only listen on a loopback address.
-  const auth = createAuth({ dataDir: DATA_DIR, port: PORT });
-  if (!auth.enabled && !['127.0.0.1', '::1', 'localhost'].includes(HOST)) {
-    throw new Error(`Refusing to listen on ${HOST} without sign-in. Configure NARADO_OIDC_ISSUER, or use 127.0.0.1.`);
-  }
+  // Sign-in (Phase 4b). Without a provider, narado is a single-user local tool on a loopback
+  // address; anywhere else it only serves the setup pages until sign-in is configured.
+  const auth = createAuth({ dataDir: DATA_DIR, port: PORT, env });
+  const localOnly = !auth.enabled && LOOPBACK;
+  const setupOnly = !auth.enabled && !LOOPBACK;
   ALLOWED_ORIGINS.add(auth.publicUrl);
 
   const tokens = new TokenStore({ dataDir: DATA_DIR });
   // Secrets stores (Phase 4e): credentials and narado's signing key stay in this process.
   const identity = new Identity({ dataDir: DATA_DIR, issuer: auth.publicUrl });
-  const secrets = new SecretsService({ dataDir: DATA_DIR, identity });
+  const secrets = new SecretsService({ dataDir: DATA_DIR, identity, env });
   // Each person's own Git accounts (Phase 4c): refresh tokens and app credentials stay here.
-  const gitAccounts = new GitAccounts({ dataDir: DATA_DIR, publicUrl: auth.publicUrl, multiUser: auth.enabled });
+  const gitAccounts = new GitAccounts({ dataDir: DATA_DIR, publicUrl: auth.publicUrl, multiUser: auth.enabled, env });
   const tokenCalls = tokenService(tokens, auth.enabled);
   const secretCalls = secretsService(secrets);
   const gitCalls = gitService(gitAccounts);
@@ -112,9 +120,13 @@ const main = async () => {
     dataDir: DATA_DIR,
     rpc,
     // The desktop builds its Git host list from the server's (self-managed hosts included).
-    hosts: () => gitAccounts.registry.hosts.map(({ tokenEnv, ...h }) => h)
+    hosts: () => gitAccounts.registry.hosts.map(({ tokenEnv, ...h }) => h),
+    isAdmin: (user) => !!(user && user.email && adminsFrom(env).includes(String(user.email).toLowerCase())),
+    env
   });
-  const pool = new WorkerPool({ dataDir: DATA_DIR, multiUser: auth.enabled, publicPort: PORT, rpc, privateEnv: gitAccounts.tokenEnvNames() });
+  const pool = new WorkerPool({ dataDir: DATA_DIR, multiUser: auth.enabled, publicPort: PORT, rpc, privateEnv: gitAccounts.tokenEnvNames(), env });
+  // Setup and admin pages (narado/admin.js).
+  const admin = createAdmin({ settings, env, realEnv: process.env, auth, desktop, gitAccounts, dataDir: DATA_DIR, localOnly, restart });
 
   const fail = (res, err) => {
     const status = err instanceof WorkerError ? err.status : 500;
@@ -148,6 +160,27 @@ const main = async () => {
 
   const server = http.createServer(async (req, res) => {
     try {
+      const { pathname } = new URL(req.url, 'http://x');
+      if (await admin.handle(req, res)) return;
+      // Not set up yet (no sign-in, not on this computer only): the setup pages and their images only.
+      if (setupOnly && !pathname.startsWith('/auth/assets/')) {
+        res.writeHead(503, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(messagePage({ title: 'Setting up', text: "narado isn't set up yet. An admin opens the setup link from narado's log to set it up." }));
+        return;
+      }
+      // Who's signed in, and whether they're an admin (for the interface's Admin link).
+      if (pathname === '/auth/me' && req.method === 'GET') {
+        const user = auth.enabled ? auth.userFor(req) : null;
+        res.writeHead(auth.enabled && !user ? 401 : 200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(
+          JSON.stringify(
+            auth.enabled
+              ? { mode: 'oidc', user: user ? { id: user.id, name: user.name, email: user.email } : null, isAdmin: admin.isAdminUser(user) }
+              : { mode: 'local', user: null, isAdmin: localOnly }
+          )
+        );
+        return;
+      }
       // narado's public signing key, for stores that check per-person tokens (Vault JWT auth).
       if (new URL(req.url, 'http://x').pathname === '/auth/jwks.json' && req.method === 'GET') {
         res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'max-age=300' });
@@ -190,6 +223,7 @@ const main = async () => {
       console.warn(`[narado] rejected WebSocket from origin ${origin || '(none)'}`);
       return reject(403, 'Forbidden');
     }
+    if (setupOnly) return reject(503, 'Service Unavailable');
     const user = auth.enabled ? auth.userFor(req) : null;
     if (auth.enabled && !user) return reject(401, 'Unauthorized');
     socket.on('error', () => {});
@@ -203,29 +237,71 @@ const main = async () => {
     }
   });
 
-  const shutdown = () => {
-    pool.stopAll();
-    server.close();
-    setTimeout(() => process.exit(0), 300).unref();
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-
-  server.listen(PORT, HOST, () => {
-    console.log(`[narado] sign-in: ${auth.enabled ? `OIDC (${process.env.NARADO_OIDC_ISSUER}), public URL ${auth.publicUrl}` : 'off (single-user local mode)'}`);
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(PORT, HOST, () => {
+      server.off('error', reject);
+      resolve();
+    });
+  });
+  console.log(`[narado] sign-in: ${auth.enabled ? `OIDC (${env.NARADO_OIDC_ISSUER}), public URL ${auth.publicUrl}` : localOnly ? 'off (single-user local mode)' : 'not set up yet: only the setup pages are served'}`);
+  if (!setupOnly) {
     console.log(`[narado] one Bruno worker per ${auth.enabled ? `person, in ${path.join(DATA_DIR, 'users')}${pool.sandbox ? ', sandboxed' : ', NOT sandboxed (NARADO_WORKER_SANDBOX=0)'}` : 'server (local mode)'}`);
     console.log(
-      `[narado] Git accounts: ${gitAccounts.status(null).map((h) => `${h.id} (${h.canConnect ? 'people connect their own' : 'no app configured'}${gitAccounts.sharedTokens && process.env[h.tokenEnv] ? ', shared token' : ''})`).join(', ')}`
+      `[narado] Git accounts: ${gitAccounts.status(null).map((h) => `${h.id} (${h.canConnect ? 'people connect their own' : 'no app configured'}${gitAccounts.sharedTokens && env[h.tokenEnv] ? ', shared token' : ''})`).join(', ')}`
     );
     console.log(`[narado] secrets stores: ${secrets.enabled ? secrets.listStores().map((s) => `${s.id} (${s.type}${s.configured ? '' : ', no credentials'})`).join(', ') : 'none'}`);
     console.log(`[narado] narado desktop: ${auth.enabled ? `sign-in on, sends allowed: ${desktop.sendPolicy}` : 'off (needs sign-in)'}`);
     console.log(`[narado] MCP server at http://127.0.0.1:${PORT}/mcp`);
-    console.log(`[narado] listening on http://${HOST}:${PORT} (data: ${DATA_DIR})`);
-  });
+  }
+  if (admin.setupNeeded) {
+    // A new one-time link each start; it works until an admin signs in with SSO.
+    const token = settings.newSetupToken();
+    console.log(`[narado] SETUP: open ${auth.publicUrl}/setup?token=${token} to set up sign-in, admins and Git`);
+  } else {
+    console.log(`[narado] admin pages at ${auth.publicUrl}/admin`);
+  }
+  console.log(`[narado] listening on http://${HOST}:${PORT} (data: ${DATA_DIR})`);
+
+  return {
+    close: async () => {
+      pool.stopAll();
+      await new Promise((resolve) => {
+        server.close(resolve);
+        server.closeAllConnections();
+      });
+    }
+  };
+};
+
+const main = async () => {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const settings = new SettingsStore({ dataDir: DATA_DIR });
+  let current = null;
+  let restarting = null;
+  // Saving settings in the admin pages restarts the front in place, with the new settings.
+  const restart = () => {
+    if (!restarting) {
+      restarting = (async () => {
+        console.log('[narado] restarting with new settings');
+        await current.close();
+        current = await start({ settings, restart });
+      })().finally(() => {
+        restarting = null;
+      });
+    }
+    return restarting;
+  };
+  current = await start({ settings, restart });
+
+  const shutdown = () => {
+    Promise.resolve(current && current.close()).finally(() => setTimeout(() => process.exit(0), 300).unref());
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 };
 
 main().catch((err) => {
   console.error('[narado] failed to start:', err);
   process.exit(1);
 });
-

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { IconCloudDownload, IconCloudOff, IconCompass, IconDeviceLaptop, IconDots, IconGitBranch, IconKey, IconLock, IconLogin, IconLogout, IconRefresh } from '@tabler/icons';
+import { IconCloudDownload, IconCloudOff, IconCompass, IconDeviceLaptop, IconDots, IconGitBranch, IconKey, IconLock, IconLogin, IconLogout, IconRefresh, IconSettings } from '@tabler/icons';
 import toast from 'react-hot-toast';
 import SidebarSection from 'components/Sidebar/SidebarSection';
 import ActionIcon from 'ui/ActionIcon';
@@ -14,7 +14,7 @@ import McpTokensModal from './McpTokensModal';
 import SecretsModal from './SecretsModal';
 import DevicesModal from './DevicesModal';
 import DesktopSignInModal from './DesktopSignInModal';
-import { naradoApi, desktopApi, errorText, signOut, connectGitAccount } from './api';
+import { naradoApi, desktopApi, errorText, signOut, connectGitAccount, openAdmin } from './api';
 
 const OFFERED_KEY = 'narado.git-connect-offered';
 
@@ -163,6 +163,10 @@ const GitSection = () => {
     // The desktop's own MCP server comes later (desktop phase D5).
     ...(window.isNaradoDesktop ? [] : [{ id: 'mcp', label: 'MCP tokens', leftSection: IconKey, onClick: () => setTokensOpen(true) }]),
     ...(webSignedIn || deskSignedIn ? [{ id: 'devices', label: 'Devices', leftSection: IconDeviceLaptop, onClick: () => setDevicesOpen(true) }] : []),
+    // Admins: narado's setup and admin pages (sign-in, admins, Git apps, devices).
+    ...((webSignedIn && auth.isAdmin) || (!window.isNaradoDesktop && auth.mode === 'local' && auth.isAdmin) || (deskSignedIn && desk.isAdmin)
+      ? [{ id: 'admin', label: 'Admin settings', leftSection: IconSettings, onClick: () => Promise.resolve(openAdmin()).catch((err) => toast.error(errorText(err))) }]
+      : []),
     { id: 'refresh', label: 'Refresh', leftSection: IconRefresh, onClick: load },
     ...(webSignedIn ? [{ id: 'd1', type: 'divider' }, { id: 'signout', label: 'Sign out', leftSection: IconLogout, onClick: signOut }] : []),
     ...(deskSignedIn ? [{ id: 'd1', type: 'divider' }, { id: 'signout', label: `Sign out of ${serverHost}`, leftSection: IconLogout, onClick: desktopSignOut }] : [])

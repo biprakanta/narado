@@ -100,4 +100,4 @@ class ProviderRegistry {
   }
 }
 
-module.exports = { ProviderRegistry, loadHostConfig, tokenEnvFor, DEFAULT_HOSTS };
+module.exports = { ProviderRegistry, loadHostConfig, validateHosts, tokenEnvFor, DEFAULT_HOSTS };

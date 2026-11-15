@@ -306,6 +306,24 @@ claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Autho
 
 `scripts/mcp-smoke.js` exercises the endpoint with the MCP SDK's client.
 
+## Setup and admin pages
+
+narado's own pages at `/setup` and `/admin` (`src/narado/admin.js`), served by the front so they work before sign-in is configured.
+
+- **First start:** until admins are named, narado prints a one-time setup link in its log (`[narado] SETUP: open …/setup?token=…`). A new link is printed at each start, and only the latest works. Opening it gives that browser a setup session. If narado listens beyond this computer without sign-in, it serves only the setup pages.
+- **Setup:** set sign-in (OpenID Connect: issuer, client, allowed email domains, narado's address) and the admins (`NARADO_ADMINS`), then sign in with SSO as an admin. The setup link then stops working.
+- **Admin pages** (signed-in admins; the Git section's ⋯ menu shows *Admin settings* to them):
+  - sign-in and admins;
+  - Git hosts: add GitHub Enterprise or self-managed GitLab, and set where Explore looks by default;
+  - the desktop send policy;
+  - every person's signed-in computers, with sign-out.
+- **Git apps, created by narado:**
+  - **GitHub and GitHub Enterprise:** *Create the GitHub App* uses GitHub's app-manifest flow. GitHub creates a private app in the given organisation (or the admin's account) with the needed permissions and callback, then narado exchanges the one-time code for its credentials and offers the install link.
+  - **Self-managed GitLab:** an administrator access token creates the OAuth application through the API. narado doesn't keep the token.
+  - **GitLab.com:** there's no API for this, so the page shows exactly what to create and where to paste it.
+  - Credentials can also be entered by hand.
+- **Where settings live:** saved settings go in `narado.db` under the names of the environment variables they replace. Secrets (client secrets, the GitHub App's private key) are encrypted with narado's token key. A variable set in the environment always wins, and the pages show it as locked. Saving restarts narado's front in place; people's workers restart with it.
+
 ## narado desktop
 
 narado desktop (`npm run dev:narado-desktop` from the repository root, design in the design repo's `docs/desktop.md`) runs a person's worker on their own computer and uses this server as its front, over HTTPS. It needs sign-in to be configured.
@@ -343,6 +361,7 @@ narado desktop (`npm run dev:narado-desktop` from the repository root, design in
 | `NARADO_SECRETS_<STORE ID>_*` | none | Secrets store credentials (see Secrets) |
 | `NARADO_SECRETS_CACHE_SECONDS` | `60` | How long the front keeps a secret's value |
 | `NARADO_SECRETS_REVEAL` | on | `0` stops people seeing secret values in the Secrets dialog (Reveal) |
+| `NARADO_ADMINS` | none | Admin emails, comma-separated (or set in the admin pages) |
 | `NARADO_DESKTOP_SEND` | `any` | What narado desktop may send to: `any`, `private-only` or `allowlist-only` (see narado desktop) |
 
 ## Tests

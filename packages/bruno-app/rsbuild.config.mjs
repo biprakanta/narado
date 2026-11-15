@@ -71,6 +71,13 @@ export default defineConfig({
       // narado desktop's channel to the server (desktop phase D2).
       '/desktop/api': {
         target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100'
+      },
+      // Setup and admin pages.
+      '/setup': {
+        target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100'
+      },
+      '/admin': {
+        target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100'
       }
     }
   },

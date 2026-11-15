@@ -187,6 +187,7 @@ class RemoteFront {
       device: this.signedIn && this.session ? this.session.device : null,
       policy: this.session ? this.session.policy : null,
       signingIn: !!this.pendingSignIn,
+      isAdmin: !!(this.signedIn && this.session && this.session.isAdmin),
       online: this.online
     };
   }

@@ -137,6 +137,14 @@ class DeviceStore {
     this.db.prepare('UPDATE devices SET revoked_at = ?, revoked_why = ?, refresh_hash = NULL WHERE id = ? AND revoked_at IS NULL').run(now, why, id);
   }
 
+  /** Every signed-in device, with its person (admin pages). */
+  listAll() {
+    return this.db
+      .prepare('SELECT d.*, u.name AS user_name, u.email AS user_email FROM devices d LEFT JOIN users u ON u.id = d.user_id WHERE d.revoked_at IS NULL ORDER BY d.last_seen_at DESC')
+      .all()
+      .map((d) => ({ ...DeviceStore.view(d), userName: d.user_name || null, userEmail: d.user_email || null }));
+  }
+
   /** Sign out one of the person's own devices. */
   revoke(userId, id, why = 'signed out', now = Date.now()) {
     const d = this.row(String(id || ''));
@@ -199,7 +207,7 @@ const readJson = async (req) => {
  * The desktop's routes. `rpc(user, method, args)` is the server's front service (the same
  * one workers use); `hosts()` gives the Git hosts for the desktop's registry.
  */
-const createDesktopAuth = ({ auth, dataDir, rpc, hosts = () => [], env = process.env, log = console }) => {
+const createDesktopAuth = ({ auth, dataDir, rpc, hosts = () => [], isAdmin = () => false, env = process.env, log = console }) => {
   const devices = new DeviceStore({ dataDir });
   const access = new AccessTokens();
   const approvals = new Map(); // request id -> { userId, redirectUri, state, challenge, deviceName, platform, at }
@@ -392,7 +400,8 @@ const createDesktopAuth = ({ auth, dataDir, rpc, hosts = () => [], env = process
               user: { id: who.user.id, name: who.user.name, email: who.user.email },
               device: DeviceStore.view(who.device),
               policy: { send: sendPolicy },
-              hosts: hosts()
+              hosts: hosts(),
+              isAdmin: !!isAdmin(who.user)
             }),
             true
           );
@@ -413,7 +422,18 @@ const createDesktopAuth = ({ auth, dataDir, rpc, hosts = () => [], env = process
     return json(res, 404, { error: 'not_found' }), true;
   };
 
-  return { handle, deviceCalls, devices, access, sendPolicy };
+  /** Admin pages: every device, and signing out anyone's. */
+  const adminDevices = () => devices.listAll();
+  const adminRevoke = (id, adminName) => {
+    const d = devices.row(String(id || ''));
+    if (!d || d.revoked_at) throw new Error('No such device');
+    devices.revokeRow(d.id, `signed out by admin ${adminName}`);
+    access.dropDevice(d.id);
+    log.log(`[narado] desktop signed out: device ${d.id} ("${d.name}") by admin ${adminName}`);
+    return true;
+  };
+
+  return { handle, deviceCalls, devices, access, sendPolicy, adminDevices, adminRevoke };
 };
 
 module.exports = { createDesktopAuth, DeviceStore, AccessTokens, DesktopError, DESKTOP_CALLS, LOOPBACK };

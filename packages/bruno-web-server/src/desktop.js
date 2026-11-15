@@ -310,6 +310,12 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
     await remote.signOut();
     return status();
   });
+  // The server's admin pages, in the system browser (signed in there with SSO).
+  ipcMain.handle('narado:desktop-open-admin', async () => {
+    if (!remote.server) throw new NeedsSignIn();
+    await shell.openExternal(`${remote.server}/admin`);
+    return true;
+  });
   ipcMain.handle('narado:desktop-connect-git', async (_e, { hostId } = {}) => {
     if (!remote.signedIn) throw new NeedsSignIn();
     await shell.openExternal(remote.connectUrl(String(hostId || '')));
