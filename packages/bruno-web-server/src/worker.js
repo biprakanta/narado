@@ -34,17 +34,8 @@ const MULTI_USER = process.env.NARADO_MULTI_USER === '1';
 const PUBLIC_PORT = Number(process.env.BRUNO_WEB_PUBLIC_PORT || 4100);
 const INSTANCE_ID = crypto.randomUUID();
 
-// Under Node's permission model (sandboxed workers, see src/narado/workers.js) fsync is
-// refused outright, and the settings library Bruno uses calls it on every write. Writes
-// still happen; only the forced flush to disk is skipped.
-if (process.permission) {
-  const fs = require('node:fs');
-  for (const name of ['fsync', 'fdatasync']) {
-    fs[`${name}Sync`] = () => {};
-    fs[name] = (fd, cb) => process.nextTick(cb, null);
-    if (fs.promises) fs.promises[name] = async () => {};
-  }
-}
+// File-system calls Node's permission model refuses in a sandboxed worker (src/narado/workers.js).
+if (process.permission) require('./narado/sandbox-fs').patchForSandbox(require('node:fs'));
 
 // Run Bruno as a packaged app. In dev mode Bruno answers 'main:renderer-ready' only once per
 // process (a guard for React strict mode in its one Electron window); here every page
