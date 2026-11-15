@@ -1,5 +1,6 @@
 # narado's tests, for every pull request and for pushes to main.
-# (Bruno's own test and lint workflows are switched off in this repository's Actions settings.)
+# (Bruno's own test workflows are switched off in this repository's Actions settings; its lint-checks
+# workflow stays on and lints the lines each pull request changes.)
 name: narado tests
 
 on:
@@ -53,3 +54,20 @@ jobs:
       - name: Run interface tests
         working-directory: packages/bruno-app
         run: npx jest src/components/Narado src/components/RequestTabs
+
+  build:
+    name: Interface build (narado brand)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node dependencies
+        uses: ./.github/actions/common/setup-node-deps
+
+      # Catches what the tests can't: imports and code that only fail when the interface is
+      # built, as the desktop release and deploys do.
+      - name: Build the interface
+        run: npm run build:web
+        env:
+          BRUNO_BRAND: narado
