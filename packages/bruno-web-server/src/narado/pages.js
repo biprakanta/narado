@@ -125,4 +125,31 @@ const messagePage = ({ title, text, error = false }) =>
     body: `<div class="card"><p class="note${error ? ' error' : ''}" role="${error ? 'alert' : 'status'}">${esc(text)}</p></div>`
   });
 
-module.exports = { signInPage, desktopApprovePage, messagePage, serveAsset, esc };
+/**
+ * Where OAuth 2 providers send people back after signing in to an API from narado
+ * (<narado>/oauth2/callback). The page reads the result (a code in the query, or for the
+ * implicit flow, tokens in the #fragment, which never reach a server), offers it to the
+ * person's web session, and otherwise hands it to narado desktop through narado://.
+ * It then clears the result from the address bar.
+ */
+const oauth2CallbackPage = () =>
+  shell({
+    title: 'Signing in · narado',
+    body: `<div class="card"><p class="note" id="status" role="status">Finishing signing in…</p>
+<a class="btn" id="app" href="#" style="display:none">Open narado desktop</a></div>
+<script>(function(){
+  var status=document.getElementById('status'), app=document.getElementById('app');
+  var url=location.href, query=location.search, hash=location.hash;
+  history.replaceState(null,'',location.pathname);
+  fetch('/oauth2/callback/complete',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({url:url})})
+    .then(function(r){return r.json()}).catch(function(){return {}})
+    .then(function(d){
+      if(d&&d.handled){status.textContent='Done. You can close this tab and go back to narado.';return;}
+      var to='narado://app/oauth2/callback'+query+hash;
+      status.textContent="Handing this sign-in to narado desktop. If it doesn\u2019t open, use the button.";
+      app.href=to;app.style.display='block';location.href=to;
+    });
+})();</script>`
+  });
+
+module.exports = { signInPage, desktopApprovePage, messagePage, oauth2CallbackPage, serveAsset, esc };

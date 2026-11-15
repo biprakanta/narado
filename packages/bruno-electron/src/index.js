@@ -186,6 +186,16 @@ if (useSingleInstance && !gotTheLock) {
     app.setAsDefaultProtocolClient('bruno');
   }
 
+  // narado desktop: narado://app/oauth2/callback, where the narado server's /oauth2/callback page
+  // hands over OAuth 2 sign-ins finished in the system browser.
+  if (NARADO_DESKTOP) {
+    if (process.defaultApp && process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient('narado', process.execPath, [path.resolve(process.argv[1])]);
+    } else {
+      app.setAsDefaultProtocolClient('narado');
+    }
+  }
+
   if (isLinux && !NARADO_DESKTOP) {
     try {
       execSync('xdg-mime default bruno.desktop x-scheme-handler/bruno');

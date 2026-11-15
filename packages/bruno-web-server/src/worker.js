@@ -22,6 +22,7 @@ const Module = require('node:module');
 const path = require('node:path');
 const http = require('node:http');
 const crypto = require('node:crypto');
+const { AsyncLocalStorage } = require('node:async_hooks');
 
 const SECRET = process.env.NARADO_WORKER_SECRET;
 if (!SECRET || typeof process.send !== 'function') {
@@ -398,8 +399,13 @@ const main = async () => {
     for (const ws of sockets) if (ws.readyState === ws.OPEN) ws.send(msg);
   };
 
+  // The browser tab whose message is being handled (for questions back to it).
+  const fromTab = new AsyncLocalStorage();
   hooks.clientRequest = (kind, payload) => {
-    const ws = [...sockets].find((s) => s.readyState === s.OPEN);
+    // Ask the tab whose request this is (opening a sign-in page, a confirm), not just the
+    // first one connected: a person may have narado open in several tabs.
+    const own = fromTab.getStore();
+    const ws = own && own.readyState === own.OPEN ? own : [...sockets].find((s) => s.readyState === s.OPEN);
     if (!ws) return Promise.reject(new Error('No browser connected'));
     const id = crypto.randomUUID();
     ws.send(JSON.stringify({ t: 'req', id, kind, payload: secretRefs.clean(payload) }));
@@ -456,6 +462,20 @@ const main = async () => {
       res.writeHead(403).end();
       return;
     }
+    // An OAuth 2 sign-in this person started (narado's /oauth2/callback page, through the front).
+    if (req.method === 'POST' && new URL(req.url, 'http://x').pathname === '/narado/oauth2-callback') {
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      let url = null;
+      try {
+        url = JSON.parse(Buffer.concat(chunks).toString('utf8')).url;
+      } catch {}
+      const oauth2 = brunoRequire('utils/oauth2-protocol-handler');
+      const handled = typeof url === 'string' && oauth2.isOauth2AuthorizationRequestInProgress() ? (oauth2.handleOauth2ProtocolUrl(url), true) : false;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ handled }));
+      return;
+    }
     if (await mcp.handle(req, res)) return;
     res.writeHead(404).end();
   });
@@ -498,7 +518,7 @@ const main = async () => {
       }
 
       if (msg.t === 'send') {
-        ipcMain.emit(msg.ch, event(), ...decodeArgs(msg.args, msg.u));
+        fromTab.run(ws, () => ipcMain.emit(msg.ch, event(), ...decodeArgs(msg.args, msg.u)));
         return;
       }
 
@@ -510,7 +530,7 @@ const main = async () => {
           console.warn(`[bruno-web] no handler: ${msg.ch}`);
         } else {
           try {
-            const value = await handler(event(), ...decodeArgs(msg.args, msg.u));
+            const value = await fromTab.run(ws, () => handler(event(), ...decodeArgs(msg.args, msg.u)));
             // A reveal is the one reply that carries a value on purpose; everything else is cleaned.
             reply = { t: 'res', id: msg.id, ok: true, value: msg.ch === REVEAL_CHANNEL ? value : secretRefs.clean(value) };
           } catch (err) {

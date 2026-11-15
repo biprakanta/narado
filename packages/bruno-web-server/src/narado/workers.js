@@ -242,6 +242,36 @@ class WorkerPool {
   }
 
   /** Relay an HTTP request (MCP) to the worker. */
+  /** The person's worker if it's already running (doesn't start one). */
+  running(user) {
+    const entry = this.workers.get(this.keyFor(user));
+    return entry && entry.port ? entry : null;
+  }
+
+  /** POST JSON to a worker's own endpoint and return its JSON answer. */
+  callWorker(entry, pathname, body) {
+    const data = JSON.stringify(body);
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        { host: '127.0.0.1', port: entry.port, method: 'POST', path: pathname, headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(data), 'x-narado-worker': entry.secret }, timeout: 10000 },
+        (res) => {
+          const chunks = [];
+          res.on('data', (c) => chunks.push(c));
+          res.on('end', () => {
+            try {
+              resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+            } catch {
+              reject(new Error(`worker answered ${res.statusCode}`));
+            }
+          });
+        }
+      );
+      req.on('timeout', () => req.destroy(new Error('worker timed out')));
+      req.on('error', reject);
+      req.end(data);
+    });
+  }
+
   proxyHttp(entry, req, res) {
     entry.inflight++;
     let finished = false;

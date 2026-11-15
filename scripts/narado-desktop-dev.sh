@@ -21,7 +21,7 @@ fi
 
 cache="$root/node_modules/.cache/narado-desktop"
 app="$cache/narado.app"
-version="$(cat "$dist/version")-3"
+version="$(cat "$dist/version")-4"
 if [[ ! -f "$cache/version" || "$(cat "$cache/version")" != "$version" ]]; then
   rm -rf "$cache"
   mkdir -p "$cache"
@@ -31,6 +31,13 @@ if [[ ! -f "$cache/version" || "$(cat "$cache/version")" != "$version" ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName narado" "$plist" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string narado" "$plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier co.narado.desktop.dev" "$plist"
+  # narado:// links (OAuth 2 sign-ins finished in the system browser come back this way).
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$plist" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" "$plist"
+  /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$plist"
+  /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLName string co.narado.desktop" "$plist"
+  /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$plist"
+  /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string narado" "$plist"
   # The process name comes from the executable, so rename it and the helpers, as Electron's
   # packager does (Electron finds "<executable> Helper*.app" next to it).
   mv "$app/Contents/MacOS/Electron" "$app/Contents/MacOS/narado"

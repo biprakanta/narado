@@ -306,6 +306,15 @@ claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Autho
 
 `scripts/mcp-smoke.js` exercises the endpoint with the MCP SDK's client.
 
+## OAuth 2 sign-ins to APIs
+
+When a request's OAuth 2 settings leave *Callback URL* empty, narado uses its own page, `<narado address>/oauth2/callback`, instead of Bruno's `oauth.usebruno.com`. Register that one address with the API's OAuth provider; it works for the web version and narado desktop alike, and nothing passes through Bruno's servers.
+
+- **Web:** the sign-in opens in the person's browser (the web version has no app window, so *Use system browser* is always on). The provider sends them back to the callback page. The page posts the result to `/oauth2/callback/complete` on the same site, and narado gives it only to the signed-in person's own worker, if it's waiting for a sign-in. The worker checks `state`, exchanges the code and carries on with the request.
+- **Desktop:** in the app's sign-in window, narado catches the redirect before the page loads. In the system browser, the page hands the result to narado desktop through `narado://app/oauth2/callback`; narado desktop registers `narado://` and leaves `bruno://` to Bruno.
+- **Implicit flow:** tokens arrive after `#` in the address, which browsers never send to a server, so the page reads them itself. It then clears the result from the address bar.
+- **Several narado tabs:** questions from a person's worker back to the browser, such as opening a sign-in page or a confirm, go to the tab whose request asked.
+
 ## Setup and admin pages
 
 narado's own pages at `/setup` and `/admin` (`src/narado/admin.js`), served by the front so they work before sign-in is configured.

@@ -17,3 +17,10 @@ export const productName = () => (isNarado() ? 'narado' : 'Bruno');
 export const NARADO_REPO_URL = 'https://github.com/biprakanta/narado';
 export const BRUNO_REPO_URL = 'https://github.com/usebruno/bruno';
 export const repoUrl = () => (isNarado() ? NARADO_REPO_URL : BRUNO_REPO_URL);
+
+/**
+ * The OAuth 2 callback used when a request leaves it empty: narado's own page on its server
+ * (the desktop's server isn't known here, so a description), Bruno's otherwise.
+ */
+export const defaultOauth2Callback = () =>
+  isNaradoWeb() ? `${window.location.origin}/oauth2/callback` : isNaradoDesktop() ? 'https://<your narado server>/oauth2/callback' : 'https://oauth.usebruno.com/callback';

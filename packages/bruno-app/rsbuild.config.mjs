@@ -95,6 +95,10 @@ export default defineConfig({
       '/favicon.ico': {
         target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100'
       },
+      // OAuth 2 sign-ins to APIs come back here (narado's default callback).
+      '/oauth2': {
+        target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100'
+      },
       // Setup and admin pages.
       '/setup': {
         target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100'

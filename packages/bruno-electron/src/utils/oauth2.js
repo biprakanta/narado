@@ -9,6 +9,11 @@ const { preferencesUtil } = require('../store/preferences');
 const qs = require('qs');
 
 const BRUNO_OAUTH2_CALLBACK_URL = 'https://oauth.usebruno.com/callback';
+// narado sets its own: <narado server>/oauth2/callback (NARADO_OAUTH2_CALLBACK_URL), which hands
+// the result to the person's worker (web) or to narado desktop (narado://), never through Bruno.
+const defaultCallbackUrl = () => process.env.NARADO_OAUTH2_CALLBACK_URL || BRUNO_OAUTH2_CALLBACK_URL;
+// In narado's web version there's no app window to sign in in: always the person's own browser.
+const shouldUseSystemBrowser = () => !!process.env.NARADO_WORKER_SECRET || preferencesUtil.shouldUseSystemBrowser();
 
 const oauth2Store = new Oauth2Store();
 
@@ -155,7 +160,7 @@ const getOAuth2TokenUsingAuthorizationCode = async ({ request, collectionUid, fo
     autoFetchToken,
     additionalParameters
   } = oAuth;
-  const effectiveCallbackUrl = callbackUrl && callbackUrl.length ? callbackUrl : BRUNO_OAUTH2_CALLBACK_URL;
+  const effectiveCallbackUrl = callbackUrl && callbackUrl.length ? callbackUrl : defaultCallbackUrl();
   const url = requestCopy?.oauth2?.accessTokenUrl;
 
   // Validate required fields
@@ -306,8 +311,8 @@ const getOAuth2AuthorizationCode = (request, codeChallenge, collectionUid) => {
   return new Promise(async (resolve, reject) => {
     const { oauth2 } = request;
     const { callbackUrl, clientId, authorizationUrl, scope, state, pkce, accessTokenUrl, additionalParameters } = oauth2;
-    const useSystemBrowser = preferencesUtil.shouldUseSystemBrowser();
-    const effectiveCallbackUrl = callbackUrl && callbackUrl.length ? callbackUrl : BRUNO_OAUTH2_CALLBACK_URL;
+    const useSystemBrowser = shouldUseSystemBrowser();
+    const effectiveCallbackUrl = callbackUrl && callbackUrl.length ? callbackUrl : defaultCallbackUrl();
     // Always append a cryptographically random nonce to the user-configured state
     // (or generate a fully random one when none is set). The state is validated when
     // the callback is received to prevent authorization code injection / CSRF.
@@ -775,8 +780,8 @@ const getOAuth2TokenUsingImplicitGrant = async ({ request, collectionUid, forceF
     autoFetchToken = true,
     additionalParameters
   } = oauth2;
-  const useSystemBrowser = preferencesUtil.shouldUseSystemBrowser();
-  const effectiveCallbackUrl = callbackUrl && callbackUrl.length ? callbackUrl : BRUNO_OAUTH2_CALLBACK_URL;
+  const useSystemBrowser = shouldUseSystemBrowser();
+  const effectiveCallbackUrl = callbackUrl && callbackUrl.length ? callbackUrl : defaultCallbackUrl();
   // Use the user-configured state if present, otherwise generate a cryptographically
   // random one. The state is validated when the callback is received to prevent CSRF.
   const effectiveState = generateState({ userState: state });

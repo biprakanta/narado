@@ -36,6 +36,7 @@ const { createDesktopAuth } = require('./narado/devices');
 const { SettingsStore, adminsFrom } = require('./narado/settings');
 const { createAdmin } = require('./narado/admin');
 const { messagePage } = require('./narado/pages');
+const { createOauth2Callback } = require('./narado/oauth2-callback');
 
 const LOOPBACK = ['127.0.0.1', '::1', 'localhost'].includes(HOST);
 
@@ -125,7 +126,10 @@ const start = async ({ settings, restart }) => {
     isAdmin: (user) => !!(user && user.email && adminsFrom(env).includes(String(user.email).toLowerCase())),
     env
   });
-  const pool = new WorkerPool({ dataDir: DATA_DIR, multiUser: auth.enabled, publicPort: PORT, rpc, privateEnv: gitAccounts.tokenEnvNames(), env });
+  // OAuth 2 sign-ins to APIs come back to narado itself (the /oauth2/callback page below).
+  const oauth2Callback = `${auth.publicUrl}/oauth2/callback`;
+  const pool = new WorkerPool({ dataDir: DATA_DIR, multiUser: auth.enabled, publicPort: PORT, rpc, privateEnv: gitAccounts.tokenEnvNames(), env: { ...env, NARADO_OAUTH2_CALLBACK_URL: oauth2Callback } });
+  const oauth2 = createOauth2Callback({ auth, pool, allowedOrigins: ALLOWED_ORIGINS });
   // Setup and admin pages (narado/admin.js).
   const admin = createAdmin({ settings, env, realEnv: process.env, auth, desktop, gitAccounts, dataDir: DATA_DIR, localOnly, restart });
 
@@ -175,6 +179,8 @@ const start = async ({ settings, restart }) => {
         res.end(messagePage({ title: 'Setting up', text: "narado isn't set up yet. An admin opens the setup link from narado's log to set it up." }));
         return;
       }
+      // OAuth 2 sign-ins to APIs (narado's default callback for web and desktop).
+      if (await oauth2.handle(req, res)) return;
       // Who's signed in, and whether they're an admin (for the interface's Admin link).
       if (pathname === '/auth/me' && req.method === 'GET') {
         const user = auth.enabled ? auth.userFor(req) : null;

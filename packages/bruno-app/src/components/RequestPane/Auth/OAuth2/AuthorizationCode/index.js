@@ -13,6 +13,7 @@ import AdditionalParams from '../AdditionalParams/index';
 import SensitiveFieldWarning from 'components/SensitiveFieldWarning';
 import { savePreferences } from 'providers/ReduxStore/slices/app';
 import toast from 'react-hot-toast';
+import { defaultOauth2Callback, isNarado, isNaradoWeb } from 'utils/common/product';
 
 const OAuth2AuthorizationCode = ({ save, item = {}, request, handleRun, updateAuth, collection, folder, readOnly }) => {
   const dispatch = useDispatch();
@@ -22,7 +23,8 @@ const OAuth2AuthorizationCode = ({ save, item = {}, request, handleRun, updateAu
     backgroundColor: theme?.background?.surface0,
     color: theme?.text
   };
-  const useSystemBrowser = get(preferences, 'request.oauth2.useSystemBrowser', false);
+  // narado's web version always signs in in the person's own browser.
+  const useSystemBrowser = isNaradoWeb() || get(preferences, 'request.oauth2.useSystemBrowser', false);
   const oAuth = get(request, 'auth.oauth2', {});
   const {
     callbackUrl,
@@ -165,14 +167,14 @@ const OAuth2AuthorizationCode = ({ save, item = {}, request, handleRun, updateAu
               onRun={handleRun}
               collection={collection}
               item={item}
-              placeholder={useSystemBrowser ? 'https://oauth.usebruno.com/callback' : undefined}
+              placeholder={useSystemBrowser || isNarado() ? defaultOauth2Callback() : undefined}
               readOnly={readOnly}
               isCompact
             />
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-4 w-full" key="input-use-system-browser">
+      <div className="flex items-center gap-4 w-full" key="input-use-system-browser" style={isNaradoWeb() ? { display: 'none' } : undefined}>
         <label className="block min-w-[140px]"></label>
         <div className="flex items-center gap-2">
           <input

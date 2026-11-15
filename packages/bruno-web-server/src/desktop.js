@@ -209,6 +209,12 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
     remote.save();
   }
   const front = switchingFront({ local, remote });
+  // OAuth 2 sign-ins to APIs come back to the team's narado server, which hands those
+  // finished in the system browser to this app through narado:// (bruno-electron/src/index.js).
+  const useServerOauth2Callback = () => {
+    if (remote.server) env.NARADO_OAUTH2_CALLBACK_URL = process.env.NARADO_OAUTH2_CALLBACK_URL = `${remote.server}/oauth2/callback`;
+  };
+  useServerOauth2Callback();
 
   const narado = registerNaradoIpc({
     ipcMain,
@@ -301,6 +307,7 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
   ipcMain.handle('narado:desktop-sign-in', async (_e, { server } = {}) => {
     await remote.signIn(server);
     useServerHosts(remote.session && remote.session.hosts);
+    useServerOauth2Callback();
     if (!(mainWindow.isDestroyed && mainWindow.isDestroyed()) && mainWindow.focus) mainWindow.focus();
     return status();
   });
