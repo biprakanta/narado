@@ -14,7 +14,8 @@ import McpTokensModal from './McpTokensModal';
 import SecretsModal from './SecretsModal';
 import DevicesModal from './DevicesModal';
 import DesktopSignInModal from './DesktopSignInModal';
-import { naradoApi, desktopApi, errorText, connectGitAccount, openAdmin } from './api';
+import ConnectGitModal from './ConnectGitModal';
+import { naradoApi, desktopApi, errorText, openAdmin } from './api';
 
 const OFFERED_KEY = 'narado.git-connect-offered';
 
@@ -46,6 +47,9 @@ const GitSection = () => {
   // narado desktop: this computer's sign-in to the team's narado server.
   const [desk, setDesk] = useState(null);
   const [signInOpen, setSignInOpen] = useState(false);
+  // A Git host this person can connect but hasn't: offered once per session, and in the empty state.
+  const [connectable, setConnectable] = useState(null);
+  const [connectOpen, setConnectOpen] = useState(false);
 
   useEffect(() => {
     const onAuth = (e) => setAuth(e.detail);
@@ -143,28 +147,44 @@ const GitSection = () => {
   }, []);
 
   // Right after signing in: if no Git account is connected and the server has an app for
-  // one, go straight to connecting it (once per browser session, so declining is respected).
+  // one, explain connecting it (once per browser session, so "Not now" is respected). It
+  // waits for other dialogs, such as the welcome tour, to close first.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('git-connect')) return;
     // On the desktop, accounts are connected through the team's server (desktop phase D2).
-    if (window.isNaradoDesktop) return;
-    let offered = false;
-    try {
-      offered = sessionStorage.getItem(OFFERED_KEY) === '1';
-    } catch {}
-    if (offered) return;
+    if (window.isNaradoDesktop) return undefined;
+    let timer = null;
+    let cancelled = false;
     naradoApi
       .hosts()
       .then((list) => {
-        if (list.some((h) => h.connected)) return;
+        if (cancelled || list.some((h) => h.connected)) return;
         const host = list.find((h) => h.canConnect);
         if (!host) return;
+        setConnectable(host);
+        if (new URLSearchParams(window.location.search).get('git-connect')) return;
+        let offered = false;
         try {
-          sessionStorage.setItem(OFFERED_KEY, '1');
+          offered = sessionStorage.getItem(OFFERED_KEY) === '1';
         } catch {}
-        connectGitAccount(host);
+        if (offered) return;
+        const offer = () => {
+          if (cancelled) return;
+          if (document.querySelector('.bruno-modal, [data-testid="welcome-modal"]')) {
+            timer = setTimeout(offer, 1000);
+            return;
+          }
+          try {
+            sessionStorage.setItem(OFFERED_KEY, '1');
+          } catch {}
+          setConnectOpen(true);
+        };
+        offer();
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
 
   // Explore is the everyday action; the rest lives in one menu.
@@ -230,6 +250,7 @@ const GitSection = () => {
         />
       )}
       {tokensOpen && <McpTokensModal onClose={() => setTokensOpen(false)} />}
+      {connectOpen && connectable && <ConnectGitModal host={connectable} onClose={() => setConnectOpen(false)} />}
       {explore && (
         <ExploreModal
           onClose={() => setExplore(false)}
@@ -320,16 +341,31 @@ const GitSection = () => {
           {!needsSignIn && workspaces.length === 0 && synced.length === 0 && (
             <div className="narado-empty-state" data-testid="narado-git-empty">
               <div className="narado-empty-title">No repositories open</div>
-              <div className="narado-empty-text">Find your team's collections and OpenAPI specs in GitHub and GitLab, or open a repository to work on it.</div>
-              <div className="narado-empty-actions">
-                <button type="button" className="narado-btn narado-btn-primary" onClick={() => setExplore(true)} data-testid="narado-explore-empty">
-                  <IconCompass size={13} stroke={1.75} aria-hidden="true" />
-                  Explore APIs
-                </button>
-                <button type="button" className="narado-btn" onClick={() => setOpenRepo({})} data-testid="narado-open-repo-empty">
-                  Open repository
-                </button>
+              <div className="narado-empty-text">
+                {connectable
+                  ? `Connect your ${connectable.name || 'Git'} account to find your team's collections and OpenAPI specs, and to work on them here.`
+                  : 'Find your team\'s collections and OpenAPI specs in GitHub and GitLab, or open a repository to work on it.'}
               </div>
+              {connectable ? (
+                <div className="narado-empty-actions">
+                  <button type="button" className="narado-btn narado-btn-primary" onClick={() => setConnectOpen(true)} data-testid="narado-connect-empty">
+                    Connect {connectable.name || 'Git'}
+                  </button>
+                  <button type="button" className="narado-btn" onClick={() => setExplore(true)} data-testid="narado-explore-empty">
+                    Explore APIs
+                  </button>
+                </div>
+              ) : (
+                <div className="narado-empty-actions">
+                  <button type="button" className="narado-btn narado-btn-primary" onClick={() => setExplore(true)} data-testid="narado-explore-empty">
+                    <IconCompass size={13} stroke={1.75} aria-hidden="true" />
+                    Explore APIs
+                  </button>
+                  <button type="button" className="narado-btn" onClick={() => setOpenRepo({})} data-testid="narado-open-repo-empty">
+                    Open repository
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

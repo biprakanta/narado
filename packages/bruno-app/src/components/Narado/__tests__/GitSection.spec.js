@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import React from 'react';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import { SidebarAccordionProvider } from 'components/Sidebar/SidebarAccordionContext';
 import GitSection from '../GitSection';
 import { fakeServer, renderWithApp } from './helpers';
@@ -43,20 +43,38 @@ describe('Git section', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
-  it('sends a person with no Git account straight to connecting one, once per session', async () => {
+  it('explains connecting a Git account first, once per session, and only goes on a click', async () => {
     fakeServer({
       'narado:workspaces': () => [],
       'narado:synced': () => [],
       'narado:hosts': () => [{ id: 'github', name: 'GitHub', connected: false, canConnect: true, connectUrl: '/auth/git/github/connect' }]
     });
     renderSection();
-    await waitFor(() => expect(assign).toHaveBeenCalledWith('/auth/git/github/connect?return=%2F'));
-    expect(screen.getByText('No repositories open')).toBeInTheDocument();
-    expect(screen.getByTestId('narado-explore-empty')).toHaveTextContent('Explore APIs');
+    expect(await screen.findByText('Connect your GitHub account')).toBeInTheDocument();
+    expect(assign).not.toHaveBeenCalled();
+    // The empty state offers it too.
+    expect(screen.getByTestId('narado-connect-empty')).toHaveTextContent('Connect GitHub');
 
+    fireEvent.click(screen.getByTestId('narado-connect-git-go'));
+    expect(assign).toHaveBeenCalledWith('/auth/git/github/connect?return=%2F');
+
+    // Offered once per browser session.
     assign.mockClear();
     renderSection();
     await new Promise((r) => setTimeout(r, 50));
-    expect(assign).not.toHaveBeenCalled();
+    expect(screen.getAllByText('Connect your GitHub account')).toHaveLength(1);
+  });
+
+  it('with an account connected, the empty state offers Explore and Open', async () => {
+    fakeServer({
+      'narado:workspaces': () => [],
+      'narado:synced': () => [],
+      'narado:hosts': () => [{ id: 'github', name: 'GitHub', connected: true, canConnect: true }]
+    });
+    renderSection();
+    expect(await screen.findByText('No repositories open')).toBeInTheDocument();
+    expect(screen.getByTestId('narado-explore-empty')).toHaveTextContent('Explore APIs');
+    expect(screen.getByTestId('narado-open-repo-empty')).toBeInTheDocument();
+    expect(screen.queryByText('Connect your GitHub account')).not.toBeInTheDocument();
   });
 });
