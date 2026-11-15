@@ -30,9 +30,9 @@ const ENV_RE = /(?:^|\/)(?:\.client\/)?environments\/[^/]+\.(?:bru|ya?ml|json)$/
 const URL_RE = /\b(https?|wss?|grpcs?):\/\/([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::(\d{1,5}))?(\/[^\s"'`{}<>]*)?/g;
 const DEFAULT_PORTS = { http: 80, ws: 80, https: 443, wss: 443, grpc: 80, grpcs: 443 };
 
-const git = (args, cwd) =>
+const git = (args, cwd, extraEnv = {}) =>
   new Promise((resolve) => {
-    execFile('git', args, { cwd, timeout: 15000, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (err, stdout) => resolve(err ? null : stdout));
+    execFile('git', args, { cwd, timeout: 15000, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...extraEnv } }, (err, stdout) => resolve(err ? null : stdout));
   });
 
 const hostPattern = (h) => String(h).trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
@@ -123,8 +123,10 @@ const codeownersCovers = (text, file = ALLOW_FILE) => {
  * Reads a repo's rules from its bare clone, cached by the default branch's commit.
  */
 class AllowlistReader {
-  constructor() {
+  /** @param {Function} [envFor] (base) => env for Git, e.g. the person's token for a partial clone */
+  constructor({ envFor = null } = {}) {
     this.cache = new Map(); // base -> RepoRules
+    this.envFor = envFor;
   }
 
   async defaultBranch(base) {
@@ -142,7 +144,9 @@ class AllowlistReader {
 
     const entries = [];
     const files = commit ? ((await git(['ls-tree', '-r', '--name-only', commit], base)) || '').split('\n').filter(Boolean) : [];
-    const show = (f) => git(['show', `${commit}:${f}`], base);
+    // In a partial clone, file contents may still be on the host; reading them needs the token.
+    const env = this.envFor ? await this.envFor(base) : {};
+    const show = (f) => git(['show', `${commit}:${f}`], base, env);
     const allowFiles = files.filter(isAllowFile).slice(0, 50);
     for (const f of allowFiles) {
       try {

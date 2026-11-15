@@ -4,6 +4,7 @@
  * Every handler that takes a folder checks it lies inside a narado working copy
  * (WorkspaceManager.locate), so the browser cannot point Git at other server paths.
  */
+const fs = require('node:fs');
 const path = require('node:path');
 const { ProviderRegistry } = require('./providers');
 const { WorkspaceManager, branchFor, runGit } = require('./workspaces');
@@ -16,7 +17,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
   // Host settings (narado.json) are server-wide; each person's workspaces are under their own dataDir.
   // With `git` (a worker), Git tokens are the person's own, from the front process (Phase 4c).
   const registry = new ProviderRegistry({ dataDir: configDir, env, tokenFor: git ? async (hostId, opts) => (await git.token(hostId, opts)).token : undefined });
-  const workspaces = new WorkspaceManager({ dataDir });
+  const workspaces = new WorkspaceManager({ dataDir, authFor: async (hostId) => registry.get(hostId).gitAuthHeader() });
   const catalogue = new Catalogue({ registry, dataDir });
   const users = new Map(); // hostId -> { user, at }
   const repos = new Map(); // hostId/repoPath -> { repo, at }
@@ -48,7 +49,8 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
 
   const collectionsFor = async (wtPath) => {
     const { stdout } = await runGit(['ls-files', '-co', '--exclude-standard', '-z'], { cwd: wtPath });
-    const found = collectionsInTree(stdout.split('\0').filter(Boolean));
+    // In a sparse working copy Git also lists files that aren't checked out; open only what is there.
+    const found = collectionsInTree(stdout.split('\0').filter(Boolean)).filter((c) => fs.existsSync(path.join(wtPath, ...c.file.split('/'))));
     const out = [];
     const live = new Set();
     for (const c of found) {
@@ -85,6 +87,28 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
   /** Regenerate views after Git changed the repo files. */
   const refreshView = async (wtPath) => {
     for (const [, p] of projectionsIn(wtPath)) await p.run(() => p.project());
+  };
+
+  /**
+   * For a code repository (collections only in subfolders), the folders to check out:
+   * the clone then skips file contents and the working copy holds only the collections
+   * and the files at the root. null means a full clone (API repos, or when unsure).
+   */
+  const sparseFor = async (provider, repo, ref) => {
+    if (env.NARADO_SPARSE_CLONES === '0' || !provider.listFiles) return null;
+    for (const r of [...new Set([ref, repo.defaultBranch])]) {
+      try {
+        const { files } = await provider.listFiles(repo.path, r);
+        const found = collectionsInTree(files);
+        if (!found.length || found.some((c) => c.dir === '')) return null;
+        const dirs = new Set(found.map((c) => c.dir));
+        if (files.some((f) => f.startsWith('.client/'))) dirs.add('.client');
+        return [...dirs].sort();
+      } catch (err) {
+        if (err.status !== 404) return null; // the branch may only exist in a fork; try the default
+      }
+    }
+    return null;
   };
 
   /** Resolve a folder from the browser to its workspace, or throw. */
@@ -191,7 +215,8 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       branch: target,
       defaultBranch: repo.defaultBranch,
       via,
-      forkCloneUrl: fork ? fork.cloneUrl : undefined
+      forkCloneUrl: fork ? fork.cloneUrl : undefined,
+      sparse: await sparseFor(provider, repo, target)
     });
     ws.collections = await collectionsFor(ws.path);
     await openCollections(ws.collections);

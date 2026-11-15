@@ -317,7 +317,7 @@ const main = async () => {
 
   // Request safety (Phase 4a): with sign-in on, every connection is checked against the
   // platform block list, and sends against their repo's allowlist from its default branch.
-  const allowlists = new AllowlistReader();
+  const allowlists = new AllowlistReader({ envFor: (base) => narado.workspaces.gitEnvFor(base) });
   const rulesFor = async (collectionPath) => {
     const loc = collectionPath ? narado.workspaces.locate(collectionPath) : null;
     if (!loc) return { rules: null, repo: null };

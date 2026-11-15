@@ -108,6 +108,7 @@ The **Explore APIs** button in the Git section lists every repository the person
 - **Start a change** creates `narado/<login>/<topic>` from the default branch. **Browse** opens the default branch read-only. Commits to the default branch are refused, since changes go through merge requests.
 - **Commit** stages everything in the working copy. **Push and open** pushes and opens a pull request (GitHub) or merge request (GitLab) into the default branch.
 - **Update from main** merges the default branch in. Conflicts are listed per file with **Keep mine** or **Keep main**, and the update can be cancelled.
+- **Code repositories are cloned lightly.** When a repository's collections are all in subfolders, narado clones it without file contents (`--filter=blob:none`) and checks out only those folders plus the files at the root (sparse checkout, cone mode). Git fetches other contents only if a command needs them, for example a merge touching files outside those folders. A collection folder added to the repository later is added the next time it is opened. API repos (collection at the root) are cloned in full. `NARADO_SPARSE_CLONES=0` turns this off.
 - **Tokens:** the token reaches Git as an HTTP header through `GIT_CONFIG_*` environment variables, per command. It is never written to remote URLs, Git config or disk. Credential helpers are switched off for these commands.
 - **Timeouts:** network commands time out after 2 minutes, and stalled transfers abort after 30 seconds.
 
@@ -274,6 +275,7 @@ claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Autho
 | `NARADO_<HOST ID>_APP_CLIENT_ID`, `_APP_CLIENT_SECRET`, `_APP_SLUG` | none | The GitHub App or GitLab application people connect their accounts through (see Git accounts) |
 | `NARADO_GIT_TOKEN_KEY` | a key file in the data folder | 32 bytes, base64: encrypts stored Git tokens |
 | `NARADO_<HOST ID>_TOKEN` | none | Shared token for a Git host, local mode only |
+| `NARADO_SPARSE_CLONES` | on | `0` clones code repositories in full instead of fetching only their collection folders |
 | `NARADO_SHARED_GIT_TOKENS` | off | `1` lets signed-in people use shared tokens when they have not connected an account |
 | `NARADO_MCP_ALLOW_WRITE` | on | `0` turns MCP write tools off for every token |
 | `NARADO_WORKER_IDLE_MINUTES` | `30` | Stop a person's worker after this long without a connection |
@@ -297,7 +299,8 @@ The workspace tests run real Git against a local repo standing in for the host, 
 ## Known limits
 
 - **Git accounts are separate from sign-in.** narado connects the Git account signed in to the person's browser, and doesn't check it belongs to the same person as the SSO account (only that no one else has it).
-- **Opening a large code repository** clones all of it, even though only its collection folders are used. A partial, sparse clone would fetch just those folders.
+- **Partial clones need the host for some local commands.** Reading a file Git hasn't fetched yet (a merge outside the collection folders, an allowlist file) contacts the host with the person's token, so it fails while the host is unreachable or the account is disconnected.
+- **Repositories cloned before light clones** stay full clones; delete the person's copy under `git/` to clone it again.
 - **GitLab sign-in** is covered by the same code and tests as GitHub, but has not been tried against a real GitLab instance yet.
 - **Access tokens reach the worker.** Workers get short-lived access tokens (GitHub: 8 hours, GitLab: 2 hours) for the calls they make, never refresh tokens.
 - **The sandbox has gaps.**

@@ -166,12 +166,77 @@ class WorkspaceManager {
    * @param {object} opts
    * @param {string} opts.dataDir
    */
-  constructor({ dataDir }) {
+  constructor({ dataDir, authFor = null }) {
     this.root = path.join(dataDir, 'git');
+    // Partial clones (code repositories) fetch file contents when Git first needs them, from
+    // any command, so every command on one gets the person's token: authFor(hostId) -> header.
+    this.authFor = authFor;
+    this.partial = new Map(); // base -> boolean
     // Generated Bruno collections for OpenAPI repos, mirroring the worktree layout.
     this.viewsRoot = path.join(dataDir, 'views');
     fs.mkdirSync(this.root, { recursive: true });
     this.locks = new Map();
+  }
+
+  /** The bare clone a path belongs to (the clone itself, or one of its worktrees). */
+  baseOf(cwd) {
+    if (!cwd) return null;
+    const loc = this.locate(cwd);
+    if (loc) return this.basePath(loc.hostId, loc.repoPath);
+    const rel = path.relative(this.root, path.resolve(cwd));
+    if (rel.startsWith('..') || path.isAbsolute(rel) || !rel.endsWith('.git')) return null;
+    return path.resolve(cwd);
+  }
+
+  isPartial(base) {
+    if (!this.partial.has(base)) {
+      let text = '';
+      try {
+        text = fs.readFileSync(path.join(base, 'config'), 'utf8');
+      } catch {
+        return false; // not cloned yet; don't remember
+      }
+      this.partial.set(base, /^\s*promisor\s*=\s*true/m.test(text));
+    }
+    return this.partial.get(base);
+  }
+
+  /** Environment for Git in `cwd`: the person's token when it is a partial clone. */
+  async gitEnvFor(cwd) {
+    const base = this.authFor ? this.baseOf(cwd) : null;
+    if (!base || !this.isPartial(base)) return {};
+    const hostId = path.relative(this.root, base).split(path.sep)[0];
+    const header = await Promise.resolve(this.authFor(hostId)).catch(() => null);
+    return authEnv(header);
+  }
+
+  /** Git, with the person's token when the repository is a partial clone. */
+  async git(args, opts = {}) {
+    const env = opts.env || {};
+    return runGit(args, { ...opts, env: env.GIT_CONFIG_COUNT ? env : { ...(await this.gitEnvFor(opts.cwd)), ...env } });
+  }
+
+  /**
+   * Add a worktree. With `sparse` (folders), only those folders and the files at the
+   * root are checked out (cone mode), which keeps a large code repository small on disk.
+   */
+  async addWorktree(base, wt, { options = [], commitish }, sparse) {
+    const tail = commitish ? [wt, commitish] : [wt];
+    if (!sparse || !sparse.length) {
+      await this.git(['worktree', 'add', '--quiet', ...options, ...tail], { cwd: base });
+      return;
+    }
+    await this.git(['worktree', 'add', '--quiet', '--no-checkout', ...options, ...tail], { cwd: base });
+    await this.git(['sparse-checkout', 'set', '--cone', '--', ...sparse], { cwd: wt });
+    await this.git(['checkout', '--quiet'], { cwd: wt });
+  }
+
+  /** Folders a worktree checks out, or null when it has everything. */
+  async sparseFolders(wt) {
+    const { stdout, code } = await this.git(['sparse-checkout', 'list'], { cwd: wt, allowExit: [128] });
+    if (code !== 0) return null;
+    const enabled = (await this.git(['config', '--bool', 'core.sparseCheckout'], { cwd: wt, allowExit: [1] })).stdout.trim() === 'true';
+    return enabled ? stdout.split('\n').filter(Boolean) : null;
   }
 
   /** Where the Bruno view of a working copy lives (OpenAPI repos only). */
@@ -212,7 +277,7 @@ class WorkspaceManager {
   }
 
   async checkBranchName(branch) {
-    await runGit(['check-ref-format', '--branch', branch]).catch(() => {
+    await this.git(['check-ref-format', '--branch', branch]).catch(() => {
       throw new Error(`"${branch}" is not a valid branch name`);
     });
   }
@@ -221,50 +286,57 @@ class WorkspaceManager {
    * Clone (bare) on first use, then fetch. With `forkCloneUrl`, also keep a `fork`
    * remote pointing at the person's fork. Returns the bare repo path.
    */
-  async ensureBase({ hostId, repoPath, cloneUrl, authHeader, forkCloneUrl }) {
+  async ensureBase({ hostId, repoPath, cloneUrl, authHeader, forkCloneUrl, partial = false }) {
     const base = this.basePath(hostId, repoPath);
     const env = authEnv(authHeader);
     if (!fs.existsSync(path.join(base, 'HEAD'))) {
       fs.mkdirSync(path.dirname(base), { recursive: true });
-      await runGit(['clone', '--bare', '--quiet', cloneUrl, base], { env });
+      // A code repository is cloned without file contents; Git fetches the ones it needs.
+      await this.git(['clone', '--bare', '--quiet', ...(partial ? ['--filter=blob:none'] : []), cloneUrl, base], { env });
+      this.partial.delete(base);
       // Bare clones map remote branches straight onto local ones; track them as origin/* instead.
-      await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*'], { cwd: base });
+      await this.git(['config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*'], { cwd: base });
     }
-    await runGit(['fetch', '--prune', '--quiet', 'origin'], { cwd: base, env });
+    await this.git(['fetch', '--prune', '--quiet', 'origin'], { cwd: base, env });
     if (forkCloneUrl) await this.setForkRemote(base, forkCloneUrl);
     if (await this.hasRemote(base, 'fork')) {
-      await runGit(['fetch', '--prune', '--quiet', 'fork'], { cwd: base, env });
+      await this.git(['fetch', '--prune', '--quiet', 'fork'], { cwd: base, env });
     }
     return base;
   }
 
   async hasRemote(base, name) {
-    const { stdout } = await runGit(['remote'], { cwd: base });
+    const { stdout } = await this.git(['remote'], { cwd: base });
     return stdout.split('\n').includes(name);
   }
 
   async setForkRemote(base, url) {
     if (await this.hasRemote(base, 'fork')) {
-      await runGit(['remote', 'set-url', 'fork', url], { cwd: base });
+      await this.git(['remote', 'set-url', 'fork', url], { cwd: base });
     } else {
-      await runGit(['remote', 'add', 'fork', url], { cwd: base });
+      await this.git(['remote', 'add', 'fork', url], { cwd: base });
     }
-    await runGit(['config', 'remote.fork.fetch', '+refs/heads/*:refs/remotes/fork/*'], { cwd: base });
+    await this.git(['config', 'remote.fork.fetch', '+refs/heads/*:refs/remotes/fork/*'], { cwd: base });
+    if (this.isPartial(base)) {
+      // Fetch the fork the same way, or Git would download all of its file contents.
+      await this.git(['config', 'remote.fork.promisor', 'true'], { cwd: base });
+      await this.git(['config', 'remote.fork.partialclonefilter', 'blob:none'], { cwd: base });
+    }
   }
 
   async remoteBranchExists(base, branch, remote = 'origin') {
-    const { code } = await runGit(['show-ref', '--verify', '--quiet', `refs/remotes/${remote}/${branch}`], { cwd: base, allowExit: [1] });
+    const { code } = await this.git(['show-ref', '--verify', '--quiet', `refs/remotes/${remote}/${branch}`], { cwd: base, allowExit: [1] });
     return code === 0;
   }
 
   /** Where a branch pushes: 'fork' for changes made through a fork, otherwise 'origin'. */
   async pushRemoteFor(cwd, branch) {
-    const { stdout, code } = await runGit(['config', '--get', `branch.${branch}.pushRemote`], { cwd, allowExit: [1] });
+    const { stdout, code } = await this.git(['config', '--get', `branch.${branch}.pushRemote`], { cwd, allowExit: [1] });
     return code === 0 && stdout.trim() ? stdout.trim() : 'origin';
   }
 
   async localBranchExists(base, branch) {
-    const { code } = await runGit(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: base, allowExit: [1] });
+    const { code } = await this.git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: base, allowExit: [1] });
     return code === 0;
   }
 
@@ -276,14 +348,14 @@ class WorkspaceManager {
    * fork, while updates still come from the repo's default branch.
    * A branch that exists on the host is checked out; a new one starts from `defaultBranch`.
    */
-  async open({ hostId, repoPath, cloneUrl, authHeader, branch, defaultBranch, via = 'branch', forkCloneUrl }) {
+  async open({ hostId, repoPath, cloneUrl, authHeader, branch, defaultBranch, via = 'branch', forkCloneUrl, sparse = null }) {
     await this.checkBranchName(branch);
     if (!['branch', 'fork'].includes(via)) throw new Error('via must be "branch" or "fork"');
     if (via === 'fork' && !forkCloneUrl) throw new Error('A fork is needed to work through a fork');
     const remote = via === 'fork' ? 'fork' : 'origin';
 
     return this.withLock(`${hostId}/${repoPath}`, async () => {
-      const base = await this.ensureBase({ hostId, repoPath, cloneUrl, authHeader, forkCloneUrl: via === 'fork' ? forkCloneUrl : undefined });
+      const base = await this.ensureBase({ hostId, repoPath, cloneUrl, authHeader, forkCloneUrl: via === 'fork' ? forkCloneUrl : undefined, partial: !!sparse });
       const wt = this.worktreePath(hostId, repoPath, branch);
 
       // A branch belongs to one route (the repo or the fork); never switch it silently.
@@ -296,20 +368,25 @@ class WorkspaceManager {
 
       if (!fs.existsSync(path.join(wt, '.git'))) {
         fs.mkdirSync(path.dirname(wt), { recursive: true });
-        await runGit(['worktree', 'prune'], { cwd: base });
+        await this.git(['worktree', 'prune'], { cwd: base });
         if (await this.localBranchExists(base, branch)) {
-          await runGit(['worktree', 'add', '--quiet', wt, branch], { cwd: base });
+          await this.addWorktree(base, wt, { commitish: branch }, sparse);
         } else if (await this.remoteBranchExists(base, branch, remote)) {
-          await runGit(['worktree', 'add', '--quiet', '--track', '-b', branch, wt, `${remote}/${branch}`], { cwd: base });
+          await this.addWorktree(base, wt, { options: ['--track', '-b', branch], commitish: `${remote}/${branch}` }, sparse);
         } else {
           if (!(await this.remoteBranchExists(base, defaultBranch))) {
             throw new Error(`The repo has no "${defaultBranch}" branch to start from. Is it empty?`);
           }
-          await runGit(['worktree', 'add', '--quiet', '--no-track', '-b', branch, wt, `origin/${defaultBranch}`], { cwd: base });
+          await this.addWorktree(base, wt, { options: ['--no-track', '-b', branch], commitish: `origin/${defaultBranch}` }, sparse);
         }
         if (via === 'fork') {
-          await runGit(['config', `branch.${branch}.pushRemote`, 'fork'], { cwd: base });
+          await this.git(['config', `branch.${branch}.pushRemote`, 'fork'], { cwd: base });
         }
+      } else if (sparse && sparse.length) {
+        // An existing sparse worktree also gets collection folders added since it was made.
+        const have = await this.sparseFolders(wt);
+        const missing = have ? sparse.filter((d) => !have.includes(d)) : [];
+        if (missing.length) await this.git(['sparse-checkout', 'add', '--', ...missing], { cwd: wt });
       }
 
       // The default branch is only ever read from the host, so bring it up to date
@@ -322,12 +399,12 @@ class WorkspaceManager {
 
   /** Fast-forward a clean working copy to `ref`. Returns true if it moved. */
   async fastForward(wt, ref) {
-    const st = parseStatus((await runGit(['status', '--porcelain=v1', '-b', '-z'], { cwd: wt })).stdout);
+    const st = parseStatus((await this.git(['status', '--porcelain=v1', '-b', '-z'], { cwd: wt })).stdout);
     if (st.files.length) return false;
-    const before = (await runGit(['rev-parse', 'HEAD'], { cwd: wt })).stdout.trim();
-    const { code } = await runGit(['merge', '--ff-only', '--quiet', ref], { cwd: wt, allowExit: [1, 128] });
+    const before = (await this.git(['rev-parse', 'HEAD'], { cwd: wt })).stdout.trim();
+    const { code } = await this.git(['merge', '--ff-only', '--quiet', ref], { cwd: wt, allowExit: [1, 128] });
     if (code !== 0) return false;
-    return (await runGit(['rev-parse', 'HEAD'], { cwd: wt })).stdout.trim() !== before;
+    return (await this.git(['rev-parse', 'HEAD'], { cwd: wt })).stdout.trim() !== before;
   }
 
   async viaFor(wt, branch) {
@@ -381,15 +458,15 @@ class WorkspaceManager {
   }
 
   async status({ path: wt, defaultBranch }) {
-    const { stdout } = await runGit(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'], { cwd: wt });
+    const { stdout } = await this.git(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'], { cwd: wt });
     const status = parseStatus(stdout);
-    const gitDir = (await runGit(['rev-parse', '--git-dir'], { cwd: wt })).stdout.trim();
+    const gitDir = (await this.git(['rev-parse', '--git-dir'], { cwd: wt })).stdout.trim();
     status.merging = fs.existsSync(path.resolve(wt, gitDir, 'MERGE_HEAD'));
     status.via = status.branch ? await this.viaFor(wt, status.branch) : 'branch';
     status.behindDefault = 0;
     status.aheadOfDefault = 0;
     if (defaultBranch) {
-      const { stdout: counts, code } = await runGit(
+      const { stdout: counts, code } = await this.git(
         ['rev-list', '--left-right', '--count', `HEAD...origin/${defaultBranch}`],
         { cwd: wt, allowExit: [128] }
       );
@@ -406,17 +483,17 @@ class WorkspaceManager {
   /** Stage everything and commit. Returns the new commit's short hash, or null when nothing changed. */
   async commit({ path: wt, message, user }) {
     if (!message || !message.trim()) throw new Error('A commit message is required');
-    const st = parseStatus((await runGit(['status', '--porcelain=v1', '-b', '-z'], { cwd: wt })).stdout);
+    const st = parseStatus((await this.git(['status', '--porcelain=v1', '-b', '-z'], { cwd: wt })).stdout);
     if (st.conflicts.length) throw new Error(`Resolve conflicts first: ${st.conflicts.join(', ')}`);
-    await runGit(['add', '--all'], { cwd: wt });
-    const { code } = await runGit(['diff', '--cached', '--quiet'], { cwd: wt, allowExit: [1] });
+    await this.git(['add', '--all'], { cwd: wt });
+    const { code } = await this.git(['diff', '--cached', '--quiet'], { cwd: wt, allowExit: [1] });
     if (code === 0) {
       // Nothing staged. Still allow finishing a merge whose conflicts were resolved.
-      const gitDir = (await runGit(['rev-parse', '--git-dir'], { cwd: wt })).stdout.trim();
+      const gitDir = (await this.git(['rev-parse', '--git-dir'], { cwd: wt })).stdout.trim();
       if (!fs.existsSync(path.resolve(wt, gitDir, 'MERGE_HEAD'))) return null;
     }
-    await runGit(['commit', '--quiet', '-m', message.trim()], { cwd: wt, env: identityEnv(user) });
-    return (await runGit(['rev-parse', '--short', 'HEAD'], { cwd: wt })).stdout.trim();
+    await this.git(['commit', '--quiet', '-m', message.trim()], { cwd: wt, env: identityEnv(user) });
+    return (await this.git(['rev-parse', '--short', 'HEAD'], { cwd: wt })).stdout.trim();
   }
 
   /**
@@ -432,39 +509,39 @@ class WorkspaceManager {
 
     return this.withLock(`${hostId}/${repoPath}`, async () => {
       const base = this.basePath(hostId, repoPath);
-      const st = parseStatus((await runGit(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'], { cwd: fromPath })).stdout);
+      const st = parseStatus((await this.git(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'], { cwd: fromPath })).stdout);
       if (!st.files.length) throw new Error('There are no changes to save');
       if (st.conflicts.length) throw new Error(`Resolve conflicts first: ${st.conflicts.join(', ')}`);
       if (await this.localBranchExists(base, branch)) throw new Error(`Branch "${branch}" already exists. Pick another name.`);
 
       if (via === 'fork') {
         await this.setForkRemote(base, forkCloneUrl);
-        await runGit(['fetch', '--prune', '--quiet', 'fork'], { cwd: base, env: authEnv(authHeader) });
+        await this.git(['fetch', '--prune', '--quiet', 'fork'], { cwd: base, env: authEnv(authHeader) });
       }
 
-      const head = (await runGit(['rev-parse', 'HEAD'], { cwd: fromPath })).stdout.trim();
+      const head = (await this.git(['rev-parse', 'HEAD'], { cwd: fromPath })).stdout.trim();
       const wt = this.worktreePath(hostId, repoPath, branch);
       fs.mkdirSync(path.dirname(wt), { recursive: true });
-      await runGit(['worktree', 'prune'], { cwd: base });
-      await runGit(['worktree', 'add', '--quiet', '--no-track', '-b', branch, wt, head], { cwd: base });
-      if (via === 'fork') await runGit(['config', `branch.${branch}.pushRemote`, 'fork'], { cwd: base });
+      await this.git(['worktree', 'prune'], { cwd: base });
+      await this.addWorktree(base, wt, { options: ['--no-track', '-b', branch], commitish: head }, await this.sparseFolders(fromPath));
+      if (via === 'fork') await this.git(['config', `branch.${branch}.pushRemote`, 'fork'], { cwd: base });
 
       // The stash is shared by all worktrees of a repo: stash here, apply in the new branch.
       const label = `narado-save-${Date.now()}`;
-      await runGit(['stash', 'push', '--include-untracked', '--quiet', '-m', label], { cwd: fromPath, env: identityEnv(user) });
+      await this.git(['stash', 'push', '--include-untracked', '--quiet', '-m', label], { cwd: fromPath, env: identityEnv(user) });
       try {
-        await runGit(['stash', 'pop', '--quiet'], { cwd: wt });
+        await this.git(['stash', 'pop', '--quiet'], { cwd: wt });
       } catch (err) {
         // Put the edits back where they came from rather than lose them.
-        await runGit(['stash', 'pop', '--quiet'], { cwd: fromPath }).catch(() => {});
-        await runGit(['worktree', 'remove', '--force', wt], { cwd: base }).catch(() => {});
-        await runGit(['branch', '-D', branch], { cwd: base }).catch(() => {});
+        await this.git(['stash', 'pop', '--quiet'], { cwd: fromPath }).catch(() => {});
+        await this.git(['worktree', 'remove', '--force', wt], { cwd: base }).catch(() => {});
+        await this.git(['branch', '-D', branch], { cwd: base }).catch(() => {});
         throw err;
       }
 
-      await runGit(['add', '--all'], { cwd: wt });
-      await runGit(['commit', '--quiet', '-m', message.trim()], { cwd: wt, env: identityEnv(user) });
-      const sha = (await runGit(['rev-parse', '--short', 'HEAD'], { cwd: wt })).stdout.trim();
+      await this.git(['add', '--all'], { cwd: wt });
+      await this.git(['commit', '--quiet', '-m', message.trim()], { cwd: wt, env: identityEnv(user) });
+      const sha = (await this.git(['rev-parse', '--short', 'HEAD'], { cwd: wt })).stdout.trim();
       return { path: wt, branch, via, sha, collections: findCollections(wt) };
     });
   }
@@ -473,7 +550,7 @@ class WorkspaceManager {
   async push({ hostId, repoPath, path: wt, branch, authHeader }) {
     return this.withLock(`${hostId}/${repoPath}`, async () => {
       const remote = await this.pushRemoteFor(wt, branch);
-      await runGit(['push', '--quiet', '--set-upstream', remote, `${branch}:${branch}`], { cwd: wt, env: authEnv(authHeader) });
+      await this.git(['push', '--quiet', '--set-upstream', remote, `${branch}:${branch}`], { cwd: wt, env: authEnv(authHeader) });
       return { remote };
     });
   }
@@ -484,16 +561,16 @@ class WorkspaceManager {
    */
   async updateFromDefault({ hostId, repoPath, path: wt, defaultBranch, authHeader, user }) {
     return this.withLock(`${hostId}/${repoPath}`, async () => {
-      const st = parseStatus((await runGit(['status', '--porcelain=v1', '-b', '-z'], { cwd: wt })).stdout);
+      const st = parseStatus((await this.git(['status', '--porcelain=v1', '-b', '-z'], { cwd: wt })).stdout);
       if (st.files.length) throw new Error('Commit or discard your changes before updating');
-      await runGit(['fetch', '--prune', '--quiet', 'origin'], { cwd: wt, env: authEnv(authHeader) });
-      const { code } = await runGit(['merge', '--no-edit', '--quiet', `origin/${defaultBranch}`], {
+      await this.git(['fetch', '--prune', '--quiet', 'origin'], { cwd: wt, env: authEnv(authHeader) });
+      const { code } = await this.git(['merge', '--no-edit', '--quiet', `origin/${defaultBranch}`], {
         cwd: wt,
         env: identityEnv(user),
         allowExit: [1]
       });
       if (code === 0) return { merged: true, conflicts: [] };
-      const conflicts = (await runGit(['diff', '--name-only', '--diff-filter=U', '-z'], { cwd: wt })).stdout.split('\0').filter(Boolean);
+      const conflicts = (await this.git(['diff', '--name-only', '--diff-filter=U', '-z'], { cwd: wt })).stdout.split('\0').filter(Boolean);
       return { merged: false, conflicts };
     });
   }
@@ -504,17 +581,17 @@ class WorkspaceManager {
     const full = path.resolve(wt, file);
     if (!full.startsWith(path.resolve(wt) + path.sep)) throw new Error('File is outside the workspace');
     const flag = side === 'mine' ? '--ours' : '--theirs';
-    const { code } = await runGit(['checkout', flag, '--', file], { cwd: wt, allowExit: [1] });
+    const { code } = await this.git(['checkout', flag, '--', file], { cwd: wt, allowExit: [1] });
     if (code !== 0) {
       // The chosen side deleted the file.
-      await runGit(['rm', '--quiet', '--', file], { cwd: wt });
+      await this.git(['rm', '--quiet', '--', file], { cwd: wt });
       return;
     }
-    await runGit(['add', '--', file], { cwd: wt });
+    await this.git(['add', '--', file], { cwd: wt });
   }
 
   async abortMerge({ path: wt }) {
-    await runGit(['merge', '--abort'], { cwd: wt });
+    await this.git(['merge', '--abort'], { cwd: wt });
   }
 
   /** Write a minimal Bruno collection at the root of an empty working copy. */
