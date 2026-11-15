@@ -6,3 +6,7 @@ packages/bruno-electron/dist
 **/coverage
 **/.DS_Store
 *.log
+# narado desktop build output (scripts/build-narado-desktop.js)
+packages/bruno-electron/out-narado
+packages/bruno-electron/web
+packages/bruno-electron/narado
