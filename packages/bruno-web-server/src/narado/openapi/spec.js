@@ -12,16 +12,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const YAML = require('yaml');
 
-const SPEC_FILES = ['openapi.yaml', 'openapi.yml', 'openapi.json'];
+// Which file is a folder's spec: .narado/config.nar names it, else openapi.yaml/.yml/.json.
+const { findSpec, SPEC_FILES } = require('./config');
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
 
-const findSpec = (dir) => {
-  for (const name of SPEC_FILES) {
-    const p = path.join(dir, name);
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
-};
 
 /* ------------------------------------------------------------- line diff */
 

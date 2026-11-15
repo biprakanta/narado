@@ -92,11 +92,34 @@ Without sign-in, a host can use one token from `NARADO_<HOST ID>_TOKEN` instead 
 
 With sign-in on, these are ignored unless `NARADO_SHARED_GIT_TOKENS=1`, which is only meant for moving a server over. Workers never see them: the front hands them out like personal tokens.
 
+### OpenAPI collections
+
+An OpenAPI collection is a folder holding a spec and narado's own folder, `.narado/`, beside it:
+
+```
+services/payments/api/
+  payments-v2.yaml          the spec, any name
+  .narado/
+    config.nar              marks the collection and names the spec
+    requests/<operationId>.yml   values, scripts and tests per request
+    allowed-hosts.yml       hosts requests may reach (see Request safety)
+```
+
+`config.nar` is YAML:
+
+```yaml
+version: 1
+name: Payments API        # optional; defaults to the spec's info.title
+spec: payments-v2.yaml    # relative to this folder, and inside it
+```
+
+Without `config.nar`, a folder holding `openapi.yaml`, `openapi.yml` or `openapi.json` (in that order) is a collection too, and narado creates `.narado/` there when it first needs to save something. Collections made before `.narado/` keep their files in `.client/`, which narado still reads and writes for them.
+
 ### Explore APIs
 
 The **Explore APIs** button in the Git section lists every repository the person can see that holds a collection, found through the host's API as them. Nothing is cloned until they open one.
 
-- **What counts as a collection:** a folder with `bruno.json` or `opencollection.yml` (Bruno), or with `openapi.yaml`, `openapi.yml` or `openapi.json` (narado's OpenAPI storage, with `.client/` beside it). Copies and other people's code are skipped: `node_modules`, `vendor`, `third_party`, `dist`, `build`, `target`, `out` and hidden folders.
+- **What counts as a collection,** in order: a folder with `.narado/config.nar` (the spec it names); with `bruno.json` or `opencollection.yml` (Bruno); or with `openapi.yaml`, `openapi.yml` or `openapi.json`. A `config.nar` that names a missing spec is listed with the problem. Copies and other people's code are skipped: `node_modules`, `vendor`, `third_party`, `dist`, `build`, `target`, `out` and hidden folders.
 - **Two kinds of repository:** an **API repo** has its collection at the root. A **Code + API** repo is a service that carries its API in subfolders, for example `api/openapi.yaml` or several `services/*/api/` folders.
 - **Cost:** one file-list call per repository, plus one call per collection for its name. Results are cached in the person's folder per repository, keyed by its default branch and last push, so later visits only read repositories that changed. If the host rate-limits narado, it stops and carries on next time.
 - **Opening** a collection opens the repository's default branch, with every collection in it, and shows the one chosen. Edits are saved to a branch or fork as usual. **Change or branch…** opens the full dialog.
@@ -164,7 +187,7 @@ With sign-in on, a person's requests run on the server, so narado stops them rea
 
 A request may only go to hosts the repo names on its **default branch**. A host added on a branch counts once its merge request is merged. The hosts come from three places:
 
-- `.client/allowed-hosts.yml`, at the root or next to a collection in a code repository (for example `services/payments/api/.client/allowed-hosts.yml`):
+- `.narado/allowed-hosts.yml` (`.client/` in older collections), at the root or next to a collection in a code repository (for example `services/payments/api/.narado/allowed-hosts.yml`):
 
   ```yaml
   hosts:
@@ -182,7 +205,7 @@ A request may only go to hosts the repo names on its **default branch**. A host 
 How the check works:
 
 - **Each HTTP request is checked** (host, port and path), including reused keep-alive connections. Other connections are checked by host and port.
-- **Review the file.** The Git panel lists the hosts and warns when `CODEOWNERS` doesn't cover every `.client/allowed-hosts.yml` in the repo. Add one, and turn on code-owner review in branch protection, so allowlist changes need approval.
+- **Review the file.** The Git panel lists the hosts and warns when `CODEOWNERS` doesn't cover every `allowed-hosts.yml` in the repo (a `.narado/` line covers them all). Add one, and turn on code-owner review in branch protection, so allowlist changes need approval.
 - **Collections outside a Git workspace** only get the block list. Set `NARADO_REQUESTS_OUTSIDE_REPOS=refuse` to stop their sends.
 - **MCP sends** use the same default-branch allowlist, also in single-user mode.
 

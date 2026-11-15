@@ -7,38 +7,46 @@
  * per repository, keyed by its default branch and last push, so a rescan only looks at
  * repositories that changed.
  *
- * A collection is a folder holding:
+ * A collection is a folder holding, in order of precedence:
+ *   - .narado/config.nar, naming its OpenAPI spec (narado's own marker), or
  *   - bruno.json or opencollection.yml (a Bruno collection), or
- *   - openapi.yaml, openapi.yml or openapi.json (narado's OpenAPI storage, with its
- *     .client/ folder next to it).
+ *   - openapi.yaml, openapi.yml or openapi.json (an OpenAPI spec without a config).
  * A repository whose collection is at its root is an "API repo"; one whose collections
  * are in subfolders is "code + API" (a service repository carrying its own API).
  */
 const fs = require('node:fs');
 const path = require('node:path');
 const YAML = require('yaml');
+const { NARADO_DIR, CONFIG_NAME, parseConfig } = require('./openapi/config');
 
 const BRUNO_MARKERS = ['bruno.json', 'opencollection.yml'];
 const SPEC_FILES = ['openapi.yaml', 'openapi.yml', 'openapi.json'];
 // Folders that hold copies, generated output or other people's code, not a team's API.
 const SKIP_DIRS = new Set(['node_modules', 'vendor', 'third_party', 'dist', 'build', 'target', 'out', '.git', 'bower_components']);
 const MAX_COLLECTIONS_PER_REPO = 20;
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2; // 2: .narado/config.nar
 
-/** Collections in a list of file paths: [{ dir, kind, file }], outermost first. */
+/** Collections in a list of file paths: [{ dir, kind, file, config }], outermost first. */
 const collectionsInTree = (files) => {
-  const found = new Map(); // dir -> { dir, kind, file }
+  const found = new Map(); // dir -> { dir, kind, file, config }
+  const rank = (c) => (c.config ? 0 : c.kind === 'bruno' ? 1 : 2 + SPEC_FILES.indexOf(path.basename(c.file)));
+  const offer = (c) => {
+    const prev = found.get(c.dir);
+    if (!prev || rank(c) < rank(prev)) found.set(c.dir, c);
+  };
   for (const f of files) {
     const parts = f.split('/');
     const base = parts.pop();
-    if (parts.some((p) => SKIP_DIRS.has(p) || (p.startsWith('.') && p !== '.client'))) continue;
-    const dir = parts.join('/');
-    if (BRUNO_MARKERS.includes(base)) found.set(dir, { dir, kind: 'bruno', file: f });
-    else if (SPEC_FILES.includes(base) && !(found.get(dir) && found.get(dir).kind === 'bruno')) {
-      const prev = found.get(dir);
-      // Prefer openapi.yaml over .yml over .json, as findSpec does.
-      if (!prev || SPEC_FILES.indexOf(base) < SPEC_FILES.indexOf(path.basename(prev.file))) found.set(dir, { dir, kind: 'openapi', file: f });
+    const skipped = (dirs) => dirs.some((p) => SKIP_DIRS.has(p) || p.startsWith('.'));
+    if (base === CONFIG_NAME && parts[parts.length - 1] === NARADO_DIR) {
+      const dirParts = parts.slice(0, -1);
+      if (!skipped(dirParts)) offer({ dir: dirParts.join('/'), kind: 'openapi', file: f, config: true });
+      continue;
     }
+    if (skipped(parts)) continue;
+    const dir = parts.join('/');
+    if (BRUNO_MARKERS.includes(base)) offer({ dir, kind: 'bruno', file: f, config: false });
+    else if (SPEC_FILES.includes(base)) offer({ dir, kind: 'openapi', file: f, config: false });
   }
   // A collection inside another Bruno collection is part of it (a folder of requests).
   const dirs = [...found.keys()].sort((a, b) => a.length - b.length || a.localeCompare(b));
@@ -117,8 +125,29 @@ class Catalogue {
     const ref = repo.defaultBranch;
     const { files, truncated } = await provider.listFiles(repo.path, ref);
     const collections = collectionsInTree(files).slice(0, MAX_COLLECTIONS_PER_REPO);
+    const fileSet = new Set(files);
     for (const c of collections) {
-      c.name = nameFrom(c, await provider.readFile(repo.path, ref, c.file).catch(() => '')) || (c.dir ? path.basename(c.dir) : repo.name);
+      let name = null;
+      if (c.config) {
+        // config.nar names the spec (and maybe the collection); otherwise fall back to openapi.*.
+        try {
+          const config = parseConfig(await provider.readFile(repo.path, ref, c.file));
+          name = config.name;
+          const spec = config.spec ? (c.dir ? `${c.dir}/${config.spec}` : config.spec) : SPEC_FILES.map((n) => (c.dir ? `${c.dir}/${n}` : n)).find((n) => fileSet.has(n));
+          if (!spec || !fileSet.has(spec)) {
+            c.problem = config.spec ? `config.nar names ${config.spec}, which is not there` : 'config.nar names no spec, and there is no openapi.yaml';
+          } else {
+            c.spec = spec;
+            if (!name) name = nameFrom({ kind: 'openapi', file: spec }, await provider.readFile(repo.path, ref, spec).catch(() => ''));
+          }
+        } catch (err) {
+          c.problem = err.message;
+        }
+      } else {
+        c.spec = c.kind === 'openapi' ? c.file : null;
+        name = nameFrom(c, await provider.readFile(repo.path, ref, c.file).catch(() => ''));
+      }
+      c.name = name || (c.dir ? path.basename(c.dir) : repo.name);
     }
     return { key: `${ref}@${repo.updatedAt}`, collections, truncated, scannedAt: Date.now() };
   }
@@ -191,7 +220,7 @@ class Catalogue {
         withoutCollections++;
         continue;
       }
-      repos.push({ ...r, hostId, shape: shapeOf(info.collections), collections: info.collections.map(({ dir, kind, name }) => ({ dir, kind, name })), truncated: info.truncated });
+      repos.push({ ...r, hostId, shape: shapeOf(info.collections), collections: info.collections.map(({ dir, kind, name, spec, config, problem }) => ({ dir, kind, name, spec: spec || null, config: !!config, problem: problem || null })), truncated: info.truncated });
     }
     repos.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
     return {

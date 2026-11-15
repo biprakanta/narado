@@ -33,6 +33,27 @@ test('collections are found anywhere in a code repository, skipping copies and n
   );
   assert.equal(shapeOf(found), 'code+api');
   assert.equal(shapeOf(collectionsInTree(['openapi.yaml', '.client/requests/a.yml'])), 'api');
+});
+
+test('.narado/config.nar marks a collection first, whatever the spec is called', () => {
+  const found = collectionsInTree([
+    'svc/api/payments-v2.yaml',
+    'svc/api/.narado/config.nar',
+    'svc/api/.narado/requests/listPayments.yml',
+    'tools/both/.narado/config.nar', // config wins over a Bruno marker in the same folder
+    'tools/both/bruno.json',
+    'node_modules/x/.narado/config.nar',
+    'legacy/openapi.json',
+    'legacy/.client/requests/a.yml'
+  ]);
+  assert.deepEqual(
+    found.map((c) => [c.dir, c.kind, c.file, c.config]),
+    [
+      ['legacy', 'openapi', 'legacy/openapi.json', false],
+      ['svc/api', 'openapi', 'svc/api/.narado/config.nar', true],
+      ['tools/both', 'openapi', 'tools/both/.narado/config.nar', true]
+    ]
+  );
   assert.equal(shapeOf(collectionsInTree(['src/index.js'])), 'none');
 });
 
@@ -65,6 +86,16 @@ test('the catalogue names collections, hides repos without any, and only rereads
     { path: 'acme/payments-service', updatedAt: '2026-11-10', files: { 'cmd/main.go': '', 'api/openapi.yaml': 'openapi: 3.1.0\ninfo:\n  title: Payments API\n  version: 1\n' } },
     { path: 'acme/partner-collection', updatedAt: '2026-11-12', files: { 'bruno.json': '{"name":"Partner APIs","version":"1"}', 'Get partner.bru': '' } },
     { path: 'acme/website', updatedAt: '2026-11-11', files: { 'index.html': '' } },
+    {
+      path: 'acme/orders-service',
+      updatedAt: '2026-11-09',
+      files: {
+        'main.go': '',
+        'api/orders.yaml': 'openapi: 3.1.0\ninfo: {title: Orders spec, version: 1}\npaths: {}\n',
+        'api/.narado/config.nar': 'version: 1\nspec: orders.yaml\n',
+        'broken/.narado/config.nar': 'version: 1\nname: Broken\nspec: missing.yaml\n'
+      }
+    },
     { path: 'acme/empty', updatedAt: '2026-11-01', fail: { status: 409, message: 'Git Repository is empty.' } }
   ];
   const provider = fakeProvider(repos);
@@ -77,19 +108,23 @@ test('the catalogue names collections, hides repos without any, and only rereads
     got.repos.map((r) => [r.path, r.shape, r.collections.map((c) => `${c.name}@${c.dir}`)]),
     [
       ['acme/partner-collection', 'api', ['Partner APIs@']],
-      ['acme/payments-service', 'code+api', ['Payments API@api']]
+      ['acme/payments-service', 'code+api', ['Payments API@api']],
+      ['acme/orders-service', 'code+api', ['Orders spec@api', 'Broken@broken']]
     ]
   );
+  const orders = got.repos.find((r) => r.path === 'acme/orders-service').collections;
+  assert.equal(orders[0].spec, 'api/orders.yaml');
+  assert.match(orders[1].problem, /missing\.yaml/);
   assert.equal(got.withoutCollections, 2);
 
   // Same pushes: nothing is read again, even after a restart (the cache is on disk).
   const again = new Catalogue({ registry: { get: () => provider }, dataDir: dir, log: quiet });
   await again.scan('github').promise;
-  assert.equal(provider.calls.files.length, 4);
+  assert.equal(provider.calls.files.length, 5);
   // A push to one repo: only that one is read again.
   repos[0].updatedAt = '2026-11-15';
   await again.scan('github').promise;
-  assert.deepEqual(provider.calls.files.slice(4), ['acme/payments-service']);
+  assert.deepEqual(provider.calls.files.slice(5), ['acme/payments-service']);
 });
 
 test('the catalogue stops politely when the host rate-limits, and keeps what it found', async () => {

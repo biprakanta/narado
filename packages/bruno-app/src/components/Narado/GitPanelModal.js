@@ -58,13 +58,13 @@ const GitPanelModal = ({ path, onClose, onSwitch }) => {
     <div className="flex flex-col gap-1 text-xs" data-testid="narado-request-rules">
       <div className="font-medium text-sm">Hosts this repo may send to</div>
       <div className="opacity-80">
-        From {rules.branch || 'the default branch'}: <code>.client/allowed-hosts.yml</code>, the spec's servers and URLs in environments. A host
+        From {rules.branch || 'the default branch'}: <code>.narado/allowed-hosts.yml</code>, the spec's servers and URLs in environments. A host
         added on a branch counts once it is merged.{rules.enforced ? '' : ' Not enforced on this server (single-user mode), except for MCP.'}
       </div>
       <div className="opacity-90" data-testid="narado-request-hosts">{rules.hosts.length ? rules.hosts.join(' · ') : 'None yet: every request from this repo is refused.'}</div>
       {!rules.codeowners && (
         <div style={{ color: 'var(--color-text-warning, #e8590c)' }} data-testid="narado-codeowners-warning">
-          No CODEOWNERS entry covers .client/allowed-hosts.yml on {rules.branch || 'the default branch'}. Add one, and require code-owner review in
+          CODEOWNERS doesn't cover every .narado/allowed-hosts.yml on {rules.branch || 'the default branch'}. Add one, and require code-owner review in
           branch protection, so that changes to the allowlist need approval.
         </div>
       )}

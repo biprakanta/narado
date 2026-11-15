@@ -4,7 +4,7 @@
  * AI assistants connect over MCP's Streamable HTTP transport at /mcp and can:
  *   - list workspaces, repos, requests and environments, and read requests and specs;
  *   - send a request, only to hosts the workspace itself names (its environments and the
- *     spec's servers, plus `.client/allowed-hosts.yml`), with scripts and tests switched off;
+ *     spec's servers, plus `.narado/allowed-hosts.yml`), with scripts and tests switched off;
  *   - when the server runs with NARADO_MCP_ALLOW_WRITE=1, also edit requests and save
  *     changes (branch or fork, merge request), through the same code as the interface.
  *
@@ -22,7 +22,7 @@ const { z } = require('zod');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { parseRequest, stringifyRequest, parseEnvironment } = require('@usebruno/filestore');
-const { findSpec } = require('./openapi/spec');
+const { findSpecQuiet: findSpec, NARADO_DIR, LEGACY_DIR } = require('./openapi/config');
 const { TokenStore } = require('./mcp-tokens');
 
 const MAX_BODY_CHARS = 100 * 1024;
@@ -122,8 +122,8 @@ const allowedHostsFor = ({ repoPath, collectionRoot }) => {
       }
     } catch {}
   }
-  const allowFile = path.join(repoPath, '.client', 'allowed-hosts.yml');
-  if (fs.existsSync(allowFile)) {
+  for (const allowFile of [NARADO_DIR, LEGACY_DIR].map((d) => path.join(repoPath, d, 'allowed-hosts.yml'))) {
+    if (!fs.existsSync(allowFile)) continue;
     try {
       const data = YAML.parse(fs.readFileSync(allowFile, 'utf8')) || {};
       for (const h of data.hosts || []) hosts.add(String(h).toLowerCase());
@@ -337,7 +337,7 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
 
     tool(
       'send_request',
-      'Send a request and return the response. Only hosts named by the workspace (environments, spec servers, .client/allowed-hosts.yml) are allowed. '
+      'Send a request and return the response. Only hosts named by the workspace (environments, spec servers, .narado/allowed-hosts.yml) are allowed. '
       + 'Pre- and post-request scripts and tests do not run for requests sent this way.',
       {
         workspace: z.string(),
@@ -391,13 +391,13 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
           if (!rules || !rules.allowsRequest(u.hostname, port, u.pathname)) {
             const listed = rules ? rules.summary() : [];
             throw new Error(
-              `${u.hostname}:${port} is not on this repo's allowlist (its default branch). Allowed: ${listed.join(', ') || 'none'}. Add it to .client/allowed-hosts.yml through a merge request.`
+              `${u.hostname}:${port} is not on this repo's allowlist (its default branch). Allowed: ${listed.join(', ') || 'none'}. Add it to .narado/allowed-hosts.yml through a merge request.`
             );
           }
         } else {
           const allowed = allowedHostsFor({ repoPath: ws.path, collectionRoot: ws.collectionRoot });
           if (!allowed.has(target)) {
-            throw new Error(`${target} is not a host this workspace names. Allowed: ${[...allowed].join(', ') || 'none'}. Add it to an environment or to .client/allowed-hosts.yml.`);
+            throw new Error(`${target} is not a host this workspace names. Allowed: ${[...allowed].join(', ') || 'none'}. Add it to an environment or to .narado/allowed-hosts.yml.`);
           }
         }
 
@@ -452,7 +452,7 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
     if (allowWrite) {
       tool(
         'update_request',
-        'Edit a request. Edits stay local in the workspace until save_changes. In OpenAPI repos they update the spec and .client files.',
+        'Edit a request. Edits stay local in the workspace until save_changes. In OpenAPI repos they update the spec and .narado files.',
         {
           workspace: z.string(),
           request: z.string(),

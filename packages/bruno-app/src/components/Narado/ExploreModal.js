@@ -204,7 +204,15 @@ const ExploreModal = ({ onClose, onOpened, onMoreOptions }) => {
                   >
                     <span className="truncate">{opening === key ? `Opening ${c.name}…` : c.name}</span>
                     <span className="text-xs opacity-60 shrink-0">{KIND_LABEL[c.kind] || c.kind}</span>
-                    <span className="text-xs opacity-60 truncate">{c.dir ? `${c.dir}/` : 'repository root'}</span>
+                    <span className="text-xs opacity-60 truncate" title={c.spec || ''}>
+                      {c.dir ? `${c.dir}/` : 'repository root'}
+                      {c.config ? ' · .narado' : ''}
+                    </span>
+                    {c.problem && (
+                      <span className="text-xs truncate" style={{ color: 'var(--color-text-warning, #d4a106)' }} title={c.problem}>
+                        {c.problem}
+                      </span>
+                    )}
                   </button>
                 );
               })}

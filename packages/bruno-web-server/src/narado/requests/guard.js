@@ -74,7 +74,7 @@ class RequestGuard {
     }
     if (!ctx.rules.allowsHost(host, port)) {
       throw new RequestRefused(
-        `${host}:${port} is not on the allowlist of ${ctx.rules.repo} (its ${ctx.rules.branch || 'default'} branch). Add it to .client/allowed-hosts.yml through a merge request.`
+        `${host}:${port} is not on the allowlist of ${ctx.rules.repo} (its ${ctx.rules.branch || 'default'} branch). Add it to .narado/allowed-hosts.yml through a merge request.`
       );
     }
   }
@@ -182,7 +182,7 @@ class RequestGuard {
     if (!ctx.rules.allowsRequest(t.host, t.port, t.path)) {
       this.log.log(`[narado] refused ${t.method} ${t.host}:${t.port} for ${this.who()} in ${this.describeRepo(ctx)}: not on the allowlist`);
       throw new RequestRefused(
-        `${t.host}:${t.port}${t.path} is not on the allowlist of ${ctx.rules.repo} (its ${ctx.rules.branch || 'default'} branch). Add it to .client/allowed-hosts.yml through a merge request.`
+        `${t.host}:${t.port}${t.path} is not on the allowlist of ${ctx.rules.repo} (its ${ctx.rules.branch || 'default'} branch). Add it to .narado/allowed-hosts.yml through a merge request.`
       );
     }
   }

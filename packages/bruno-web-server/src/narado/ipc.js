@@ -9,6 +9,7 @@ const path = require('node:path');
 const { ProviderRegistry } = require('./providers');
 const { WorkspaceManager, branchFor, runGit } = require('./workspaces');
 const { collectionsInTree, Catalogue } = require('./catalogue');
+const { findSpec, readConfig } = require('./openapi/config');
 const { Projection } = require('./openapi/projection');
 
 const REPO_TTL_MS = 5 * 60 * 1000;
@@ -61,12 +62,25 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       }
       live.add(dir);
       let p = projections.get(dir);
-      if (!p) {
-        p = new Projection({ repoDir: dir, viewDir: c.dir ? path.join(workspaces.viewPath(wtPath), ...c.dir.split('/')) : workspaces.viewPath(wtPath) });
-        await p.start();
-        projections.set(dir, p);
-      } else {
-        await p.run(() => p.project());
+      try {
+        // config.nar may now name another spec (or a different name): start that view afresh.
+        if (p && (findSpec(dir) !== p.specPath || JSON.stringify(readConfig(dir)) !== JSON.stringify(p.config))) {
+          await p.stop();
+          projections.delete(dir);
+          p = null;
+        }
+        if (!p) {
+          p = new Projection({ repoDir: dir, viewDir: c.dir ? path.join(workspaces.viewPath(wtPath), ...c.dir.split('/')) : workspaces.viewPath(wtPath) });
+          await p.start();
+          projections.set(dir, p);
+        } else {
+          await p.run(() => p.project());
+        }
+      } catch (err) {
+        // One broken collection (say, a config.nar naming a missing spec) doesn't stop the others.
+        console.warn(`[narado] skipped ${c.dir || 'the root'} collection: ${err.message}`);
+        live.delete(dir);
+        continue;
       }
       out.push(p.viewDir);
     }
@@ -102,7 +116,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
         const found = collectionsInTree(files);
         if (!found.length || found.some((c) => c.dir === '')) return null;
         const dirs = new Set(found.map((c) => c.dir));
-        if (files.some((f) => f.startsWith('.client/'))) dirs.add('.client');
+        for (const d of ['.narado', '.client']) if (files.some((f) => f.startsWith(`${d}/`))) dirs.add(d);
         return [...dirs].sort();
       } catch (err) {
         if (err.status !== 404) return null; // the branch may only exist in a fork; try the default

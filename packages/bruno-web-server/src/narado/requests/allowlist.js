@@ -4,8 +4,9 @@
  * A repo's requests may go to the hosts named on its **default branch**, never on a
  * person's own branch, so a new host only counts once its merge request is merged:
  *
- *   - `.client/allowed-hosts.yml`, at the root or next to a collection in a code
- *     repository (for example `services/payments/api/.client/allowed-hosts.yml`):
+ *   - `.narado/allowed-hosts.yml` (or `.client/` in older collections), at the root or
+ *     next to a collection in a code repository (for example
+ *     `services/payments/api/.narado/allowed-hosts.yml`):
  *
  *       hosts:
  *         - api.stripe.com                 # ports 80 and 443
@@ -15,18 +16,21 @@
  *           ports: [443, 8443]
  *           paths: ["/v1/", "/health"]     # path prefixes
  *
- *   - URLs in the OpenAPI spec's `servers`, and literal URLs in environment files
- *     (host and port only).
+ *   - URLs in the OpenAPI specs' `servers` (openapi.yaml/.yml/.json, or the spec a
+ *     .narado/config.nar names), and literal URLs in environment files (host and port only).
  *
  * Review must be enforced on the file: narado reports whether CODEOWNERS covers it.
  */
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const YAML = require('yaml');
+const { parseConfig, CONFIG_NAME } = require('../openapi/config');
 
-const ALLOW_FILE = '.client/allowed-hosts.yml';
+const ALLOW_FILE = '.narado/allowed-hosts.yml';
+const LEGACY_ALLOW_FILE = '.client/allowed-hosts.yml';
+const CONFIG_RE = new RegExp(`(?:^|/)\\.narado/${CONFIG_NAME.replace('.', '\\.')}$`);
 const SPEC_RE = /^(?:.*\/)?openapi\.(?:ya?ml|json)$/i;
-const ENV_RE = /(?:^|\/)(?:\.client\/)?environments\/[^/]+\.(?:bru|ya?ml|json)$/i;
+const ENV_RE = /(?:^|\/)(?:\.(?:narado|client)\/)?environments\/[^/]+\.(?:bru|ya?ml|json)$/i;
 const URL_RE = /\b(https?|wss?|grpcs?):\/\/([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::(\d{1,5}))?(\/[^\s"'`{}<>]*)?/g;
 const DEFAULT_PORTS = { http: 80, ws: 80, https: 443, wss: 443, grpc: 80, grpcs: 443 };
 
@@ -52,7 +56,7 @@ const parseEntry = (e, source = ALLOW_FILE) => {
   return null;
 };
 
-const isAllowFile = (f) => f === ALLOW_FILE || f.endsWith(`/${ALLOW_FILE}`);
+const isAllowFile = (f) => [ALLOW_FILE, LEGACY_ALLOW_FILE].some((a) => f === a || f.endsWith(`/${a}`));
 
 /** Host and port entries for literal URLs in some text (spec servers, environment files). */
 const entriesFromUrls = (text, source) => {
@@ -157,7 +161,16 @@ class AllowlistReader {
         }
       } catch {}
     }
-    for (const f of files.filter((x) => SPEC_RE.test(x) && !x.includes('node_modules/')).slice(0, 20)) {
+    // Specs named by .narado/config.nar files, whatever they are called.
+    const specs = new Set(files.filter((x) => SPEC_RE.test(x) && !x.includes('node_modules/')));
+    for (const cf of files.filter((x) => CONFIG_RE.test(x)).slice(0, 50)) {
+      try {
+        const config = parseConfig((await show(cf)) || '');
+        const dir = cf.split('/').slice(0, -2).join('/');
+        if (config.spec) specs.add(dir ? `${dir}/${config.spec}` : config.spec);
+      } catch {}
+    }
+    for (const f of [...specs].filter((x) => files.includes(x)).slice(0, 30)) {
       const text = (await show(f)) || '';
       try {
         const doc = f.endsWith('.json') ? JSON.parse(text) : YAML.parse(text);
@@ -173,7 +186,7 @@ class AllowlistReader {
         break;
       }
     }
-    // Review must cover every allowlist file (the root one if there is none yet).
+    // Review must cover every allowlist file (the root .narado one if there is none yet).
     const covered = (allowFiles.length ? allowFiles : [ALLOW_FILE]).every((f) => codeownersCovers(owners, f));
     const rules = new RepoRules({ repo, branch, commit, entries, codeowners: covered });
     this.cache.set(base, rules);
@@ -181,4 +194,4 @@ class AllowlistReader {
   }
 }
 
-module.exports = { AllowlistReader, RepoRules, parseEntry, entriesFromUrls, hostMatches, codeownersCovers, isAllowFile, ALLOW_FILE };
+module.exports = { AllowlistReader, RepoRules, parseEntry, entriesFromUrls, hostMatches, codeownersCovers, isAllowFile, ALLOW_FILE, LEGACY_ALLOW_FILE };

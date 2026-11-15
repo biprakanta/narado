@@ -61,7 +61,7 @@ test('generates a Bruno collection: folders per tag, one environment per server'
   assert.ok(fs.existsSync(viewFile('health.bru')));
   assert.equal(readItem('Payments/getPayment.bru').request.url, '{{baseUrl}}/payments/:paymentId');
   assert.equal(specText(), FIXTURE, 'the repo is not touched');
-  assert.ok(!fs.existsSync(path.join(repoDir, '.client')), 'no client files needed');
+  assert.ok(!fs.existsSync(path.join(repoDir, '.narado')), 'no narado files needed');
 });
 
 test('saving a request in Bruno updates the spec by one line, and nothing echoes back', async () => {
@@ -77,13 +77,13 @@ test('saving a request in Bruno updates the spec by one line, and nothing echoes
   assert.equal(readItem('Payments/listPayments.bru').name, 'List all payments', 'view not rewritten');
 });
 
-test('values and tests go to .client, the spec stays the same', async () => {
+test('values and tests go to .narado, the spec stays the same', async () => {
   await start();
   const item = readItem('Payments/getPayment.bru');
   item.request.params[0].value = 'pay_999';
   item.request.tests = 'test("found", () => expect(res.status).to.equal(200));';
   writeItem('Payments/getPayment.bru', item);
-  const client = path.join(repoDir, '.client', 'requests', 'getPayment.yml');
+  const client = path.join(repoDir, '.narado', 'requests', 'getPayment.yml');
   await waitFor(() => fs.existsSync(client), 'the client file');
   const data = YAML.parse(fs.readFileSync(client, 'utf8'));
   assert.deepEqual(data.params, [{ name: 'paymentId', type: 'path', value: 'pay_999' }]);
@@ -151,4 +151,25 @@ test('a 3.0 spec is upgraded to 3.1 on the first edit', async () => {
   const spec = YAML.parse(specText());
   assert.deepEqual(spec.components.schemas.NewPayment.properties.currency, { type: ['string', 'null'] });
   assert.equal(spec.paths['/health'].get.summary, 'Health check');
+});
+
+test('collections made before .narado keep using .client', async () => {
+  fs.mkdirSync(path.join(repoDir, '.client', 'requests'), { recursive: true });
+  await start();
+  const item = readItem('Payments/getPayment.bru');
+  item.request.params[0].value = 'pay_legacy';
+  writeItem('Payments/getPayment.bru', item);
+  const client = path.join(repoDir, '.client', 'requests', 'getPayment.yml');
+  await waitFor(() => fs.existsSync(client), 'the client file in .client');
+  assert.ok(!fs.existsSync(path.join(repoDir, '.narado')));
+});
+
+test('.narado/config.nar names the spec (any file name) and the collection', async () => {
+  fs.renameSync(path.join(repoDir, 'openapi.yaml'), path.join(repoDir, 'payments-v2.yaml'));
+  fs.mkdirSync(path.join(repoDir, '.narado'));
+  fs.writeFileSync(path.join(repoDir, '.narado', 'config.nar'), 'version: 1\nname: Payments (team)\nspec: payments-v2.yaml\n');
+  await start();
+  assert.equal(proj.specPath, path.join(repoDir, 'payments-v2.yaml'));
+  assert.equal(JSON.parse(fs.readFileSync(viewFile('bruno.json'), 'utf8')).name, 'Payments (team)');
+  assert.ok(fs.existsSync(viewFile('Payments/getPayment.bru')));
 });

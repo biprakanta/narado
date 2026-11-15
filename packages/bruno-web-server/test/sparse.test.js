@@ -26,6 +26,10 @@ const codeRepo = async (tmp) => {
   for (let i = 0; i < 30; i++) write(`src/module${i}/code.bin`, 'x'.repeat(20000) + i);
   write('services/payments/api/openapi.yaml', 'openapi: 3.1.0\ninfo: {title: Payments, version: 1}\nservers: [{url: "https://pay.example.test"}]\npaths: {}\n');
   write('services/payments/api/.client/allowed-hosts.yml', 'hosts:\n  - partner.example.test\n');
+  // A newer collection: .narado/config.nar names a spec with its own file name.
+  write('services/orders/api/orders-v3.yaml', 'openapi: 3.1.0\ninfo: {title: Orders, version: 3}\nservers: [{url: "https://orders.example.test:8443"}]\npaths: {}\n');
+  write('services/orders/api/.narado/config.nar', 'version: 1\nname: Orders\nspec: orders-v3.yaml\n');
+  write('services/orders/api/.narado/allowed-hosts.yml', 'hosts:\n  - carrier.example.test\n');
   await runGit(['add', '--all'], { cwd: seed });
   await runGit(['commit', '--quiet', '-m', 'seed'], { cwd: seed, env: who });
   await runGit(['push', '--quiet', 'origin', 'main'], { cwd: seed });
@@ -88,6 +92,8 @@ test('a code repository opens as a partial clone with only its collection folder
     const rules = await reader.rulesFor({ base, repo: 'local:acme/payments-service' });
     assert.equal(rules.allowsHost('partner.example.test', 443), true);
     assert.equal(rules.allowsHost('pay.example.test', 443), true);
+    assert.equal(rules.allowsHost('orders.example.test', 8443), true, 'servers of the spec config.nar names');
+    assert.equal(rules.allowsHost('carrier.example.test', 443), true, '.narado/allowed-hosts.yml');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

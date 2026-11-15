@@ -59,10 +59,12 @@ test('allowlist entries, wildcards, ports and paths', () => {
 test('CODEOWNERS coverage of the allowlist file', () => {
   assert.equal(codeownersCovers(null), false);
   assert.equal(codeownersCovers('* @acme/platform'), true);
-  assert.equal(codeownersCovers('/.client/allowed-hosts.yml @acme/security'), true);
-  assert.equal(codeownersCovers('.client/ @acme/security'), true);
+  assert.equal(codeownersCovers('/.narado/allowed-hosts.yml @acme/security'), true);
+  assert.equal(codeownersCovers('.narado/ @acme/security'), true);
   assert.equal(codeownersCovers('allowed-hosts.yml @sec'), true);
-  assert.equal(codeownersCovers('* @acme/platform\n.client/allowed-hosts.yml'), false, 'a later line with no owners removes them');
+  assert.equal(codeownersCovers('* @acme/platform\n.narado/allowed-hosts.yml'), false, 'a later line with no owners removes them');
+  assert.equal(codeownersCovers('.client/ @acme/security', '.client/allowed-hosts.yml'), true, 'older collections');
+  assert.equal(codeownersCovers('.client/ @acme/security'), false, 'covering .client does not cover .narado');
   assert.equal(codeownersCovers('docs/ @writers'), false);
 });
 

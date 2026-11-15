@@ -1,8 +1,10 @@
 /**
  * Projection: a normal Bruno collection ("the view", outside the repo) generated from
- * the repo's openapi.yaml + .client/ files, kept in sync both ways (design §6.4).
+ * the repo's spec + .narado/ files, kept in sync both ways (design §6.4). The spec is the
+ * file .narado/config.nar names, or openapi.yaml/.yml/.json; older collections keep their
+ * files in .client/ instead of .narado/.
  *
- *   repo (openapi.yaml, .client/requests/*.yml)  <->  view (bruno.json, <tag>/<operationId>.bru)
+ *   repo (spec, .narado/requests/*.yml)  <->  view (bruno.json, <tag>/<operationId>.bru)
  *
  * - Bruno opens and edits the view exactly as any collection.
  * - A saved view file is applied to the spec and its client file (mapping.js).
@@ -17,11 +19,11 @@ const path = require('node:path');
 const YAML = require('yaml');
 const { parseRequest, stringifyRequest, stringifyEnvironment } = require('@usebruno/filestore');
 const { SpecDoc, findSpec } = require('./spec');
+const { dataDirName, readConfig } = require('./config');
 const { toBrunoRequest, applyBrunoRequest, operationIdFor, uniqueOperationId, camel, parseBrunoUrl } = require('./mapping');
 const { upgradeTo31 } = require('./upgrade');
 
 const STATE_FILE = '.narado-view.json';
-const CLIENT_DIR = path.join('.client', 'requests');
 const DEBOUNCE_MS = 250;
 
 const hash = (text) => crypto.createHash('sha1').update(text).digest('hex');
@@ -47,7 +49,10 @@ class Projection {
     this.viewDir = viewDir;
     this.log = log;
     this.specPath = findSpec(repoDir);
-    if (!this.specPath) throw new Error('No openapi.yaml, openapi.yml or openapi.json at the root of the repo');
+    if (!this.specPath) throw new Error(`No OpenAPI spec in ${repoDir}: add .narado/config.nar naming it, or name it openapi.yaml`);
+    // Request files: .narado/requests, or .client/requests for collections made before .narado.
+    this.clientDir = path.join(dataDirName(repoDir), 'requests');
+    this.config = readConfig(repoDir);
     this.state = this.loadState();
     this.watchers = [];
     this.pending = new Map(); // view rel path -> 'change' | 'unlink'
@@ -75,7 +80,7 @@ class Projection {
   /* ------------------------------------------------------- repo helpers */
 
   clientFile(operationId) {
-    return path.join(this.repoDir, CLIENT_DIR, `${operationId}.yml`);
+    return path.join(this.repoDir, this.clientDir, `${operationId}.yml`);
   }
 
   readClient(operationId) {
@@ -137,7 +142,7 @@ class Projection {
     const spec2 = spec.toJS();
 
     const desired = new Map();
-    desired.set('bruno.json', JSON.stringify({ version: '1', name: (js.info && js.info.title) || path.basename(this.repoDir), type: 'collection', ignore: ['node_modules', '.git'] }, null, 2) + '\n');
+    desired.set('bruno.json', JSON.stringify({ version: '1', name: (this.config && this.config.name) || (js.info && js.info.title) || path.basename(this.repoDir), type: 'collection', ignore: ['node_modules', '.git'] }, null, 2) + '\n');
 
     const servers = Array.isArray(spec2.servers) && spec2.servers.length ? spec2.servers : [];
     servers.forEach((s, i) => {
@@ -339,7 +344,7 @@ class Projection {
     };
     viewWatcher.on('add', queue('change')).on('change', queue('change')).on('unlink', queue('unlink'));
 
-    const repoWatcher = chokidar.watch([this.specPath, path.join(this.repoDir, CLIENT_DIR)], {
+    const repoWatcher = chokidar.watch([this.specPath, path.join(this.repoDir, this.clientDir)], {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 20 }
     });
