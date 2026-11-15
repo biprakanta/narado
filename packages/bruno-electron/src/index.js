@@ -35,7 +35,10 @@ const NARADO_DESKTOP = process.env.NARADO_DESKTOP === '1';
 if (NARADO_DESKTOP) {
   app.setName('narado');
   if (!process.env.ELECTRON_USER_DATA_PATH) app.setPath('userData', path.join(app.getPath('appData'), 'narado'));
+  // Windows groups taskbar buttons by this ID; without it they show as Electron.
+  if (os.platform() === 'win32') app.setAppUserModelId('co.narado.desktop');
 }
+const NARADO_ICON = path.join(__dirname, '../../../branding/icons/app-icon-512.png');
 
 // Command line switches
 if (os.platform() === 'linux') {
@@ -215,6 +218,7 @@ if (useSingleInstance && !gotTheLock) {
 
 // Prepare the renderer once the app is ready
 app.on('ready', async () => {
+  if (NARADO_DESKTOP && app.dock) app.dock.setIcon(NARADO_ICON);
   initializeShellEnv();
   await transientManager.clearStale();
 
@@ -275,7 +279,7 @@ app.on('ready', async () => {
       additionalArguments: NARADO_DESKTOP ? ['--narado-desktop'] : []
     },
     title: NARADO_DESKTOP ? 'narado' : 'Bruno',
-    icon: path.join(__dirname, 'about/256x256.png'),
+    icon: NARADO_DESKTOP ? NARADO_ICON : path.join(__dirname, 'about/256x256.png'),
     titleBarStyle: isMac ? 'hiddenInset' : isWindows ? 'hidden' : undefined,
     frame: isLinux ? false : true,
     trafficLightPosition: isMac ? { x: 12, y: 10 } : undefined
