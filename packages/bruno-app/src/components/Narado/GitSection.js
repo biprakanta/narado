@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { IconCloudDownload, IconCloudOff, IconCompass, IconDeviceLaptop, IconDots, IconGitBranch, IconKey, IconLock, IconLogin, IconLogout, IconRefresh, IconSettings, IconDownload, IconAlertTriangle } from '@tabler/icons';
+import { IconCloudDownload, IconCloudOff, IconCompass, IconDeviceLaptop, IconDots, IconFolder, IconGitBranch, IconKey, IconLock, IconLogin, IconLogout, IconRefresh, IconSettings, IconDownload, IconAlertTriangle } from '@tabler/icons';
 import toast from 'react-hot-toast';
 import SidebarSection from 'components/Sidebar/SidebarSection';
 import ActionIcon from 'ui/ActionIcon';
@@ -14,7 +14,8 @@ import McpTokensModal from './McpTokensModal';
 import SecretsModal from './SecretsModal';
 import DevicesModal from './DevicesModal';
 import DesktopSignInModal from './DesktopSignInModal';
-import { naradoApi, desktopApi, errorText, signOut, connectGitAccount, openAdmin } from './api';
+import ConnectGitModal from './ConnectGitModal';
+import { naradoApi, desktopApi, errorText, openAdmin } from './api';
 
 const OFFERED_KEY = 'narado.git-connect-offered';
 
@@ -46,11 +47,29 @@ const GitSection = () => {
   // narado desktop: this computer's sign-in to the team's narado server.
   const [desk, setDesk] = useState(null);
   const [signInOpen, setSignInOpen] = useState(false);
+  // A Git host this person can connect but hasn't: offered once per session, and in the empty state.
+  const [connectable, setConnectable] = useState(null);
+  const [connectOpen, setConnectOpen] = useState(false);
 
   useEffect(() => {
     const onAuth = (e) => setAuth(e.detail);
     window.addEventListener('narado:auth', onAuth);
     return () => window.removeEventListener('narado:auth', onAuth);
+  }, []);
+
+  // Other places ask for narado's dialogs (AccountMenu's openNarado): the account menu, the
+  // workspace banner.
+  useEffect(() => {
+    const open = (e) => {
+      const what = e.detail;
+      if (what === 'explore') setExplore(true);
+      else if (what === 'open-repo') setOpenRepo({});
+      else if (what === 'devices') setDevicesOpen(true);
+      else if (what === 'mcp') setTokensOpen(true);
+      else if (what === 'secrets') setSecretsOpen(true);
+    };
+    window.addEventListener('narado:open', open);
+    return () => window.removeEventListener('narado:open', open);
   }, []);
 
   useEffect(() => {
@@ -128,49 +147,68 @@ const GitSection = () => {
   }, []);
 
   // Right after signing in: if no Git account is connected and the server has an app for
-  // one, go straight to connecting it (once per browser session, so declining is respected).
+  // one, explain connecting it (once per browser session, so "Not now" is respected). It
+  // waits for other dialogs, such as the welcome tour, to close first.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('git-connect')) return;
     // On the desktop, accounts are connected through the team's server (desktop phase D2).
-    if (window.isNaradoDesktop) return;
-    let offered = false;
-    try {
-      offered = sessionStorage.getItem(OFFERED_KEY) === '1';
-    } catch {}
-    if (offered) return;
+    if (window.isNaradoDesktop) return undefined;
+    let timer = null;
+    let cancelled = false;
     naradoApi
       .hosts()
       .then((list) => {
-        if (list.some((h) => h.connected)) return;
+        if (cancelled || list.some((h) => h.connected)) return;
         const host = list.find((h) => h.canConnect);
         if (!host) return;
+        setConnectable(host);
+        if (new URLSearchParams(window.location.search).get('git-connect')) return;
+        let offered = false;
         try {
-          sessionStorage.setItem(OFFERED_KEY, '1');
+          offered = sessionStorage.getItem(OFFERED_KEY) === '1';
         } catch {}
-        connectGitAccount(host);
+        if (offered) return;
+        const offer = () => {
+          if (cancelled) return;
+          if (document.querySelector('.bruno-modal, [data-testid="welcome-modal"]')) {
+            timer = setTimeout(offer, 1000);
+            return;
+          }
+          try {
+            sessionStorage.setItem(OFFERED_KEY, '1');
+          } catch {}
+          setConnectOpen(true);
+        };
+        offer();
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
 
   // Explore is the everyday action; the rest lives in one menu.
   const webSignedIn = !window.isNaradoDesktop && auth.mode === 'oidc' && auth.user;
   const deskSignedIn = !!(desk && desk.signedIn);
-  const menuItems = [
-    ...(webSignedIn ? [{ id: 'who', type: 'label', label: auth.user.name || auth.user.email }] : []),
-    ...(deskSignedIn ? [{ id: 'who', type: 'label', label: `${desk.user ? desk.user.name : 'Signed in'} · ${serverHost}` }] : []),
-    ...(window.isNaradoDesktop && !deskSignedIn ? [{ id: 'signin', label: 'Sign in to narado server…', leftSection: IconLogin, onClick: () => setSignInOpen(true) }] : []),
-    { id: 'secrets', label: 'Secrets', leftSection: IconLock, onClick: () => setSecretsOpen(true) },
-    // The desktop's own MCP server comes later (desktop phase D5).
-    ...(window.isNaradoDesktop ? [] : [{ id: 'mcp', label: 'MCP tokens', leftSection: IconKey, onClick: () => setTokensOpen(true) }]),
-    ...(webSignedIn || deskSignedIn ? [{ id: 'devices', label: 'Devices', leftSection: IconDeviceLaptop, onClick: () => setDevicesOpen(true) }] : []),
-    // Admins: narado's setup and admin pages (sign-in, admins, Git apps, devices).
-    ...((webSignedIn && auth.isAdmin) || (!window.isNaradoDesktop && auth.mode === 'local' && auth.isAdmin) || (deskSignedIn && desk.isAdmin)
-      ? [{ id: 'admin', label: 'Admin settings', leftSection: IconSettings, onClick: () => Promise.resolve(openAdmin()).catch((err) => toast.error(errorText(err))) }]
-      : []),
-    { id: 'refresh', label: 'Refresh', leftSection: IconRefresh, onClick: load },
-    ...(webSignedIn ? [{ id: 'd1', type: 'divider' }, { id: 'signout', label: 'Sign out', leftSection: IconLogout, onClick: signOut }] : []),
-    ...(deskSignedIn ? [{ id: 'd1', type: 'divider' }, { id: 'signout', label: `Sign out of ${serverHost}`, leftSection: IconLogout, onClick: desktopSignOut }] : [])
-  ];
+  const menuItems = webSignedIn
+    ? [
+        { id: 'open', label: 'Open a repository…', leftSection: IconFolder, onClick: () => setOpenRepo({}) },
+        { id: 'refresh', label: 'Refresh', leftSection: IconRefresh, onClick: load }
+      ]
+    : [
+        ...(deskSignedIn ? [{ id: 'who', type: 'label', label: `${desk.user ? desk.user.name : 'Signed in'} · ${serverHost}` }] : []),
+        ...(window.isNaradoDesktop && !deskSignedIn ? [{ id: 'signin', label: 'Sign in to narado server…', leftSection: IconLogin, onClick: () => setSignInOpen(true) }] : []),
+        { id: 'secrets', label: 'Secrets', leftSection: IconLock, onClick: () => setSecretsOpen(true) },
+        // The desktop's own MCP server comes later (desktop phase D5).
+        ...(window.isNaradoDesktop ? [] : [{ id: 'mcp', label: 'MCP tokens', leftSection: IconKey, onClick: () => setTokensOpen(true) }]),
+        ...(webSignedIn || deskSignedIn ? [{ id: 'devices', label: 'Devices', leftSection: IconDeviceLaptop, onClick: () => setDevicesOpen(true) }] : []),
+        // Admins: narado's setup and admin pages (sign-in, admins, Git apps, devices).
+        ...((webSignedIn && auth.isAdmin) || (!window.isNaradoDesktop && auth.mode === 'local' && auth.isAdmin) || (deskSignedIn && desk.isAdmin)
+          ? [{ id: 'admin', label: 'Admin settings', leftSection: IconSettings, onClick: () => Promise.resolve(openAdmin()).catch((err) => toast.error(errorText(err))) }]
+          : []),
+        { id: 'refresh', label: 'Refresh', leftSection: IconRefresh, onClick: load },
+        ...(deskSignedIn ? [{ id: 'd1', type: 'divider' }, { id: 'signout', label: `Sign out of ${serverHost}`, leftSection: IconLogout, onClick: desktopSignOut }] : [])
+      ];
   const exploreOrSignIn = () => (needsSignIn ? setSignInOpen(true) : setExplore(true));
 
   const actions = (
@@ -212,6 +250,7 @@ const GitSection = () => {
         />
       )}
       {tokensOpen && <McpTokensModal onClose={() => setTokensOpen(false)} />}
+      {connectOpen && connectable && <ConnectGitModal host={connectable} onClose={() => setConnectOpen(false)} />}
       {explore && (
         <ExploreModal
           onClose={() => setExplore(false)}
@@ -300,9 +339,34 @@ const GitSection = () => {
             </button>
           )}
           {!needsSignIn && workspaces.length === 0 && synced.length === 0 && (
-            <button type="button" className="narado-empty" onClick={() => setExplore(true)} data-testid="narado-explore-empty">
-              Explore your team's APIs
-            </button>
+            <div className="narado-empty-state" data-testid="narado-git-empty">
+              <div className="narado-empty-title">No repositories open</div>
+              <div className="narado-empty-text">
+                {connectable
+                  ? `Connect your ${connectable.name || 'Git'} account to find your team's collections and OpenAPI specs, and to work on them here.`
+                  : 'Find your team\'s collections and OpenAPI specs in GitHub and GitLab, or open a repository to work on it.'}
+              </div>
+              {connectable ? (
+                <div className="narado-empty-actions">
+                  <button type="button" className="narado-btn narado-btn-primary" onClick={() => setConnectOpen(true)} data-testid="narado-connect-empty">
+                    Connect {connectable.name || 'Git'}
+                  </button>
+                  <button type="button" className="narado-btn" onClick={() => setExplore(true)} data-testid="narado-explore-empty">
+                    Explore APIs
+                  </button>
+                </div>
+              ) : (
+                <div className="narado-empty-actions">
+                  <button type="button" className="narado-btn narado-btn-primary" onClick={() => setExplore(true)} data-testid="narado-explore-empty">
+                    <IconCompass size={13} stroke={1.75} aria-hidden="true" />
+                    Explore APIs
+                  </button>
+                  <button type="button" className="narado-btn" onClick={() => setOpenRepo({})} data-testid="narado-open-repo-empty">
+                    Open repository
+                  </button>
+                </div>
+              )}
+            </div>
           )}
 
           {synced.length > 0 && (

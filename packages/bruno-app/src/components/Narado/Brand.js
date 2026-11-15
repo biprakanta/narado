@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import { useTheme } from 'providers/Theme';
-import { isNaradoAvailable } from './api';
+import { openNarado } from './AccountMenu';
 
 /** narado's display face (branding/README.md): the wordmark and narado's own headings. */
 export const DISPLAY_FONT = '\'Space Grotesk\', Inter, sans-serif';
@@ -62,15 +62,48 @@ export const NaradoIllustration = ({ size = 160 }) => (
   </div>
 );
 
+const btn = (primary) => ({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  height: 32,
+  padding: '0 14px',
+  borderRadius: 8,
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
+  border: primary ? '1px solid transparent' : '1px solid rgba(253, 238, 210, 0.35)',
+  background: primary ? '#FB9B1A' : 'rgba(253, 238, 210, 0.08)',
+  color: primary ? '#1B1205' : '#FDEED2'
+});
+
+/** The two ways into narado's repositories: browse what the team has, or open one. */
+const HeroActions = ({ style, onDark = false }) => (
+  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, ...style }}>
+    <button type="button" style={btn(true)} onClick={() => openNarado('explore')} data-testid="narado-hero-explore">
+      Explore APIs
+    </button>
+    <button
+      type="button"
+      style={onDark ? btn(false) : { ...btn(false), color: 'inherit', border: '1px solid rgba(127,127,127,.35)', background: 'transparent' }}
+      onClick={() => openNarado('open-repo')}
+      data-testid="narado-hero-open-repo"
+    >
+      Open a repository
+    </button>
+  </div>
+);
+
 /** What the main area shows when no tab is open: the logo, name and where to start. */
 export const NaradoHome = () => (
   <div className="flex flex-col items-center justify-center h-full gap-2 px-4 text-center" data-testid="narado-home">
     <NaradoIllustration size={180} />
     <div style={{ fontFamily: DISPLAY_FONT, fontSize: 30, fontWeight: 700, marginTop: 14, letterSpacing: -0.2 }}>narado</div>
     <div className="text-muted" style={{ fontSize: 14 }}>API collections in Git, for your whole team.</div>
-    <div className="text-muted" style={{ fontSize: 13, marginTop: 14, maxWidth: 420, lineHeight: 1.5 }}>
-      Open a request from the sidebar, or open a repository from the <strong>Git</strong> section at the bottom of the sidebar.
+    <div className="text-muted" style={{ fontSize: 13, marginTop: 10, maxWidth: 420, lineHeight: 1.5 }}>
+      Open a request from the sidebar, or start from your team's repositories.
     </div>
+    <HeroActions style={{ marginTop: 16, justifyContent: 'center' }} />
   </div>
 );
 
@@ -127,9 +160,7 @@ export const NaradoBanner = ({ workspaceName }) => {
           {workspaceName ? <strong style={{ color: '#FCE3BB' }}>{workspaceName}</strong> : null}
           {workspaceName ? ' · ' : ''}API collections in Git, for your whole team.
         </div>
-        <div style={{ fontSize: 12, color: '#C9B6CF', marginTop: 8 }}>
-          Open a repository from <strong style={{ color: '#FB9B1A' }}>Git</strong> in the sidebar to work on its collection and propose changes.
-        </div>
+        <HeroActions style={{ marginTop: 12 }} onDark />
       </div>
     </div>
   );

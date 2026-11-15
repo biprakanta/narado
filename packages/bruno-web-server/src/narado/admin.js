@@ -23,6 +23,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { esc } = require('./pages');
+const { ICON, page, messagePage, field, envBadge, copyField, sectionHead, emptyState, dialog, confirmAttrs, initials } = require('./admin-ui');
 const { adminsFrom } = require('./settings');
 const { DEFAULT_HOSTS, validateHosts } = require('./providers');
 const { envPrefix } = require('./git-accounts');
@@ -45,114 +46,6 @@ const LOGOS = {
   azure: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16.555 3.843l3.602 3.602a2.877 2.877 0 0 1 0 4.069l-2.643 2.643a2.877 2.877 0 0 1 -4.069 0l-.301 -.301l-6.558 6.558a2 2 0 0 1 -1.239 .578l-.175 .008h-1.172a1 1 0 0 1 -.993 -.883l-.007 -.117v-1.172a2 2 0 0 1 .467 -1.284l.119 -.13l.414 -.414h2v-2h2v-2l2.144 -2.144l-.301 -.301a2.877 2.877 0 0 1 0 -4.069l2.643 -2.643a2.877 2.877 0 0 1 4.069 0z"/><path d="M15 9h.01"/></svg>',
   github: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>',
   gitlab: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#FC6D26" d="m23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z"/></svg>'
-};
-
-const STYLE = `
-@font-face{font-family:"Space Grotesk";font-style:normal;font-weight:700;font-display:swap;src:url(/auth/assets/space-grotesk-700.woff2) format("woff2")}
-@font-face{font-family:Inter;font-style:normal;font-weight:400;font-display:swap;src:url(/auth/assets/inter-400.woff2) format("woff2")}
-@font-face{font-family:Inter;font-style:normal;font-weight:600;font-display:swap;src:url(/auth/assets/inter-600.woff2) format("woff2")}
-:root{color-scheme:dark;--bg:#17121F;--side:#130F1A;--card:#211A2B;--card2:#281F33;--line:#342B40;--text:#EDE4D8;--muted:#A89DAE;--accent:#FB9B1A;--warn:#FDB55A;--ok:#7BD88F}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-a{color:#F6B85C}
-.top{display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(23,18,31,.92);backdrop-filter:blur(6px);z-index:5}
-.top img{width:22px;height:22px}
-.top h1{margin:0;font:700 18px "Space Grotesk",Inter,sans-serif;color:#FDEED2}
-.top .who{margin-left:auto;color:var(--muted);font-size:13px}
-.layout{display:flex;max-width:1080px;margin:0 auto;gap:28px;padding:24px 20px 80px}
-nav.side{width:190px;flex-shrink:0;position:sticky;top:76px;align-self:flex-start;display:flex;flex-direction:column;gap:2px}
-nav.side a{color:var(--muted);text-decoration:none;padding:7px 10px;border-radius:8px;font-size:13.5px}
-nav.side a:hover{background:var(--card);color:var(--text)}
-main{flex:1;min-width:0}
-@media (max-width:760px){.layout{flex-direction:column;gap:12px;padding:16px}nav.side{width:auto;position:static;flex-direction:row;flex-wrap:wrap}}
-.banner{border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--card);border-radius:10px;padding:12px 14px;margin-bottom:18px}
-.banner.ok{border-left-color:var(--ok)}.banner.err{border-left-color:var(--warn);color:var(--warn)}
-section{margin-bottom:34px;scroll-margin-top:76px}
-section>h2{margin:0 0 2px;font:700 18px "Space Grotesk",Inter,sans-serif;color:#FDEED2}
-section>.lead{margin:0 0 14px;color:var(--muted)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
-label{display:block;margin:10px 0 0}
-label>span{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
-label span.tag{display:inline-block;margin:0 0 0 6px;padding:0 7px;font-size:10px}
-input[type=text],input[type=password],input[type=url],input[type=email],textarea,select{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit}
-input:focus,textarea:focus,select:focus{outline:2px solid #FB9B1A55;border-color:#FB9B1A}
-input:disabled,textarea:disabled,select:disabled{opacity:.6}
-.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1 1 220px}
-.actions{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-button,.btn{padding:8px 14px;border-radius:8px;border:0;cursor:pointer;font-family:inherit;font-weight:600;font-size:13.5px;color:#17121F;background:#FB9B1A;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
-button:hover,.btn:hover{filter:brightness(1.07)}
-button.secondary,.btn.secondary{background:transparent;color:var(--text);border:1px solid var(--line)}
-button.secondary:hover,.btn.secondary:hover{background:var(--card2);filter:none}
-button.danger{background:transparent;color:var(--warn);border:1px solid var(--line)}
-code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 6px;word-break:break-all}
-.note{font-size:12px;color:var(--muted);margin-top:6px}
-.tag{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--muted)}
-.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px;background:var(--card2);color:var(--muted);white-space:nowrap}
-.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
-.pill.ok{color:var(--ok);background:#1d2f24}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
-.conn{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;transition:border-color .15s}
-.conn:hover{border-color:#4A3F57}
-.conn-top{display:flex;align-items:center;gap:12px}
-.logo{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.logo svg{width:24px;height:24px}
-.logo.github{background:#F0EEF3;color:#1F2328}
-.logo.gitlab{background:#2B2133}
-.logo.vault{background:#000}
-.logo.aws{background:#232F3E}.logo.aws svg{width:30px}
-.logo.gcp{background:#F0EEF3}
-.logo.azure{background:#0078D4}
-.choices{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
-.choice{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;cursor:pointer;margin:0}
-.choice:has(input:checked){border-color:#FB9B1A;background:var(--card2)}
-.choice input{accent-color:#FB9B1A}
-.choice .logo{width:30px;height:30px;border-radius:8px}.choice .logo svg{width:18px;height:18px}.choice .logo.aws svg{width:24px}
-fieldset{border:0;padding:0;margin:0}
-textarea.mono{font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
-.conn-title{display:flex;flex-direction:column;min-width:0;flex:1}
-.conn-title strong{font-size:15px}
-.conn-title span{color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.conn-desc{margin:0;color:var(--muted);font-size:13px;flex:1}
-.conn-actions{display:flex;gap:8px;flex-wrap:wrap}
-.conn.add{border-style:dashed;align-items:center;justify-content:center;text-align:center;color:var(--muted);cursor:pointer;min-height:120px;background:transparent;font:inherit;font-weight:500}
-.conn.add:hover{color:var(--text);background:var(--card)}
-.conn.add .plus{font-size:26px;line-height:1}
-dialog{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:16px;padding:0;width:min(560px,calc(100% - 32px));max-height:calc(100vh - 64px)}
-dialog::backdrop{background:rgba(8,5,12,.6)}
-.dlg-head{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--line)}
-.dlg-head h3{margin:0;font:700 16px "Space Grotesk",Inter,sans-serif;flex:1}
-.dlg-body{padding:6px 18px 18px}
-.dlg-body h4{margin:16px 0 0;font-size:13px}
-.close{background:transparent;color:var(--muted);border:0;font-size:20px;padding:2px 8px}
-.list{display:flex;flex-direction:column}
-.list .item{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
-.list .item:first-child{border-top:0}
-.list .item .grow{flex:1;min-width:0}
-.list .sub{color:var(--muted);font-size:12px}
-`;
-
-const page = ({ title, who, body, nav = true, script = '' }) => `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)} · narado</title><link rel="icon" type="image/svg+xml" href="/auth/assets/narado-favicon.svg?v=2"><link rel="alternate icon" href="/auth/assets/favicon.ico?v=2">
-<style>${STYLE}</style></head><body>
-<header class="top"><img src="/auth/assets/narado-favicon.svg?v=2" alt=""><h1>narado</h1><span class="tag">${esc(title)}</span>${who ? `<span class="who">${esc(who)}</span>` : ''}</header>
-<div class="layout">${nav ? `<nav class="side" aria-label="Sections"><a href="#signin">Sign-in</a><a href="#admins">Admins</a><a href="#connectors">Connectors</a><a href="#secrets">Secrets stores</a><a href="#desktop">Desktop</a><a href="#computers">Computers</a></nav>` : ''}
-<main>${body}</main></div>
-<script>
-function openDlg(id){var d=document.getElementById(id);if(d&&d.showModal)d.showModal();}
-document.querySelectorAll('dialog').forEach(function(d){d.addEventListener('click',function(e){if(e.target===d)d.close();});});
-var addStore=document.getElementById('add-store');
-if(addStore){var pick=function(){var t=(addStore.querySelector('input[name=type]:checked')||{}).value;addStore.querySelectorAll('fieldset[data-type]').forEach(function(f){var on=f.getAttribute('data-type')===t;f.hidden=!on;f.disabled=!on;});};addStore.addEventListener('change',pick);pick();}
-${script}
-</script></body></html>`;
-
-/** An input for a setting: shows where its value comes from; secrets are never echoed. */
-const field = ({ name, label, value, source, secret = false, placeholder = '', note = '', type = 'text' }) => {
-  const fromEnv = source === 'env';
-  const shown = secret ? '' : value || '';
-  const ph = secret && value ? (fromEnv ? '••••••••' : '•••••••• (kept; type to replace)') : placeholder;
-  return `<label><span>${esc(label)}${fromEnv ? '<span class="tag">set in the server environment</span>' : ''}</span>
-<input type="${secret ? 'password' : type}" name="${esc(name)}" value="${esc(shown)}" placeholder="${esc(ph)}" autocomplete="off"${fromEnv ? ' disabled' : ''}></label>${note ? `<div class="note">${note}</div>` : ''}`;
 };
 
 const readForm = (req, limit = 64 * 1024) =>
@@ -215,17 +108,11 @@ const createAdmin = ({ settings, env, realEnv = process.env, auth, desktop, gitA
     }
     return false;
   };
-  /** Saved, then the front restarts; the page comes back after a moment. */
+  /** Saved, then the front restarts: a waiting page that goes back once narado answers again. */
   const savedAndRestart = (res, back) => {
-    html(
-      res,
-      200,
-      page({
-        title: 'Admin',
-        nav: false,
-        body: `<div class="banner ok">Saved. narado is restarting with the new settings…</div><script>setTimeout(function(){location.href=${JSON.stringify(back)}},2500)</script><noscript><a href="${esc(back)}">Continue</a></noscript>`
-      })
-    );
+    const wait = `var start=Date.now(),back=${JSON.stringify(back)};function go(){location.href=back;}
+setTimeout(function poll(){fetch('/auth/me',{cache:'no-store'}).then(function(r){if(r.status<500)go();else retry();},retry);function retry(){if(Date.now()-start>30000)go();else setTimeout(poll,700);}},900);`;
+    html(res, 200, messagePage({ title: 'Saving', heading: 'Applying your changes', text: 'Saved. narado is restarting with the new settings; this page returns to the admin console when it’s back.', loader: true, action: `<noscript><a class="btn secondary" href="${esc(back)}">Continue</a></noscript>`, script: wait }));
     setTimeout(() => restart().catch((err) => log.error('[narado] restart failed:', err)), 200);
   };
 
@@ -257,8 +144,7 @@ const createAdmin = ({ settings, env, realEnv = process.env, auth, desktop, gitA
     return { id: p + 'CLIENT_ID', secret: p + 'CLIENT_SECRET', slug: p + 'SLUG', appId: p + 'ID', key: p + 'PRIVATE_KEY', webhook: p + 'WEBHOOK_SECRET' };
   };
 
-  const dialog = (id, title, logo, inner) => `<dialog id="${id}" aria-labelledby="${id}-t"><div class="dlg-head">${logo || ''}<h3 id="${id}-t">${esc(title)}</h3><form method="dialog"><button class="close" aria-label="Close">×</button></form></div><div class="dlg-body">${inner}</div></dialog>`;
-  const logoOf = (h, small = false) => `<div class="logo ${h.type}"${small ? ' style="width:32px;height:32px;border-radius:9px"' : ''}>${LOGOS[h.type] || ''}</div>`;
+  const logoOf = (h, small = false) => `<div class="logo ${h.type}${small ? ' sm' : ''}">${LOGOS[h.type] || ''}</div>`;
   const keep = (dlg) => `<input type="hidden" name="_dlg" value="${dlg}">`;
 
   /** A connector card per Git host, and its dialog (connect, install, settings). */
@@ -280,35 +166,35 @@ const createAdmin = ({ settings, env, realEnv = process.env, auth, desktop, gitA
       create = `<h4>${configured ? 'Create a new GitHub App' : 'Create narado’s GitHub App'}</h4>
 <p class="note">GitHub asks you to confirm, then sends narado its credentials. Permissions: contents and pull requests (read and write), metadata and email (read).</p>
 <form method="post" action="/admin/git/${id}/github-app">${keep(dlg)}
-<div class="row"><label><span>Organisation on ${esc(hostName)} (empty for your own account)</span><input type="text" name="org" placeholder="acme"></label>
-<label><span>App name</span><input type="text" name="name" value="${esc(`narado (${new URL(publicUrl).host})`)}"></label></div>
-<div class="actions"><button type="submit">${configured ? 'Create a new app on GitHub' : 'Continue on GitHub'}</button></div></form>`;
+<div class="row"><label class="f"><span>Organisation on ${esc(hostName)} (empty for your own account)</span><input type="text" name="org" placeholder="acme"></label>
+<label class="f"><span>App name</span><input type="text" name="name" value="${esc(`narado (${new URL(publicUrl).host})`)}"></label></div>
+<div class="dlg-actions"><button type="submit" class="btn">${configured ? 'Create a new app on GitHub' : 'Continue on GitHub'}</button></div></form>`;
     } else if (!fromEnv && h.type === 'gitlab') {
       create = isCom
         ? `<h4>Create the application on GitLab.com</h4><p class="note">GitLab.com can't create applications through its API, so create one by hand: open <a href="https://gitlab.com/-/user_settings/applications" target="_blank" rel="noopener">your applications</a> (or a group's <em>Settings → Applications</em>), name it narado, set the redirect URI to <code>${esc(callbackOf(h))}</code>, tick <em>Confidential</em> and the scopes <code>api</code> and <code>read_user</code>, then paste its ID and secret below.</p>`
         : `<h4>Create narado’s application</h4><form method="post" action="/admin/git/${id}/gitlab-app">${keep(dlg)}
-<label><span>Administrator access token for ${esc(hostName)} (scope api; used once, not kept)</span><input type="password" name="token" autocomplete="off"></label>
+<label class="f"><span>Administrator access token for ${esc(hostName)} (scope api; used once, not kept)</span><input type="password" name="token" autocomplete="off"></label>
 <p class="note">Creates an instance-wide OAuth application named narado with redirect URI <code>${esc(callbackOf(h))}</code>.</p>
-<div class="actions"><button type="submit">Create the GitLab application</button></div></form>`;
+<div class="dlg-actions"><button type="submit" class="btn">Create the GitLab application</button></div></form>`;
     }
     const manual = fromEnv
-      ? `<p class="note">This app is set in the server environment (<code>${esc(n.id)}</code>), so it's managed there.</p>`
+      ? `<div class="alert info">${ICON.lock}<div>This app is set in the server environment (<code>${esc(n.id)}</code>), so it's managed there.</div></div>`
       : `<h4>${isCom ? 'Application ID and secret' : 'Or enter app credentials by hand'}</h4>
 <form method="post" action="/admin/git/${id}/manual">${keep(dlg)}
 <div class="row">${field({ name: 'clientId', label: 'Client (application) ID', value: env[n.id] })}${field({ name: 'clientSecret', label: 'Client secret', value: env[n.secret], secret: true })}</div>
 ${h.type === 'github' ? field({ name: 'slug', label: 'App slug (for the install link)', value: env[n.slug] }) : ''}
-<p class="note">Callback URL to register: <code>${esc(callbackOf(h))}</code></p>
-<div class="actions"><button type="submit" class="secondary">Save credentials</button></div></form>`;
-    const settingsForm = `<h4>Explore APIs</h4>
-<form method="post" action="/admin/git/${id}/namespaces">${keep(dlg)}<label><span>Where it looks by default: users, organisations or groups (empty for everything a person can see)</span><input type="text" name="namespaces" value="${ns}" placeholder="acme, acme-platform"></label>
-<div class="actions"><button type="submit" class="secondary">Save</button>${!['github', 'gitlab'].includes(h.id) ? `<button type="submit" class="danger" formaction="/admin/git/${id}/remove">Remove ${esc(title)}</button>` : ''}</div></form>`;
+<label class="f"><span>Callback URL to register</span>${copyField(callbackOf(h))}</label>
+<div class="dlg-actions"><button type="submit" class="btn secondary">Save credentials</button></div></form>`;
+    const settingsForm = `<h4>Explore APIs</h4><p class="note">Explore lists the API collections and OpenAPI specs in your repositories.</p>
+<form method="post" action="/admin/git/${id}/namespaces">${keep(dlg)}<label class="f"><span>Where Explore looks by default</span><input type="text" name="namespaces" value="${ns}" placeholder="acme, acme-platform"><span class="help">Users, organisations or groups, comma-separated. Empty: everything a person can see.</span></label>
+<div class="dlg-actions"><button type="submit" class="btn secondary">Save</button>${!['github', 'gitlab'].includes(h.id) ? `<button type="submit" class="btn danger left" formaction="/admin/git/${id}/remove"${confirmAttrs(`Remove ${title}? People can no longer open repositories on ${hostName} through narado.`, { title: `Remove ${title}`, ok: 'Remove' })}>Remove ${esc(title)}</button>` : ''}</div></form>`;
 
-    const card = `<div class="conn" data-testid="connector-${id}">
-<div class="conn-top">${logoOf(h)}<div class="conn-title"><strong>${esc(title)}</strong><span>${esc(hostName)}</span></div>
-<span class="pill${configured ? ' ok' : ''}">${configured ? 'Connected' : 'Not connected'}</span></div>
-<p class="conn-desc">${configured ? `People connect their own ${esc(title)} account and work as themselves.${fromEnv ? ' Set in the server environment.' : ''}` : `Let people open, review and change API collections in ${esc(title)} repositories, as themselves.`}</p>
-<div class="conn-actions"><button type="button" class="${configured ? 'secondary' : ''}" onclick="openDlg('${dlg}')">${configured ? 'Manage' : 'Connect'}</button>${installUrl ? `<a class="btn secondary" href="${esc(installUrl)}" target="_blank" rel="noopener">Install on repositories ↗</a>` : ''}</div></div>`;
-    const body = `${installUrl ? `<p class="note" style="margin-top:12px">Install it on the repositories narado should see: <a href="${esc(installUrl)}" target="_blank" rel="noopener">install ${esc(env[n.slug])}</a>.</p>` : ''}${create}${manual}${settingsForm}`;
+    const status = configured ? '<span class="pill ok">Connected</span>' : '<span class="pill">Not connected</span>';
+    const card = `<div class="card conn" data-testid="connector-${id}">
+<div class="card-head">${logoOf(h)}<div class="t"><strong>${esc(title)}</strong><span class="sub">${esc(hostName)}</span></div>${status}</div>
+<p class="conn-desc">${configured ? `People connect their own ${esc(title)} account and work as themselves.` : `Let people open, review and change API collections in ${esc(title)} repositories, as themselves.`}</p>
+<div class="foot"><button type="button" class="btn ${configured ? 'secondary' : ''} sm" onclick="openDlg('${dlg}')">${configured ? 'Manage' : 'Connect'}</button>${installUrl ? `<a class="btn ghost sm" href="${esc(installUrl)}" target="_blank" rel="noopener">Install on repositories${ICON.external}</a>` : ''}${fromEnv ? envBadge(n.id) : ''}</div></div>`;
+    const body = `${installUrl ? `<p class="note">Install it on the repositories narado should see: <a href="${esc(installUrl)}" target="_blank" rel="noopener">install ${esc(env[n.slug])}</a>.</p>` : ''}${create}${manual}${settingsForm}`;
     return { card, dialog: dialog(dlg, title, logoOf(h, true), body) };
   };
 
@@ -401,21 +287,21 @@ ${h.type === 'github' ? field({ name: 'slug', label: 'App slug (for the install 
     }
   };
   const whereOf = (st) => st.url || st.vaultUrl || (st.region ? `region ${st.region}` : '') || (st.project ? `project ${st.project}` : '');
-  const storeLogo = (type, small = false) => `<div class="logo ${type}"${small ? ' style="width:32px;height:32px;border-radius:9px"' : ''}>${LOGOS[type] || ''}</div>`;
+  const storeLogo = (type, small = false) => `<div class="logo ${type}${small ? ' sm' : ''}">${LOGOS[type] || ''}</div>`;
 
   /** Settings and credentials inputs for a store type (prefix keeps the add dialog's types apart). */
   const storeFields = (type, st = {}, prefix = '') => {
     const t = STORE_TYPES[type];
-    const fields = t.fields.map(([k, label, ph, req]) => `<label><span>${esc(label)}</span><input type="text" name="${prefix}${k}" value="${esc(st[k] || '')}" placeholder="${esc(ph)}"${req && !prefix ? ' required' : ''}></label>`).join('');
+    const fields = t.fields.map(([k, label, ph, req]) => `<label class="f"><span>${esc(label)}</span><input type="text" name="${prefix}${k}" value="${esc(st[k] || '')}" placeholder="${esc(ph)}"${req && !prefix ? ' required' : ''}></label>`).join('');
     let auth = '';
     if (type === 'vault') {
       const m = (st.auth && st.auth.method) || 'jwt';
-      auth = `<label><span>How narado signs in</span><select name="${prefix}authMethod">
+      auth = `<label class="f"><span>How narado signs in</span><select name="${prefix}authMethod">
 <option value="jwt"${m === 'jwt' ? ' selected' : ''}>As each person (JWT): Vault's policies decide what they can read</option>
 <option value="approle"${m === 'approle' ? ' selected' : ''}>As narado (AppRole), with narado's access rules</option>
 <option value="token"${m === 'token' ? ' selected' : ''}>As narado (token), with narado's access rules</option></select></label>
-<div class="row"><label><span>JWT role (for "as each person")</span><input type="text" name="${prefix}role" value="${esc((st.auth && st.auth.role) || '')}" placeholder="narado"></label>
-<label><span>JWT auth mount</span><input type="text" name="${prefix}authMount" value="${esc((st.auth && st.auth.mount) || '')}" placeholder="jwt"></label></div>
+<div class="row"><label class="f"><span>JWT role (for "as each person")</span><input type="text" name="${prefix}role" value="${esc((st.auth && st.auth.role) || '')}" placeholder="narado"></label>
+<label class="f"><span>JWT auth mount</span><input type="text" name="${prefix}authMount" value="${esc((st.auth && st.auth.mount) || '')}" placeholder="jwt"></label></div>
 <p class="note">For "as each person", point Vault's JWT auth method at narado's public key: <code>${esc(publicUrl)}/auth/jwks.json</code>.</p>`;
     }
     return fields + auth;
@@ -426,7 +312,7 @@ ${h.type === 'github' ? field({ name: 'slug', label: 'App slug (for the install 
         const envName = storeEnv(id, name);
         const fromEnv = settings.source(envName, realEnv) === 'env';
         if (kind === 'textarea') {
-          return `<label><span>${esc(label)}${fromEnv ? '<span class="tag">set in the server environment</span>' : ''}</span><textarea class="mono" name="cred_${name}" rows="4" placeholder="${env[envName] ? '•••••••• (kept; paste to replace)' : '{ \"type\": \"service_account\", … }'}"${fromEnv ? ' disabled' : ''}></textarea></label>`;
+          return `<label class="f"><span>${esc(label)}${fromEnv ? '<span class="tag">set in the server environment</span>' : ''}</span><textarea class="mono" name="cred_${name}" rows="4" placeholder="${env[envName] ? '•••••••• (kept; paste to replace)' : '{ \"type\": \"service_account\", … }'}"${fromEnv ? ' disabled' : ''}></textarea></label>`;
         }
         return field({ name: `cred_${name}`, label, value: env[envName], source: settings.source(envName, realEnv), secret });
       })
@@ -440,16 +326,16 @@ ${h.type === 'github' ? field({ name: 'slug', label: 'App slug (for the install 
     const configured = running ? running.configured() : false;
     const perPerson = !!(running && running.perPerson);
     const myRules = rules.filter((r) => r.store === st.id || !r.store).length;
-    const card = `<div class="conn" data-testid="store-${id}">
-<div class="conn-top">${storeLogo(st.type)}<div class="conn-title"><strong>${esc(t.name)}</strong><span>${esc(st.id)} · ${esc(whereOf(st))}</span></div>
-<span class="pill${configured ? ' ok' : ''}">${configured ? 'Connected' : running ? 'Needs credentials' : 'Restart pending'}</span></div>
-<p class="conn-desc">${perPerson ? 'Signs in as each person; the store’s own policies decide what they can read.' : `narado signs in as itself; ${myRules ? `${myRules} access rule${myRules === 1 ? '' : 's'} in narado.json decide who reads what` : 'nobody can read from it until an access rule in narado.json allows it'}.`} Requests use <code>secret://${id}/…</code>.</p>
-<div class="conn-actions"><button type="button" class="secondary" onclick="openDlg('${dlg}')">Manage</button>
-<form method="post" action="/admin/secrets/${id}/test#secrets" style="display:inline">${keep('')}<button type="submit" class="secondary">Test connection</button></form></div></div>`;
+    const card = `<div class="card conn" data-testid="store-${id}">
+<div class="card-head">${storeLogo(st.type)}<div class="t"><strong>${esc(t.name)}</strong><span class="sub">${esc(st.id)} · ${esc(whereOf(st))}</span></div>
+<span class="pill ${configured ? 'ok' : 'warn'}">${configured ? 'Connected' : running ? 'Needs credentials' : 'Restart pending'}</span></div>
+<p class="conn-desc">${perPerson ? 'Signs in as each person; the store’s own policies decide what they can read.' : `narado signs in as itself; ${myRules ? `${myRules} access rule${myRules === 1 ? '' : 's'} decide who reads what` : 'nobody can read from it until an access rule allows it'}.`} Requests use <code>secret://${id}/…</code>.</p>
+<div class="foot"><button type="button" class="btn secondary sm" onclick="openDlg('${dlg}')">Manage</button>
+<form method="post" action="/admin/secrets/${id}/test#secrets" style="display:inline">${keep('')}<button type="submit" class="btn ghost sm">Test connection</button></form></div></div>`;
     const body = `<form method="post" action="/admin/secrets/${id}/save">${keep(dlg)}
-<h4>Settings</h4>${storeFields(st.type, st)}
+<h4>Settings</h4><div class="note">Kept in narado.json on the server.</div>${storeFields(st.type, st)}
 ${credsOf(st).length ? `<h4>Credentials</h4><p class="note">Kept encrypted on the narado server; never sent to people's browsers or computers.</p>${credFields(st.id, credsOf(st))}` : ''}
-<div class="actions"><button type="submit">Save</button><button type="submit" class="danger" formaction="/admin/secrets/${id}/remove" onclick="return confirm('Remove ${esc(st.id)}? Requests using secret://${esc(st.id)}/… stop working, and its access rules are removed too.')">Remove</button></div></form>`;
+<div class="dlg-actions"><button type="submit" class="btn danger left" formaction="/admin/secrets/${id}/remove"${confirmAttrs(`Requests using secret://${st.id}/… stop working, and its access rules are removed too.`, { title: `Remove ${st.id}?`, ok: 'Remove store' })}>Remove</button><button type="submit" class="btn">Save</button></div></form>`;
     return { card, dialog: dialog(dlg, `${t.name} · ${st.id}`, storeLogo(st.type, true), body) };
   };
 
@@ -494,11 +380,11 @@ ${credsOf(st).length ? `<h4>Credentials</h4><p class="note">Kept encrypted on th
     return r;
   };
   const ruleForm = (action, dlg, r, storeIds, extra = '') => `<form method="post" action="${action}">${keep(dlg)}${extra}
-<label><span>Store</span><select name="store"><option value="">Any store</option>${storeIds.map((id) => `<option value="${esc(id)}"${r.store === id ? ' selected' : ''}>${esc(id)}</option>`).join('')}</select></label>
-<label><span>Secrets (paths; * matches anything; empty for any)</span><textarea name="paths" rows="2" placeholder="payments/staging/*">${esc((r.paths || []).join(', '))}</textarea></label>
-<label><span>From repositories (host:owner/repo; empty for any, including none)</span><textarea name="repos" rows="2" placeholder="github:acme/payments-api, gitlab:acme/*">${esc((r.repos || []).join(', '))}</textarea></label>
-<label><span>People (emails or patterns; empty for anyone signed in)</span><textarea name="people" rows="2" placeholder="*@acme.com, alice@acme.com">${esc((r.people || []).join(', '))}</textarea></label>
-<div class="actions"><button type="submit">Save rule</button></div></form>`;
+<label class="f"><span>Store</span><select name="store"><option value="">Any store</option>${storeIds.map((id) => `<option value="${esc(id)}"${r.store === id ? ' selected' : ''}>${esc(id)}</option>`).join('')}</select></label>
+<label class="f"><span>Secrets (paths; * matches anything; empty for any)</span><textarea name="paths" rows="2" placeholder="payments/staging/*">${esc((r.paths || []).join(', '))}</textarea></label>
+<label class="f"><span>From repositories (host:owner/repo; empty for any, including none)</span><textarea name="repos" rows="2" placeholder="github:acme/payments-api, gitlab:acme/*">${esc((r.repos || []).join(', '))}</textarea></label>
+<label class="f"><span>People (emails or patterns; empty for anyone signed in)</span><textarea name="people" rows="2" placeholder="*@acme.com, alice@acme.com">${esc((r.people || []).join(', '))}</textarea></label>
+<div class="dlg-actions"><button type="submit" class="btn">Save rule</button></div></form>`;
 
   const rulesCard = (stores, access, checked = null) => {
     const ids = stores.map((x) => x.id);
@@ -508,25 +394,25 @@ ${credsOf(st).length ? `<h4>Credentials</h4><p class="note">Kept encrypted on th
         const broad = !r.paths && !r.people;
         const was = `<input type="hidden" name="was" value="${esc(JSON.stringify(r))}">`;
         return {
-          row: `<div class="item" data-testid="rule-${i}"><div class="grow">${ruleText(r)}${broad ? ' <span class="pill" style="color:var(--warn)">Broad</span>' : ''}</div>
-<button type="button" class="secondary" onclick="openDlg('${dlg}')">Edit</button>
-<form method="post" action="/admin/secrets/rules/${i}/delete" onsubmit="return confirm('Delete this rule?')">${was}<button type="submit" class="danger">Delete</button></form></div>`,
+          row: `<div class="li" data-testid="rule-${i}"><div class="grow">${ruleText(r)}${broad ? ' <span class="pill warn" title="Applies to everyone and every secret in its store">Broad</span>' : ''}</div>
+<button type="button" class="btn secondary sm" onclick="openDlg('${dlg}')">Edit</button>
+<form method="post" action="/admin/secrets/rules/${i}/delete">${was}<button type="submit" class="btn danger sm"${confirmAttrs('Delete this access rule? Reads it allowed are refused from now on.', { title: 'Delete rule', ok: 'Delete' })}>Delete</button></form></div>`,
           dialog: dialog(dlg, 'Edit access rule', '', ruleForm(`/admin/secrets/rules/${i}/save`, dlg, r, ids, was))
         };
       });
     const perPerson = stores.filter(perPersonOf).map((x) => x.id);
-    return `<div class="card" style="margin-top:14px" id="rules"><div class="conn-top" style="margin-bottom:6px"><div class="conn-title"><strong>Who may read what</strong><span>For stores narado signs in to as itself. A rule allows a read when everything it names matches.</span></div>
-<button type="button" onclick="openDlg('dlg-add-rule')">Add rule</button></div>
-${perPerson.length ? `<p class="note" style="margin-top:0">${codes(perPerson)} sign${perPerson.length === 1 ? 's' : ''} in as each person: the store's own policies decide, and rules naming ${perPerson.length === 1 ? 'it' : 'them'} narrow that further.</p>` : ''}
-${items.length ? `<div class="list">${items.map((x) => x.row).join('')}</div>` : '<p class="note">No rules yet: nobody can read from stores narado signs in to as itself.</p>'}
-<h4 style="margin-top:16px">Check access</h4>
-<form method="post" action="/admin/secrets/check#rules" class="row" style="align-items:flex-end">${keep('')}
-<label><span>Person (email)</span><input type="text" name="person" placeholder="alice@acme.com" value="${esc(checked ? checked.person : '')}" required></label>
-<label><span>Store</span><select name="store">${ids.map((id) => `<option value="${esc(id)}"${checked && checked.store === id ? ' selected' : ''}>${esc(id)}</option>`).join('')}</select></label>
-<label><span>Secret path</span><input type="text" name="path" placeholder="payments/staging/stripe" value="${esc(checked ? checked.path : '')}" required></label>
-<label><span>Repository (optional)</span><input type="text" name="repo" placeholder="github:acme/payments-api" value="${esc(checked ? checked.repo : '')}"></label>
-<div class="actions" style="flex:0 0 auto"><button type="submit" class="secondary">Check</button></div></form>
-${checked ? `<div class="banner ${checked.ok ? 'ok' : 'err'}" role="status" style="margin:12px 0 0" data-testid="check-result">${esc(checked.text)}</div>` : ''}</div>
+    return `<div class="card" style="margin-top:16px" id="rules"><div class="card-head"><div class="t"><strong>Who may read what</strong><span class="sub">For stores narado signs in to as itself. A rule allows a read when everything it names matches.</span></div>
+<button type="button" class="btn sm" onclick="openDlg('dlg-add-rule')">${ICON.plus}Add rule</button></div>
+${perPerson.length ? `<div class="list"><div class="li note">${codes(perPerson)} sign${perPerson.length === 1 ? 's' : ''} in as each person: the store's own policies decide, and rules naming ${perPerson.length === 1 ? 'it' : 'them'} narrow that further.</div></div>` : ''}
+${items.length ? `<div class="list" style="border-top:1px solid var(--line)">${items.map((x) => x.row).join('')}</div>` : emptyState({ icon: 'secrets', title: 'No access rules yet', text: 'Nobody can read from stores narado signs in to as itself until a rule allows it.', compact: true })}
+<div class="foot" style="display:block"><strong style="display:block;margin-bottom:10px;font-size:13px">Check access</strong>
+<form method="post" action="/admin/secrets/check#rules">${keep('')}<div class="row">
+<label class="f"><span>Person (email)</span><input type="text" name="person" placeholder="alice@acme.com" value="${esc(checked ? checked.person : '')}" required></label>
+<label class="f"><span>Store</span><select name="store">${ids.map((id) => `<option value="${esc(id)}"${checked && checked.store === id ? ' selected' : ''}>${esc(id)}</option>`).join('')}</select></label>
+<label class="f"><span>Secret path</span><input type="text" name="path" placeholder="payments/staging/stripe" value="${esc(checked ? checked.path : '')}" required></label>
+<label class="f"><span>Repository (optional)</span><input type="text" name="repo" placeholder="github:acme/payments-api" value="${esc(checked ? checked.repo : '')}"></label></div>
+<button type="submit" class="btn secondary sm">Check access</button></form>
+${checked ? `<div class="alert ${checked.ok ? 'ok' : 'err'}" role="status" style="margin:12px 0 0">${checked.ok ? ICON.check : ICON.alert}<div data-testid="check-result">${esc(checked.text)}</div></div>` : ''}</div></div>
 ${items.map((x) => x.dialog).join('')}${dialog('dlg-add-rule', 'Add an access rule', '', ruleForm('/admin/secrets/rules/add', 'dlg-add-rule', {}, ids))}`;
   };
 
@@ -536,14 +422,14 @@ ${items.map((x) => x.dialog).join('')}${dialog('dlg-add-rule', 'Add an access ru
       'Add a secrets store',
       '',
       `<form method="post" action="/admin/secrets/add" id="add-store">${keep('dlg-add-store')}
-<div class="choices">${Object.entries(STORE_TYPES)
+<div class="types">${Object.entries(STORE_TYPES)
         .map(([k, t], i) => `<label class="choice"><input type="radio" name="type" value="${k}"${i === 0 ? ' checked' : ''}>${storeLogo(k)}<span>${esc(t.name)}</span></label>`)
         .join('')}</div>
-<label><span>ID (used in references: secret://<em>id</em>/path)</span><input type="text" name="id" placeholder="vault" pattern="[A-Za-z0-9_-]+" required></label>
+<label class="f"><span>ID (used in references: secret://<em>id</em>/path)</span><input type="text" name="id" placeholder="vault" pattern="[A-Za-z0-9_-]+" required></label>
 ${Object.keys(STORE_TYPES)
-        .map((k) => `<fieldset data-type="${k}"${k === 'vault' ? '' : ' hidden disabled'}>${storeFields(k, {}, '')}${k === 'vault' ? '<p class="note">For AppRole or a token, add the credentials under Manage once it\'s created.</p>' : `<h4>Credentials</h4>${STORE_TYPES[k].creds.map(([name, label, secret, kind]) => (kind === 'textarea' ? `<label><span>${esc(label)}</span><textarea class="mono" name="cred_${name}" rows="4"></textarea></label>` : `<label><span>${esc(label)}</span><input type="${secret ? 'password' : 'text'}" name="cred_${name}" autocomplete="off"></label>`)).join('')}`}</fieldset>`)
+        .map((k) => `<fieldset data-type="${k}"${k === 'vault' ? '' : ' hidden disabled'}>${storeFields(k, {}, '')}${k === 'vault' ? '<p class="note">For AppRole or a token, add the credentials under Manage once it\'s created.</p>' : `<h4>Credentials</h4>${STORE_TYPES[k].creds.map(([name, label, secret, kind]) => (kind === 'textarea' ? `<label class="f"><span>${esc(label)}</span><textarea class="mono" name="cred_${name}" rows="4"></textarea></label>` : `<label class="f"><span>${esc(label)}</span><input type="${secret ? 'password' : 'text'}" name="cred_${name}" autocomplete="off"></label>`)).join('')}`}</fieldset>`)
         .join('')}
-<div class="actions"><button type="submit">Add store</button></div></form>`
+<div class="dlg-actions"><button type="submit" class="btn">Add store</button></div></form>`
     );
 
   /* ------------------------------------------------------------------ page */
@@ -551,25 +437,43 @@ ${Object.keys(STORE_TYPES)
   const secretsSection = (checked = null) => {
     const { stores, access } = readSecretsCfg();
     const cards = stores.map((st) => storeCard(st, access));
-    return `<section id="secrets"><h2>Secrets stores</h2><p class="lead">Where requests get <code>secret://</code> values from, just before they're sent. Values and store credentials stay on the narado server.</p>
-<div class="grid">${cards.map((x) => x.card).join('\n')}
-<button type="button" class="conn add" onclick="openDlg('dlg-add-store')"><span class="plus">+</span><span>Add Vault, AWS, Google Cloud or Azure</span></button></div>
+    const add = `<button type="button" class="btn${stores.length ? ' secondary' : ''}" onclick="openDlg('dlg-add-store')">${ICON.plus}Add store</button>`;
+    return `<section id="secrets">${sectionHead('Secrets stores', 'Where requests get <code>secret://</code> values from, just before they’re sent. Values and store credentials stay on the narado server.', stores.length ? add : '')}
+${stores.length ? `<div class="grid">${cards.map((x) => x.card).join('\n')}</div>` : `<div class="card">${emptyState({ icon: 'secrets', title: 'No secrets stores yet', text: 'Connect HashiCorp Vault, AWS Secrets Manager, Google Cloud Secret Manager or Azure Key Vault, so requests can use secrets without anyone copying them.', action: add })}</div>`}
 ${cards.map((x) => x.dialog).join('\n')}${addStoreDialog()}${stores.length ? rulesCard(stores, access, checked) : ''}</section>`;
   };
 
   /** What <data dir>/desktop-updates/ offers, per system. */
+  const desktopUpdates = () =>
+    ['mac', 'win', 'linux']
+      .map((platform) => {
+        try {
+          return { platform, m: JSON.parse(fs.readFileSync(path.join(dataDir, 'desktop-updates', platform, 'latest.json'), 'utf8')) };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
   const desktopUpdatesList = () => {
-    const rows = ['mac', 'win', 'linux'].map((platform) => {
-      try {
-        const m = JSON.parse(fs.readFileSync(path.join(dataDir, 'desktop-updates', platform, 'latest.json'), 'utf8'));
-        return `<div class="item"><div class="grow">${{ mac: 'macOS', win: 'Windows', linux: 'Linux' }[platform]} · narado ${esc(m.version)}<div class="sub">${esc((m.files || []).map((f) => `${f.arch} ${f.kind}`).join(', '))}${m.publishedAt ? ` · published ${esc(when(Date.parse(m.publishedAt)))}` : ''}</div></div></div>`;
-      } catch {
-        return '';
-      }
-    });
-    return rows.some(Boolean)
-      ? `<div class="list">${rows.join('')}</div>`
-      : `<p class="note">None yet. Build them with <code>npm run build:narado-desktop</code> and copy <code>packages/bruno-electron/out-narado/updates/&lt;mac|win|linux&gt;/</code> to <code>&lt;data dir&gt;/desktop-updates/&lt;mac|win|linux&gt;/</code> here; people's narado desktop then offers the update.</p>`;
+    const rows = desktopUpdates();
+    return rows.length
+      ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>System</th><th>Version</th><th>Files</th><th>Published</th></tr></thead><tbody>${rows
+          .map(({ platform, m }) => `<tr><td>${{ mac: 'macOS', win: 'Windows', linux: 'Linux' }[platform]}</td><td class="mono">${esc(m.version)}</td><td class="sub">${esc((m.files || []).map((f) => `${f.arch} ${f.kind}`).join(', '))}</td><td class="sub">${m.publishedAt ? esc(when(Date.parse(m.publishedAt))) : '—'}</td></tr>`)
+          .join('')}</tbody></table></div>`
+      : emptyState({ icon: 'desktop', title: 'No installers on this server yet', text: 'Download <code>narado-desktop-updates-&lt;version&gt;.zip</code> from narado’s release and unzip it into narado’s data folder. Signed-in copies of narado desktop then offer the update.', compact: true });
+  };
+
+  /** Problems an admin should look at, as { text, href }. */
+  const attentionOf = ({ oidcOn, hosts, stores }) => {
+    const out = [];
+    if (!localOnly && !oidcOn) out.push({ text: 'Sign-in isn’t set up, so nobody else can use narado.', href: '#signin' });
+    if (!hosts.some((h) => h.configured)) out.push({ text: 'No Git connector is set up: people can’t open repositories yet.', href: '#connectors' });
+    for (const st of stores) {
+      const running = secrets && secrets.stores && secrets.stores.get(st.id);
+      if (running && !running.configured()) out.push({ text: `The ${st.id} secrets store needs credentials.`, href: '#secrets' });
+    }
+    if (/^http:\/\//.test(publicUrl) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(publicUrl)) out.push({ text: 'narado is served over plain HTTP. Put it behind HTTPS before your team uses it.', href: '#signin' });
+    return out;
   };
 
   const adminPage = (who, notice) => {
@@ -577,68 +481,144 @@ ${cards.map((x) => x.dialog).join('\n')}${addStoreDialog()}${stores.length ? rul
     const src = (name) => settings.source(name, realEnv);
     const oidcOn = !!env.NARADO_OIDC_ISSUER;
     const devices = desktop && auth.enabled ? desktop.adminDevices() : [];
-    const hosts = hostList().map(hostCard);
-    const envTag = (name) => (src(name) === 'env' ? '<span class="tag">set in the server environment</span>' : '');
+    const hostsRaw = hostList();
+    const hosts = hostsRaw.map(hostCard);
+    const hostState = hostsRaw.map((h) => {
+      const n = appSet(h);
+      return { id: h.id, configured: !!(env[n.id] && env[n.secret]) };
+    });
+    const { stores } = readSecretsCfg();
+    const adminList = adminsFrom(env);
+    const attention = attentionOf({ oidcOn, hosts: hostState, stores });
+    const host = (() => {
+      try {
+        return new URL(publicUrl).host;
+      } catch {
+        return '';
+      }
+    })();
+
+    // First-time setup: three steps, the first two required.
     const steps = who.setup
-      ? `<div class="banner">First-time setup. 1. Sign-in: your organisation's SSO. 2. Admins: who manages narado (include your own email). 3. Git: can wait. When sign-in and admins are saved, <a href="/auth/login?return=/admin">sign in</a> as an admin to finish; this setup link then stops working.</div>`
+      ? `<section id="setup">${sectionHead('Set up narado', 'Two steps make narado ready for your team; Git can follow. When both are done, sign in as an admin to finish: this setup link then stops working.')}
+<div class="card"><ol class="steps">
+<li class="${oidcOn ? 'done' : 'now'}"><span class="n">${oidcOn ? ICON.check : '1'}</span><div class="t"><strong>Sign-in</strong><span>Your organisation’s single sign-on (OpenID Connect).</span></div>${oidcOn ? '<span class="pill ok">Done</span>' : '<a class="btn sm" href="#signin">Set up</a>'}</li>
+<li class="${adminList.length ? 'done' : oidcOn ? 'now' : ''}"><span class="n">${adminList.length ? ICON.check : '2'}</span><div class="t"><strong>Admins</strong><span>Who manages narado. Include your own email.</span></div>${adminList.length ? '<span class="pill ok">Done</span>' : '<a class="btn sm secondary" href="#admins">Add admins</a>'}</li>
+<li class="${hostState.some((h) => h.configured) ? 'done' : ''}"><span class="n">${hostState.some((h) => h.configured) ? ICON.check : '3'}</span><div class="t"><strong>Git (optional now)</strong><span>Connect GitHub or GitLab so people can open repositories.</span></div>${hostState.some((h) => h.configured) ? '<span class="pill ok">Done</span>' : '<a class="btn sm secondary" href="#connectors">Connect</a>'}</li>
+</ol>${oidcOn && adminList.length ? `<div class="foot"><span class="hint">Sign-in and admins are ready.</span><a class="btn" href="/auth/login?return=/admin">Sign in as an admin to finish${ICON.arrow}</a></div>` : ''}</div></section>`
       : '';
-    const banner = notice && !notice.checked ? `<div class="banner ${notice.error ? 'err' : 'ok'}" role="${notice.error ? 'alert' : 'status'}">${esc(notice.text)}</div>` : '';
+    const error = notice && notice.error ? `<div class="alert err" role="alert">${ICON.alert}<div>${esc(notice.text)}</div></div>` : '';
+    const info = notice && !notice.error && !notice.checked && notice.inline ? `<div class="alert ok" role="status">${ICON.check}<div>${esc(notice.text)}</div></div>` : '';
+    const toast = notice && !notice.error && !notice.checked && !notice.inline ? notice.text : '';
+
+    const overview = who.setup
+      ? ''
+      : `<section id="overview"><h2 class="sr">Overview</h2>
+<div class="tiles">
+<a class="card tile" href="#signin"><span class="k">${ICON.signin}Sign-in</span><div class="v">${oidcOn ? esc(v('NARADO_OIDC_PROVIDER_NAME') || 'Single sign-on') : 'Off'}</div><span class="pill ${oidcOn ? 'ok' : 'warn'}">${oidcOn ? 'On' : 'Not set up'}</span></a>
+<a class="card tile" href="#admins"><span class="k">${ICON.admins}Admins</span><div class="v">${adminList.length}</div><span class="s">${adminList.length === 1 ? 'person' : 'people'}</span></a>
+<a class="card tile" href="#connectors"><span class="k">${ICON.connectors}Git connectors</span><div class="v">${hostState.filter((h) => h.configured).length} of ${hostState.length}</div><span class="pill ${hostState.some((h) => h.configured) ? 'ok' : 'warn'}">${hostState.some((h) => h.configured) ? 'Connected' : 'Not set up'}</span></a>
+<a class="card tile" href="#secrets"><span class="k">${ICON.secrets}Secrets stores</span><div class="v">${stores.length}</div><span class="s">${stores.length === 1 ? 'store connected' : 'stores connected'}</span></a>
+${auth.enabled ? `<a class="card tile" href="#computers"><span class="k">${ICON.computers}Desktops</span><div class="v">${devices.length}</div><span class="s">signed in</span></a>` : ''}
+</div>
+${attention.length ? `<div class="card attention" data-testid="attention">${attention.map((x) => `<div class="row-a">${ICON.alert}<span class="grow">${esc(x.text)}</span><a class="btn ghost sm" href="${x.href}">Review</a></div>`).join('')}</div>` : ''}</section>`;
+
+    // Sign-in: what the server environment sets is shown read-only; the rest can be edited.
+    const signinNames = ['NARADO_PUBLIC_URL', 'NARADO_OIDC_ISSUER', 'NARADO_OIDC_PROVIDER_NAME', 'NARADO_OIDC_CLIENT_ID', 'NARADO_OIDC_CLIENT_SECRET', 'NARADO_ALLOWED_EMAIL_DOMAINS'];
+    const signinEditable = signinNames.some((n) => src(n) !== 'env');
+    const signinFromEnv = signinNames.filter((n) => src(n) === 'env');
+    const signin = `<section id="signin">${sectionHead('Sign-in', 'Your organisation’s single sign-on (OpenID Connect). Register narado with your identity provider as a confidential web application.')}
+<div class="card"><div class="card-head"><div class="t"><strong>${esc(v('NARADO_OIDC_PROVIDER_NAME') || 'Single sign-on')}</strong><span class="sub">${esc(v('NARADO_OIDC_ISSUER') || 'Not configured')}</span></div><span class="pill ${oidcOn ? 'ok' : 'warn'}">${oidcOn ? 'On' : 'Off'}</span></div>
+<form method="post" action="/admin/signin"><div class="body">
+<label class="f"><span>Redirect URI to register</span>${copyField(`${publicUrl}/auth/callback`)}</label>
+${signinFromEnv.length ? `<div style="margin-bottom:${signinEditable ? '16px' : '0'}">${signinNames.filter((n) => src(n) === 'env').map((n) => field({ name: n, label: { NARADO_PUBLIC_URL: 'narado’s address', NARADO_OIDC_ISSUER: 'Issuer URL', NARADO_OIDC_PROVIDER_NAME: 'Shown as', NARADO_OIDC_CLIENT_ID: 'Client ID', NARADO_OIDC_CLIENT_SECRET: 'Client secret', NARADO_ALLOWED_EMAIL_DOMAINS: 'Allowed email domains' }[n], value: n === 'NARADO_PUBLIC_URL' ? v(n) || publicUrl : v(n), source: 'env', secret: n === 'NARADO_OIDC_CLIENT_SECRET' })).join('')}</div>` : ''}
+${src('NARADO_PUBLIC_URL') !== 'env' ? field({ name: 'NARADO_PUBLIC_URL', label: 'narado’s address', value: v('NARADO_PUBLIC_URL') || publicUrl, placeholder: 'https://narado.example.com', help: 'The address people open narado at.' }) : ''}
+<div class="row">${src('NARADO_OIDC_ISSUER') !== 'env' ? field({ name: 'NARADO_OIDC_ISSUER', label: 'Issuer URL', value: v('NARADO_OIDC_ISSUER'), placeholder: 'https://login.example.com/realms/acme' }) : ''}
+${src('NARADO_OIDC_PROVIDER_NAME') !== 'env' ? field({ name: 'NARADO_OIDC_PROVIDER_NAME', label: 'Shown as', value: v('NARADO_OIDC_PROVIDER_NAME'), placeholder: 'Okta, Google, Keycloak…' }) : ''}</div>
+<div class="row">${src('NARADO_OIDC_CLIENT_ID') !== 'env' ? field({ name: 'NARADO_OIDC_CLIENT_ID', label: 'Client ID', value: v('NARADO_OIDC_CLIENT_ID') }) : ''}
+${src('NARADO_OIDC_CLIENT_SECRET') !== 'env' ? field({ name: 'NARADO_OIDC_CLIENT_SECRET', label: 'Client secret', value: v('NARADO_OIDC_CLIENT_SECRET'), secret: true }) : ''}</div>
+${src('NARADO_ALLOWED_EMAIL_DOMAINS') !== 'env' ? field({ name: 'NARADO_ALLOWED_EMAIL_DOMAINS', label: 'Allowed email domains', value: v('NARADO_ALLOWED_EMAIL_DOMAINS'), placeholder: 'acme.com', help: 'Optional, comma-separated. Only people with these email domains may sign in.' }) : ''}
+</div>
+${signinEditable ? `<div class="foot"><span class="hint">${signinFromEnv.length ? 'Values marked Environment are set in the server environment. ' : ''}narado checks the issuer before saving, then restarts.</span><button type="submit" class="btn">Save sign-in</button></div>` : `<div class="foot"><span class="hint">${ICON.lock} These settings are set in the server environment; change them there and restart narado.</span></div>`}
+</form></div></section>`;
+
+    // Admins: a list, with add and remove (nobody removes themselves).
+    const adminsFromEnv = src('NARADO_ADMINS') === 'env';
+    const me = String(who.email || '').toLowerCase();
+    const admins = `<section id="admins">${sectionHead('Admins', 'People who can use the admin console, by the email they sign in with.')}
+<div class="card">${adminList.length ? `<div class="list">${adminList
+      .map((email) => `<div class="li" data-testid="admin-row"><span class="av">${esc(initials(email))}</span><div class="grow"><div>${esc(email)}${email === me ? ' <span class="chip">You</span>' : ''}</div></div>${
+        adminsFromEnv
+          ? ''
+          : `<form method="post" action="/admin/admins/remove"><input type="hidden" name="email" value="${esc(email)}"><button type="submit" class="btn ghost sm"${email === me || adminList.length === 1 ? ' disabled title="You can’t remove yourself or the last admin"' : confirmAttrs(`${email} can no longer use the admin console.`, { title: 'Remove admin?', ok: 'Remove' })}>Remove</button></form>`
+      }</div>`)
+      .join('')}</div>` : emptyState({ icon: 'admins', title: 'No admins yet', text: 'Add the people who manage narado, starting with yourself.', compact: true })}
+${adminsFromEnv ? `<div class="foot"><span class="hint">${ICON.lock} Admins are set in the server environment (<code>NARADO_ADMINS</code>); change them there and restart narado.</span></div>` : `<form method="post" action="/admin/admins/add" class="foot"><label class="sr" for="add-admin">Email</label><input id="add-admin" type="email" name="email" placeholder="name@company.com" required style="flex:1;min-width:200px"><button type="submit" class="btn">${ICON.plus}Add admin</button></form>`}
+</div></section>`;
+
     const addDlg = dialog(
       'dlg-add',
       'Add a connector',
       '',
       `<p class="note">For GitHub Enterprise or a self-managed GitLab. GitHub.com and GitLab.com are always listed.</p>
 <form method="post" action="/admin/git/add">${keep('dlg-add')}<div class="row">
-<label><span>Type</span><select name="type"><option value="gitlab">GitLab (self-managed)</option><option value="github">GitHub Enterprise</option></select></label>
-<label><span>Address</span><input type="url" name="url" placeholder="https://git.acme.com"></label></div>
-<label><span>ID (short, unique; used in its settings' names)</span><input type="text" name="id" placeholder="gitlab-acme" pattern="[a-z0-9-]+"></label>
-<div class="actions"><button type="submit">Add connector</button></div></form>`
+<label class="f"><span>Type</span><select name="type"><option value="gitlab">GitLab (self-managed)</option><option value="github">GitHub Enterprise</option></select></label>
+<label class="f"><span>Address</span><input type="url" name="url" placeholder="https://git.acme.com"></label></div>
+<label class="f"><span>ID</span><input type="text" name="id" placeholder="gitlab-acme" pattern="[a-z0-9-]+"><span class="help">Short and unique: lower-case letters, digits and dashes. Used in its settings’ names.</span></label>
+<div class="dlg-actions"><button type="submit" class="btn">Add connector</button></div></form>`
     );
-    const body = `${steps}${banner}
-${localOnly ? '<div class="banner">Single-user local mode: no sign-in, listening on this computer only. Set up sign-in to let your team use narado.</div>' : ''}
-<section id="signin"><h2>Sign-in</h2><p class="lead">Your organisation's single sign-on (OpenID Connect). Register narado as a confidential web application with redirect URI <code>${esc(publicUrl)}/auth/callback</code>.</p>
-<div class="card"><div class="conn-top" style="margin-bottom:4px"><div class="conn-title"><strong>${esc(v('NARADO_OIDC_PROVIDER_NAME') || 'Single sign-on')}</strong><span>${esc(v('NARADO_OIDC_ISSUER') || 'Not configured')}</span></div><span class="pill${oidcOn ? ' ok' : ''}">${oidcOn ? 'On' : 'Off'}</span></div>
-<form method="post" action="/admin/signin">
-${field({ name: 'NARADO_PUBLIC_URL', label: "narado's address", value: v('NARADO_PUBLIC_URL') || publicUrl, source: src('NARADO_PUBLIC_URL'), placeholder: 'https://narado.example.com' })}
-<div class="row">${field({ name: 'NARADO_OIDC_ISSUER', label: 'Issuer URL', value: v('NARADO_OIDC_ISSUER'), source: src('NARADO_OIDC_ISSUER'), placeholder: 'https://login.example.com/realms/acme' })}
-${field({ name: 'NARADO_OIDC_PROVIDER_NAME', label: 'Shown as', value: v('NARADO_OIDC_PROVIDER_NAME'), source: src('NARADO_OIDC_PROVIDER_NAME'), placeholder: 'Okta, Google, Keycloak…' })}</div>
-<div class="row">${field({ name: 'NARADO_OIDC_CLIENT_ID', label: 'Client ID', value: v('NARADO_OIDC_CLIENT_ID'), source: src('NARADO_OIDC_CLIENT_ID') })}
-${field({ name: 'NARADO_OIDC_CLIENT_SECRET', label: 'Client secret', value: v('NARADO_OIDC_CLIENT_SECRET'), source: src('NARADO_OIDC_CLIENT_SECRET'), secret: true })}</div>
-${field({ name: 'NARADO_ALLOWED_EMAIL_DOMAINS', label: 'Allowed email domains (optional, comma-separated)', value: v('NARADO_ALLOWED_EMAIL_DOMAINS'), source: src('NARADO_ALLOWED_EMAIL_DOMAINS'), placeholder: 'acme.com' })}
-<div class="actions"><button type="submit">Save sign-in</button><span class="note">Sign-in is ${oidcOn ? 'on' : 'off'}. narado checks the issuer before saving, and restarts.</span></div></form></div></section>
+    const connectors = `<section id="connectors">${sectionHead('Git connectors', 'narado reaches GitHub and GitLab through an app it creates for you. Each person then connects their own account and works as themselves.', `<button type="button" class="btn secondary" onclick="openDlg('dlg-add')">${ICON.plus}Add connector</button>`)}
+<div class="grid">${hosts.map((x) => x.card).join('\n')}</div>
+${hosts.map((x) => x.dialog).join('\n')}${addDlg}</section>`;
 
-<section id="admins"><h2>Admins</h2><p class="lead">People who can use these pages, by the email they sign in with.</p>
-<div class="card"><form method="post" action="/admin/admins">
-<label><span>Admin emails (comma-separated)${envTag('NARADO_ADMINS')}</span>
-<textarea name="NARADO_ADMINS" rows="2"${src('NARADO_ADMINS') === 'env' ? ' disabled' : ''}>${esc(v('NARADO_ADMINS') || '')}</textarea></label>
-<div class="actions"><button type="submit">Save admins</button></div></form></div></section>
+    const sendFromEnv = src('NARADO_DESKTOP_SEND') === 'env';
+    const sendNow = v('NARADO_DESKTOP_SEND') || 'any';
+    const sendChoices = [
+      ['any', 'Private networks and the repository’s allowlist', 'Local and private addresses, and public hosts the repository allows. The default.'],
+      ['private-only', 'Private networks only', 'Local and private addresses; no public hosts.'],
+      ['allowlist-only', 'The repository’s allowlist only', 'Only hosts a repository allows, private ones included.']
+    ];
+    const desktopSec = `<section id="desktop">${sectionHead('Desktop', 'What narado desktop may send requests to from people’s computers. Cloud metadata addresses are always refused.')}
+<div class="card"><form method="post" action="/admin/desktop"><div class="body">
+<fieldset><legend style="font-size:12.5px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px;width:100%">Requests may go to${sendFromEnv ? envBadge('NARADO_DESKTOP_SEND') : ''}</legend><div class="choices">
+${sendChoices.map(([val, title, text]) => `<label class="choice"><input type="radio" name="NARADO_DESKTOP_SEND" value="${val}"${sendNow === val ? ' checked' : ''}${sendFromEnv ? ' disabled' : ''}><div><strong>${esc(title)}</strong><span>${esc(text)}</span></div></label>`).join('')}
+</div></fieldset>
+<div style="margin-top:16px">${field({ name: 'NARADO_DESKTOP_MIN_VERSION', label: 'Oldest supported version', value: v('NARADO_DESKTOP_MIN_VERSION'), source: src('NARADO_DESKTOP_MIN_VERSION'), placeholder: '0.1.0', help: 'Older copies of narado desktop are asked to update before they continue.' })}</div>
+</div>${sendFromEnv && src('NARADO_DESKTOP_MIN_VERSION') === 'env' ? '' : '<div class="foot"><span class="hint">Applies to every signed-in desktop at its next contact.</span><button type="submit" class="btn">Save</button></div>'}</form></div>
+<div class="card" style="margin-top:16px"><div class="card-head"><div class="t"><strong>Installers on this server</strong><span class="sub">What signed-in desktops are offered as an update.</span></div></div>${desktopUpdatesList()}</div></section>`;
 
-<section id="connectors"><h2>Connectors</h2><p class="lead">narado reaches GitHub and GitLab through an app it creates for you. Each person then connects their own account and works as themselves.</p>
-<div class="grid">${hosts.map((x) => x.card).join('\n')}
-<button type="button" class="conn add" onclick="openDlg('dlg-add')"><span class="plus">+</span><span>Add GitHub Enterprise or self-managed GitLab</span></button></div>
-${hosts.map((x) => x.dialog).join('\n')}${addDlg}</section>
+    const computers = auth.enabled
+      ? `<section id="computers">${sectionHead('Signed-in computers', 'Everyone’s computers using narado desktop. Signing one out stops it at its next contact with narado.')}
+<div class="card">${
+          devices.length
+            ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Computer</th><th>Person</th><th>System</th><th>Last used</th><th class="r"><span class="sr">Actions</span></th></tr></thead><tbody>${devices
+                .map(
+                  (d) => `<tr><td><strong>${esc(d.name)}</strong></td><td>${esc(d.userName || d.userEmail || '?')}${d.userName && d.userEmail ? `<div class="sub">${esc(d.userEmail)}</div>` : ''}</td><td>${esc(PLATFORMS[d.platform] || d.platform || '?')}</td><td class="sub">${esc(when(d.lastSeenAt))}</td>
+<td class="r"><form method="post" action="/admin/devices/${esc(d.id)}/revoke"><button class="btn danger sm" type="submit"${confirmAttrs(`${d.name} stops working with narado at its next contact. Its owner can sign in again.`, { title: `Sign out ${d.name}?`, ok: 'Sign out' })}>Sign out</button></form></td></tr>`
+                )
+                .join('')}</tbody></table></div>`
+            : emptyState({ icon: 'computers', title: 'No computers are signed in', text: 'When people sign in to narado desktop, their computers show here.', compact: true })
+        }</div></section>`
+      : '';
 
-${secretsSection(notice && notice.checked)}
+    const local = localOnly ? `<div class="alert info">${ICON.info}<div>Single-user local mode: no sign-in, listening on this computer only. Set up sign-in to let your team use narado.</div></div>` : '';
+    const body = `<div class="page-head"><h1>${who.setup ? 'Welcome to narado' : 'Admin console'}</h1><p>${who.setup ? 'Set up sign-in and admins so your team can start.' : 'Manage sign-in, admins, Git, secrets and desktops for your organisation.'}</p></div>
+${error}${info}${local}${steps}${overview}${signin}${admins}${connectors}${secretsSection(notice && notice.checked)}${desktopSec}${computers}`;
 
-<section id="desktop"><h2>Desktop</h2><p class="lead">What narado desktop may send requests to from people's computers. Cloud metadata addresses are always refused.</p>
-<div class="card"><form method="post" action="/admin/desktop"><label><span>Sends allowed${envTag('NARADO_DESKTOP_SEND')}</span>
-<select name="NARADO_DESKTOP_SEND"${src('NARADO_DESKTOP_SEND') === 'env' ? ' disabled' : ''}>
-${[['any', 'Private and local addresses, and public hosts on the repo’s allowlist (default)'], ['private-only', 'Private and local addresses only'], ['allowlist-only', 'Only hosts on a repo’s allowlist, private ones included']].map(([val, text]) => `<option value="${val}"${(v('NARADO_DESKTOP_SEND') || 'any') === val ? ' selected' : ''}>${esc(text)}</option>`).join('')}
-</select></label>
-${field({ name: 'NARADO_DESKTOP_MIN_VERSION', label: 'Oldest narado desktop this server works with (older copies are asked to update)', value: v('NARADO_DESKTOP_MIN_VERSION'), source: src('NARADO_DESKTOP_MIN_VERSION'), placeholder: '0.1.0' })}
-<div class="actions"><button type="submit">Save</button></div></form>
-<h4>Installers on this server</h4>${desktopUpdatesList()}</div></section>
-
-${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="lead">Computers using narado desktop, everyone's. Signing one out stops it at its next contact with narado.</p>
-<div class="card">${devices.length ? `<div class="list">${devices
-      .map((d) => `<div class="item"><div class="grow"><div>${esc(d.name)} <span class="tag">${esc(PLATFORMS[d.platform] || d.platform || '?')}</span></div><div class="sub">${esc(d.userName || d.userEmail || '?')} · last used ${esc(when(d.lastSeenAt))}</div></div>
-<form method="post" action="/admin/devices/${esc(d.id)}/revoke" onsubmit="return confirm('Sign out ${esc(d.name).replace(/'/g, '')}?')"><button class="danger" type="submit">Sign out</button></form></div>`)
-      .join('')}</div>` : '<p class="note" style="margin:0">No computers are signed in.</p>'}</div></section>` : ''}`;
+    const nav = [
+      ...(who.setup ? [{ id: 'setup', label: 'Setup', icon: 'overview' }] : [{ id: 'overview', label: 'Overview', icon: 'overview', attention: attention.length ? `${attention.length} to review` : null }]),
+      { id: 'signin', label: 'Sign-in', icon: 'signin', attention: !localOnly && !oidcOn ? 'Not set up' : null },
+      { id: 'admins', label: 'Admins', icon: 'admins', meta: adminList.length },
+      { id: 'connectors', label: 'Git connectors', icon: 'connectors', meta: `${hostState.filter((h) => h.configured).length}/${hostState.length}` },
+      { id: 'secrets', label: 'Secrets stores', icon: 'secrets', meta: stores.length },
+      { id: 'desktop', label: 'Desktop', icon: 'desktop' },
+      ...(auth.enabled ? [{ id: 'computers', label: 'Computers', icon: 'computers', meta: devices.length }] : [])
+    ];
     const reopen = notice && notice.open && /^dlg-[a-z0-9-]+$/.test(notice.open) ? `openDlg(${JSON.stringify(notice.open)});` : '';
     // Answers to a form (a test, an error) show at the form's address: put /admin back, so a
-    // reload doesn't send the form again.
-    const back = "if(location.pathname!=='/admin')history.replaceState(null,'','/admin'+location.hash);";
-    return page({ title: who.setup ? 'Setup' : 'Admin', who: who.setup ? 'setup link' : who.name, body, script: back + reopen });
+    // reload doesn't send the form again. A "saved" note in the address goes too.
+    const back = "if(location.pathname!=='/admin'||location.search)history.replaceState(null,'','/admin'+location.hash);";
+    return page({ title: who.setup ? 'Setup' : 'Admin', who, host, nav, body, toast, script: back + reopen });
   };
 
   /* ------------------------------------------------------------- handlers */
@@ -690,12 +670,13 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
     html(
       res,
       200,
-      page({
+      messagePage({
         title: 'Admin',
-        nav: false,
-        body: `<div class="banner">Taking you to ${esc(web.replace(/^https?:\/\//, ''))} to create the app…</div>
-<form id="go" method="post" action="${esc(action)}"><input type="hidden" name="manifest" value="${esc(JSON.stringify(manifest))}"><button type="submit">Continue to GitHub</button></form>
-<script>document.getElementById('go').submit()</script>`
+        heading: 'Continuing on GitHub',
+        text: `Taking you to ${esc(web.replace(/^https?:\/\//, ''))} to create narado’s app…`,
+        loader: true,
+        action: `<form id="go" method="post" action="${esc(action)}"><input type="hidden" name="manifest" value="${esc(JSON.stringify(manifest))}"><button type="submit" class="btn">Continue to GitHub</button></form>`,
+        script: "document.getElementById('go').submit();"
       })
     );
   };
@@ -743,7 +724,7 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
     if (p === '/setup') {
       if (!setupNeeded) return redirect(res, '/admin'), true;
       if (!settings.checkSetupToken(url.searchParams.get('token'))) {
-        return html(res, 403, page({ title: 'Setup', nav: false, body: '<div class="banner err">This setup link isn\'t valid. Use the latest link from narado\'s log (a new one is printed each time it starts).</div>' })), true;
+        return html(res, 403, messagePage({ title: 'Setup', heading: 'This setup link isn’t valid', text: 'Use the latest link from narado’s log: a new one is printed each time narado starts.' })), true;
       }
       const sid = crypto.randomBytes(24).toString('base64url');
       setupSessions.add(sid);
@@ -754,7 +735,7 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
     const who = adminFor(req);
     if (!who) {
       if (auth.enabled && !auth.userFor(req)) return redirect(res, `/auth/login?return=${encodeURIComponent(p)}`), true;
-      return html(res, 403, page({ title: 'Admin', nav: false, body: '<div class="banner err">Only narado admins can open this page. Ask an admin to add your email.</div>' })), true;
+      return html(res, 403, messagePage({ title: 'Admin', heading: 'Admins only', text: 'Only narado admins can open the admin console. Ask an admin to add your email.', action: '<a class="btn secondary" href="/">Back to narado</a>' })), true;
     }
     // An admin signed in with SSO: setup is over.
     if (who.user) {
@@ -766,7 +747,7 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
     try {
       if (p === '/admin' && req.method === 'GET') {
         const saved = url.searchParams.get('saved');
-        const notice = saved ? { text: { signin: 'Sign-in saved.', admins: 'Admins saved.', git: 'Git settings saved.', desktop: 'Desktop settings saved.', device: 'Signed out.', secrets: 'Secrets store saved.', rules: 'Access rules saved.' }[saved] || 'Saved.' } : null;
+        const notice = saved ? { text: { signin: 'Sign-in saved.', admins: 'Admins saved.', git: 'Git settings saved.', desktop: 'Desktop settings saved.', device: 'Computer signed out.', secrets: 'Secrets store saved.', rules: 'Access rules saved.' }[saved] || 'Saved.' } : null;
         return html(res, 200, adminPage(who, notice)), true;
       }
       const done = /^\/admin\/git\/([a-z0-9-]+)\/github-app-done$/.exec(p);
@@ -777,24 +758,31 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
         return savedAndRestart(res, '/admin?saved=git'), true;
       }
 
-      if (req.method !== 'POST') return html(res, 405, page({ title: 'Admin', nav: false, body: '<div class="banner err">Not allowed.</div>' })), true;
-      if (!sameSite(req, who)) return html(res, 403, page({ title: 'Admin', nav: false, body: '<div class="banner err">Cross-site request refused.</div>' })), true;
+      if (req.method !== 'POST') return html(res, 405, messagePage({ title: 'Admin', heading: 'Not allowed', text: 'That isn’t something this page does.', action: '<a class="btn secondary" href="/admin">Admin console</a>' })), true;
+      if (!sameSite(req, who)) return html(res, 403, messagePage({ title: 'Admin', heading: 'Request refused', text: 'Cross-site request refused: changes can only be made from narado’s own admin console.', action: '<a class="btn secondary" href="/admin">Admin console</a>' })), true;
       const form = await readForm(req);
       openDialog = form.get('_dlg');
 
       if (p === '/admin/signin') return await signin(form, who), savedAndRestart(res, '/admin?saved=signin'), true;
-      if (p === '/admin/admins') {
+      if (p === '/admin/admins' || p === '/admin/admins/add' || p === '/admin/admins/remove') {
         if (settings.source('NARADO_ADMINS', realEnv) === 'env') throw new Error('Admins are set in the server environment');
-        const list = String(form.get('NARADO_ADMINS') || '')
-          .split(/[,\s]+/)
-          .map((s) => s.trim().toLowerCase())
-          .filter(Boolean);
-        if (list.some((e) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))) throw new Error('Enter email addresses, separated by commas');
+        const now = adminsFrom(env);
+        const email = String(form.get('email') || '').trim().toLowerCase();
+        const list =
+          p === '/admin/admins/add'
+            ? [...new Set([...now, email])]
+            : p === '/admin/admins/remove'
+              ? now.filter((x) => x !== email)
+              : String(form.get('NARADO_ADMINS') || '')
+                  .split(/[,\s]+/)
+                  .map((x) => x.trim().toLowerCase())
+                  .filter(Boolean);
+        if (list.some((e) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))) throw new Error(p === '/admin/admins' ? 'Enter email addresses, separated by commas' : `“${email}” isn’t an email address`);
         if (!list.length) throw new Error('Name at least one admin');
         if (who.email && !list.includes(String(who.email).toLowerCase())) throw new Error("You can't remove yourself; ask another admin");
         settings.set({ NARADO_ADMINS: list.join(',') }, who.email || who.name);
         log.log(`[narado] admin: ${who.name} set the admins (${list.length})`);
-        return savedAndRestart(res, '/admin?saved=admins'), true;
+        return savedAndRestart(res, '/admin?saved=admins#admins'), true;
       }
       if (p === '/admin/desktop') {
         const value = form.get('NARADO_DESKTOP_SEND');
@@ -892,7 +880,7 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
         try {
           const entries = await Promise.race([store.list('', { user: who.user || null }), new Promise((_, rej) => setTimeout(() => rej(new Error('No answer in 10 seconds')), 10000))]);
           log.log(`[narado] admin: ${who.name} tested secrets store ${st.id}: ok`);
-          return html(res, 200, adminPage(who, { text: `${st.id} answered: ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} at the top level${store.perPerson ? ` (as ${who.name})` : ''}.` }) + ''), true;
+          return html(res, 200, adminPage(who, { inline: true, text: `${st.id} answered: ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} at the top level${store.perPerson ? ` (as ${who.name})` : ''}.` }) + ''), true;
         } catch (err) {
           log.warn(`[narado] admin: ${who.name} tested secrets store ${st.id}: ${err.message}`);
           throw new Error(`${st.id} didn't answer: ${err.message}`);
@@ -901,7 +889,7 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
       const dev = /^\/admin\/devices\/([\w-]+)\/revoke$/.exec(p);
       if (dev) {
         desktop.adminRevoke(dev[1], who.name);
-        return redirect(res, '/admin?saved=device'), true;
+        return redirect(res, '/admin?saved=device#computers'), true;
       }
       if (p === '/admin/git/add') {
         const id = String(form.get('id') || '').trim();
@@ -948,7 +936,7 @@ ${auth.enabled ? `<section id="computers"><h2>Signed-in computers</h2><p class="
           return savedAndRestart(res, '/admin?saved=git'), true;
         }
       }
-      return html(res, 404, page({ title: 'Admin', nav: false, body: '<div class="banner err">Not found.</div>' })), true;
+      return html(res, 404, messagePage({ title: 'Admin', heading: 'Not found', text: 'There’s nothing at this address.', action: '<a class="btn secondary" href="/admin">Admin console</a>' })), true;
     } catch (err) {
       log.warn(`[narado] admin: ${err.message}`);
       return html(res, 400, adminPage(who, { text: err.message, error: true, open: openDialog })), true;

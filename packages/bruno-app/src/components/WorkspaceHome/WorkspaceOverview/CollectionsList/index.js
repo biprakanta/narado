@@ -17,6 +17,8 @@ import { mountCollection, showInFolder } from 'providers/ReduxStore/slices/colle
 import { removeCollectionFromWorkspaceAction } from 'providers/ReduxStore/slices/workspaces/actions';
 import { getRevealInFolderLabel } from 'utils/common/platform';
 import { normalizePath } from 'utils/common/path';
+import { friendlyPath } from 'components/Narado/paths';
+import { isNaradoWeb } from 'utils/common/product';
 import toast from 'react-hot-toast';
 import RenameCollection from 'components/Sidebar/Collections/Collection/RenameCollection';
 import RemoveCollections from 'components/Sidebar/Collections/Collection/RemoveCollections';
@@ -366,7 +368,8 @@ const CollectionsList = ({ workspace }) => {
                     <StatusBadge status="warning" size="xs">Not cloned</StatusBadge>
                   )}
                 </div>
-                <div className="collection-path">{collection.pathname}</div>
+                {/* On a narado server the folder is the server's; say where it comes from instead. */}
+                <div className="collection-path" title={friendlyPath(collection.pathname)}>{friendlyPath(collection.pathname)}</div>
                 {!isDefaultWorkspace && collection.isGitBacked && collection.gitRemoteUrl && (
                   <div className="collection-remote" title={collection.gitRemoteUrl}>
                     <IconBrandGit size={12} strokeWidth={1.75} />
@@ -404,16 +407,19 @@ const CollectionsList = ({ workspace }) => {
                           <IconShare size={16} strokeWidth={1.5} />
                           <span>Share</span>
                         </div>
-                        <div
-                          className="dropdown-item"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleShowInFolder(collection);
-                          }}
-                        >
-                          <IconFolder size={16} strokeWidth={1.5} />
-                          <span>{getRevealInFolderLabel()}</span>
-                        </div>
+                        {/* On a narado server the folder is on the server, not this computer. */}
+                        {!isNaradoWeb() && (
+                          <div
+                            className="dropdown-item"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleShowInFolder(collection);
+                            }}
+                          >
+                            <IconFolder size={16} strokeWidth={1.5} />
+                            <span>{getRevealInFolderLabel()}</span>
+                          </div>
+                        )}
                       </>
                     )}
                     {!collection.failedToOpen && (
