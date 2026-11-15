@@ -4,6 +4,7 @@ import semver from 'semver';
 import { addTab } from 'providers/ReduxStore/slices/tabs';
 import { savePreferences } from 'providers/ReduxStore/slices/app';
 import { version as currentVersion } from '../../../package.json';
+import { isNarado } from 'utils/common/product';
 
 const useChangelogOnUpdate = () => {
   const dispatch = useDispatch();
@@ -21,6 +22,8 @@ const useChangelogOnUpdate = () => {
 
   useEffect(() => {
     if (hasRunRef.current) return;
+    // narado follows Bruno's code, but Bruno's release notes aren't narado's to show.
+    if (isNarado()) return;
 
     // hasLaunchedBefore is set by electron-side onboarding before the renderer
     // receives preferences via main:load-preferences. Until that flips true,
