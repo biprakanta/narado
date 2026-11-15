@@ -28,6 +28,8 @@ const { createAuth } = require('./narado/auth');
 const { TokenStore } = require('./narado/mcp-tokens');
 const { WorkerPool, WorkerError } = require('./narado/workers');
 const { tokenService } = require('./narado/token-service');
+const { SecretsService, secretsService } = require('./narado/secrets');
+const { Identity } = require('./narado/secrets/identity');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -74,7 +76,13 @@ const main = async () => {
   ALLOWED_ORIGINS.add(auth.publicUrl);
 
   const tokens = new TokenStore({ dataDir: DATA_DIR });
-  const pool = new WorkerPool({ dataDir: DATA_DIR, multiUser: auth.enabled, publicPort: PORT, rpc: tokenService(tokens, auth.enabled) });
+  // Secrets stores (Phase 4e): credentials and narado's signing key stay in this process.
+  const identity = new Identity({ dataDir: DATA_DIR, issuer: auth.publicUrl });
+  const secrets = new SecretsService({ dataDir: DATA_DIR, identity });
+  const tokenCalls = tokenService(tokens, auth.enabled);
+  const secretCalls = secretsService(secrets);
+  const rpc = (user, method, args) => (method.startsWith('secrets.') ? secretCalls(user, method, args) : tokenCalls(user, method, args));
+  const pool = new WorkerPool({ dataDir: DATA_DIR, multiUser: auth.enabled, publicPort: PORT, rpc });
 
   const fail = (res, err) => {
     const status = err instanceof WorkerError ? err.status : 500;
@@ -108,6 +116,12 @@ const main = async () => {
 
   const server = http.createServer(async (req, res) => {
     try {
+      // narado's public signing key, for stores that check per-person tokens (Vault JWT auth).
+      if (new URL(req.url, 'http://x').pathname === '/auth/jwks.json' && req.method === 'GET') {
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'max-age=300' });
+        res.end(JSON.stringify(identity.jwks()));
+        return;
+      }
       if (await auth.handle(req, res)) return;
       if (new URL(req.url, 'http://x').pathname === '/mcp') return handleMcp(req, res);
       if (auth.enabled && !auth.userFor(req)) {
@@ -157,6 +171,7 @@ const main = async () => {
   server.listen(PORT, HOST, () => {
     console.log(`[narado] sign-in: ${auth.enabled ? `OIDC (${process.env.NARADO_OIDC_ISSUER}), public URL ${auth.publicUrl}` : 'off (single-user local mode)'}`);
     console.log(`[narado] one Bruno worker per ${auth.enabled ? `person, in ${path.join(DATA_DIR, 'users')}${pool.sandbox ? ', sandboxed' : ', NOT sandboxed (NARADO_WORKER_SANDBOX=0)'}` : 'server (local mode)'}`);
+    console.log(`[narado] secrets stores: ${secrets.enabled ? secrets.listStores().map((s) => `${s.id} (${s.type}${s.configured ? '' : ', no credentials'})`).join(', ') : 'none'}`);
     console.log(`[narado] MCP server at http://127.0.0.1:${PORT}/mcp`);
     console.log(`[narado] listening on http://${HOST}:${PORT} (data: ${DATA_DIR})`);
   });

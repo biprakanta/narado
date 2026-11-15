@@ -13,6 +13,7 @@ What each phase added:
 - **Phase 3:** OpenAPI storage and the MCP server.
 - **Phase 4b:** sign-in with OpenID Connect.
 - **Phase 4d:** a separate, sandboxed Bruno process for each person.
+- **Phase 4e:** secrets from HashiCorp Vault, AWS Secrets Manager, Google Secret Manager and Azure Key Vault.
 
 ## Run
 
@@ -94,9 +95,58 @@ With sign-in on, each person gets their own worker the first time they connect, 
 - **Sandbox.** Workers run under Node's permission model. A worker may read narado's code, its own folder and the shared `narado.json`, and write only its own folder. Another person's files, and the sign-in database, are refused.
 - **Scripts** only run in Bruno's Safe Mode (QuickJS); Developer Mode is refused, because Node's `vm` can be escaped.
 - **Turned off in a worker:** installing npm packages (install scripts run code) and Bruno's own Git clone and branch listing (any path, any URL). narado's Git section replaces the latter.
-- **Secrets stay in the front.** Sign-in settings (`NARADO_OIDC_*`) are not passed to workers. MCP tokens are stored only by the front; a worker can list, create, revoke and check only its own person's tokens.
+- **Secrets stay in the front.** Sign-in settings (`NARADO_OIDC_*`) and secrets-store credentials (`NARADO_SECRETS_*`) are not passed to workers. MCP tokens are stored only by the front; a worker can list, create, revoke and check only its own person's tokens.
 - **Lifecycle.** Idle workers stop after 30 minutes without a connection. A crashed or stopped worker starts again on the next request, and open pages reload to match it.
 - **Size.** About 60 to 170 MB of memory per active person.
+
+## Secrets
+
+Secrets stay in the organisation's secrets store. An environment variable holds a **reference**, which is committed to Git like any other value:
+
+```
+secret://<store>/<path>[#<field>]       for example  secret://vault/payments/staging#api_key
+```
+
+- **When a request is sent,** the person's worker asks the front for the values of the references in it. The front checks access, reads the store and answers. The worker swaps the references for values, only for sending: saving an environment never resolves anything.
+- **Values never reach the browser.** In everything a worker sends back (responses, timelines, script output, MCP results), a string that is exactly a secret's value turns back into its reference, and any other occurrence is masked as `••••••`, also when URL- or base64-encoded.
+- **Store credentials never reach a worker.** They are read by the front from `NARADO_SECRETS_<STORE ID>_*` variables, which workers do not get.
+- **Every read is logged** by the front with the person, store, path, repo and outcome, never the value. Values are cached for 60 seconds (`NARADO_SECRETS_CACHE_SECONDS`); access is checked every time.
+- **Picker:** the lock button in the Git section browses the stores (only what you may use), builds a reference and checks it without showing the value.
+
+Configure stores in `<data dir>/narado.json`:
+
+```json
+{
+  "secrets": {
+    "stores": [
+      { "id": "vault", "type": "vault", "url": "https://vault.acme.internal", "auth": { "method": "jwt", "role": "narado" } },
+      { "id": "aws", "type": "aws", "region": "ap-south-1" },
+      { "id": "gcp", "type": "gcp", "project": "acme-payments" },
+      { "id": "azure", "type": "azure", "vaultUrl": "https://acme-payments.vault.azure.net", "tenant": "<tenant id>" }
+    ],
+    "access": [
+      { "store": "aws", "paths": ["payments/staging/*"], "repos": ["github:acme/payments-api"], "people": ["*@acme.com"] }
+    ]
+  }
+}
+```
+
+| Type | Path in a reference | Credentials (`<ID>` is the store id in capitals) |
+|---|---|---|
+| `vault` (KV v2; `mount`, default `secret`; optional `namespace`) | the KV path; `#field` picks a key | `auth.method` `jwt`: none, see below. `approle`: `NARADO_SECRETS_<ID>_ROLE_ID`, `_SECRET_ID`. `token`: `NARADO_SECRETS_<ID>_TOKEN` |
+| `aws` (Secrets Manager) | the secret's name; `#field` reads a JSON secret | `NARADO_SECRETS_<ID>_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY`, optional `_SESSION_TOKEN` |
+| `gcp` (Secret Manager) | the secret's name, optional `@version` | `NARADO_SECRETS_<ID>_CREDENTIALS`: a service account key (JSON) |
+| `azure` (Key Vault) | the secret's name, optional `@version` | `NARADO_SECRETS_<ID>_CLIENT_ID`, `_CLIENT_SECRET` (an app registration) |
+
+Each store also takes an `endpoint` (or `authority`, `tokenUrl`) to point at a private endpoint or an emulator.
+
+**Who may read what.**
+
+- **Per person:** a Vault store with `"auth": { "method": "jwt", "role": "…" }` signs in as the person. narado signs a two-minute token naming them (`sub`, `email`, `name`, audience `vault`) with its own key, kept in `<data dir>/narado-identity-key.pem`. Vault's JWT auth method checks it against `<public URL>/auth/jwks.json`, so Vault's own policies decide. Set up Vault with `jwks_url` pointing there, `bound_issuer` set to narado's public URL, and a role with `user_claim=email` and `bound_audiences=vault`.
+- **Service identity** (every other store and sign-in method): narado gives out only what an `access` rule allows. A rule matches when everything it names holds: `store`, `paths` (`*` matches anything), `repos` (`<host id>:<owner>/<repo>` of the workspace the request is in) and `people` (emails or user ids, `*` allowed). With no matching rule, nothing is given out. Collections outside a Git workspace only match rules without `repos`.
+- Rules naming a per-person store narrow it further.
+
+`dev/vault/` sets up a local Vault with both kinds of store.
 
 ## MCP server
 
@@ -136,6 +186,8 @@ claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Autho
 | `NARADO_WORKER_IDLE_MINUTES` | `30` | Stop a person's worker after this long without a connection |
 | `NARADO_MAX_WORKERS` | `50` | Most workers at once; when full, the longest-idle one makes room, or new people get 503 |
 | `NARADO_WORKER_SANDBOX` | on with sign-in | `0` runs workers without Node's permission model. Only for debugging |
+| `NARADO_SECRETS_<STORE ID>_*` | none | Secrets store credentials (see Secrets) |
+| `NARADO_SECRETS_CACHE_SECONDS` | `60` | How long the front keeps a secret's value |
 
 ## Tests
 
@@ -160,7 +212,11 @@ The workspace tests run real Git against a local repo standing in for the host, 
 - **Folder and file pickers** are a browser prompt asking for a path on the server.
 - **Drag-and-drop file paths** are not available, because browsers don't expose them.
 - **Turned off:** the built-in terminal (it would give a shell on the server), window controls and native menus.
-- **Secrets** saved by Bruno are encrypted with a key file in each person's folder. The design replaces this with a server-side secrets store in Phase 4e.
+- **Bruno's own secret variables** (the "secret" checkbox) still work, encrypted with a key file in each person's folder. Prefer `secret://` references, which keep values in the organisation's store.
+- **Secret references and the repo.** Until Phase 4c, the front trusts the worker about which repo a request is in when applying `repos` rules; with per-person Git accounts it can check the person can read that repo.
+- **Scripts can read resolved secrets** (for example `bru.getEnvVar`) and could send them on in a request or encode them in ways masking does not catch. Who may change a repo's scripts is controlled by review in Git.
+- **Masking** skips values shorter than 4 characters, and does not catch a value inside Basic auth's encoded `user:password`.
+- **Revealing** a secret's value in the interface is not available yet.
 - **During a conflict**, the affected request shows as unreadable in the sidebar until a side is chosen, because the file holds Git's conflict markers.
 - **No webhooks yet:** merge request status is read when the Git panel opens or is refreshed.
 - **GitLab** is covered by unit tests only so far; it has not been run against a real GitLab instance.

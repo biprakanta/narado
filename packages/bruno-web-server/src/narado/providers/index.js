@@ -29,6 +29,7 @@ const loadHostConfig = (dataDir) => {
   const file = path.join(dataDir, 'narado.json');
   if (!fs.existsSync(file)) return DEFAULT_HOSTS;
   const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (parsed.hosts === undefined) return DEFAULT_HOSTS;
   if (!Array.isArray(parsed.hosts)) throw new Error(`${file}: "hosts" must be an array`);
   for (const h of parsed.hosts) {
     if (!h.id || !['github', 'gitlab'].includes(h.type)) {

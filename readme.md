@@ -22,6 +22,7 @@ Your collections live in your own GitHub or GitLab repositories, stored as OpenA
 - **Changes through review.** Saving on the default branch asks for a new branch, or a fork when you can only read the repo, and opens a pull or merge request. You can update from main and resolve conflicts in the interface.
 - **OpenAPI as the source of truth.** Requests are stored in the repo's `openapi.yaml`, with client-only data (examples, scripts, environments) in `.client/`. Edits in the interface go back into the spec, keeping its formatting.
 - **Company sign-in.** Any OpenID Connect provider: Okta, Microsoft Entra ID, Google Workspace, Keycloak and others. You can restrict sign-in to your email domains.
+- **Secrets stay in your secrets store.** Environments hold references such as `secret://vault/payments/staging#api_key`; the server swaps in values only when it sends, and the browser never sees them. Vault can decide per person; other stores follow access rules by repo and person.
 - **MCP server for AI assistants.** Assistants such as Claude Code can list, read and send requests and propose changes through `/mcp`, using personal tokens that act as the person who made them. Sends only reach hosts the workspace names, and secrets are masked.
 
 ## Quick start (development)
@@ -57,8 +58,8 @@ narado is in active development and not production-ready yet.
 
 | | |
 |---|---|
-| Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · a separate, sandboxed Bruno process per person · branding |
-| Next | Per-person Git accounts through a GitHub App and GitLab OAuth (4c); until then everyone uses the server's Git token. Then a pluggable secrets store with Vault and cloud secret managers (4e), and request-safety rules for every send (4a) |
+| Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · a separate, sandboxed Bruno process per person · secrets from Vault, AWS, Google Cloud and Azure · branding |
+| Next | Per-person Git accounts through a GitHub App and GitLab OAuth (4c); until then everyone uses the server's Git token. Then request-safety rules for every send (4a) |
 
 GitLab support has been tested against unit-test fakes only so far, not a real GitLab instance.
 

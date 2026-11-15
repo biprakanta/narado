@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { IconKey, IconPlus, IconRefresh } from '@tabler/icons';
+import { IconKey, IconLock, IconPlus, IconRefresh } from '@tabler/icons';
 import toast from 'react-hot-toast';
 import SidebarSection from 'components/Sidebar/SidebarSection';
 import ActionIcon from 'ui/ActionIcon';
 import OpenRepoModal from './OpenRepoModal';
 import GitPanelModal from './GitPanelModal';
 import McpTokensModal from './McpTokensModal';
+import SecretsModal from './SecretsModal';
 import { naradoApi, errorText, signOut } from './api';
 import { VeenaIcon } from './Brand';
 
@@ -15,6 +16,7 @@ const GitSection = () => {
   const [openRepo, setOpenRepo] = useState(false);
   const [panelPath, setPanelPath] = useState(null);
   const [tokensOpen, setTokensOpen] = useState(false);
+  const [secretsOpen, setSecretsOpen] = useState(false);
   const [auth, setAuth] = useState(() => window.naradoAuth || { mode: 'unknown', user: null });
 
   useEffect(() => {
@@ -36,6 +38,9 @@ const GitSection = () => {
 
   const actions = (
     <>
+      <ActionIcon label="Secrets" onClick={() => setSecretsOpen(true)} data-testid="narado-secrets-btn">
+        <IconLock size={14} stroke={1.5} aria-hidden="true" />
+      </ActionIcon>
       <ActionIcon label="MCP tokens" onClick={() => setTokensOpen(true)} data-testid="narado-mcp-btn">
         <IconKey size={14} stroke={1.5} aria-hidden="true" />
       </ActionIcon>
@@ -59,6 +64,7 @@ const GitSection = () => {
 
   return (
     <>
+      {secretsOpen && <SecretsModal onClose={() => setSecretsOpen(false)} />}
       {tokensOpen && <McpTokensModal onClose={() => setTokensOpen(false)} />}
       {openRepo && (
         <OpenRepoModal

@@ -22,8 +22,8 @@ const path = require('node:path');
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 const WORKER_SCRIPT = path.resolve(__dirname, '../worker.js');
 
-// Settings the worker must not see: sign-in secrets stay in the front.
-const PRIVATE_ENV = /^(NARADO_OIDC_|NARADO_GITHUB_APP_|NARADO_GITLAB_APP_|NARADO_SESSION_)/;
+// Settings the worker must not see: sign-in secrets and secrets-store credentials stay in the front.
+const PRIVATE_ENV = /^(NARADO_OIDC_|NARADO_GITHUB_APP_|NARADO_GITLAB_APP_|NARADO_SESSION_|NARADO_SECRETS_)/;
 
 class WorkerError extends Error {
   constructor(status, message) {

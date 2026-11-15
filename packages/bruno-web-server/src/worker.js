@@ -67,6 +67,7 @@ const CONFIG_DIR = process.env.NARADO_CONFIG_DIR || DATA_DIR;
 
 const ELECTRON_SRC = path.resolve(__dirname, '../../bruno-electron/src');
 const brunoRequire = (rel) => require(path.join(ELECTRON_SRC, rel));
+const { SecretRefs } = require('./narado/secrets/worker-side');
 
 /* ---------------------------------------------------------------------------
  * 2. Several people on one server: scripts only in the QuickJS sandbox.
@@ -287,6 +288,13 @@ const front = (() => {
       revoke: (id) => call('tokens.revoke', id),
       verify: (token) => call('tokens.verify', token),
       touch: (id) => call('tokens.touch', id)
+    },
+    // Secrets stores live in the front; it checks access as this worker's person.
+    secrets: {
+      stores: () => call('secrets.stores'),
+      resolve: (refs, ctx) => call('secrets.resolve', refs, ctx),
+      list: (store, prefix, ctx) => call('secrets.list', store, prefix, ctx),
+      check: (ref, ctx) => call('secrets.check', ref, ctx)
     }
   };
 })();
@@ -295,11 +303,15 @@ const main = async () => {
   const { WebSocketServer } = require('ws');
   const { mainWindow, onBrowserConnected, narado } = await startBruno();
 
+  // secret:// references are resolved just before a send, and cleaned from what goes back.
+  const secretRefs = new SecretRefs({ secrets: front.secrets, workspaces: narado.workspaces });
+  secretRefs.install(ipcMain);
+
   const sockets = new Set();
   const pending = new Map(); // server -> browser requests awaiting a reply
 
   hooks.broadcast = (channel, args) => {
-    const msg = JSON.stringify({ t: 'evt', ch: channel, ...encodeArgs(args) });
+    const msg = JSON.stringify({ t: 'evt', ch: channel, ...encodeArgs(secretRefs.clean(args)) });
     for (const ws of sockets) if (ws.readyState === ws.OPEN) ws.send(msg);
   };
 
@@ -307,7 +319,7 @@ const main = async () => {
     const ws = [...sockets].find((s) => s.readyState === s.OPEN);
     if (!ws) return Promise.reject(new Error('No browser connected'));
     const id = crypto.randomUUID();
-    ws.send(JSON.stringify({ t: 'req', id, kind, payload }));
+    ws.send(JSON.stringify({ t: 'req', id, kind, payload: secretRefs.clean(payload) }));
     return new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject });
       setTimeout(() => {
@@ -337,7 +349,7 @@ const main = async () => {
   const invoke = (channel, ...args) => {
     const handler = ipcMain.getHandler(channel);
     if (!handler) throw new Error(`No handler for ${channel}`);
-    return handler(event(), ...args);
+    return Promise.resolve(handler(event(), ...args)).then((v) => secretRefs.clean(v));
   };
   const mcp = require('./narado/mcp').createMcpHandler({
     call: invoke,
@@ -411,10 +423,10 @@ const main = async () => {
         } else {
           try {
             const value = await handler(event(), ...decodeArgs(msg.args, msg.u));
-            reply = { t: 'res', id: msg.id, ok: true, value };
+            reply = { t: 'res', id: msg.id, ok: true, value: secretRefs.clean(value) };
           } catch (err) {
             console.error(`[bruno-web] ${msg.ch} failed:`, err && err.stack ? err.stack : err);
-            reply = { t: 'res', id: msg.id, ok: false, error: errorMessage(msg.ch, err) };
+            reply = { t: 'res', id: msg.id, ok: false, error: secretRefs.clean(errorMessage(msg.ch, err)) };
           }
         }
         if (ws.readyState === ws.OPEN) {
