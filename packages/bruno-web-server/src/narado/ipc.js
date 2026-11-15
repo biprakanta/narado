@@ -278,6 +278,17 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       forkCloneUrl: fork ? fork.cloneUrl : undefined,
       sparse: await sparseFor(provider, repo, target)
     });
+    if (ws.lightened) {
+      // The old full clone was replaced by a light one: start this repo's views afresh.
+      const repoRoot = path.dirname(workspaces.worktreePath(hostId, repoPath, repo.defaultBranch));
+      for (const [dir, p] of [...projections.entries()]) {
+        if (dir.startsWith(repoRoot + path.sep)) {
+          await p.stop();
+          projections.delete(dir);
+        }
+      }
+      console.log(`[narado] ${repoPath} is now a light clone`);
+    }
     ws.collections = await collectionsFor(ws.path);
     await openCollections(ws.collections);
     return {

@@ -341,7 +341,7 @@ The workspace tests run real Git against a local repo standing in for the host, 
 
 - **Git accounts are separate from sign-in.** narado connects the Git account signed in to the person's browser, and doesn't check it belongs to the same person as the SSO account (only that no one else has it).
 - **Partial clones need the host for some local commands.** Reading a file Git hasn't fetched yet (a merge outside the collection folders, an allowlist file) contacts the host with the person's token, so it fails while the host is unreachable or the account is disconnected.
-- **Repositories cloned before light clones** stay full clones; delete the person's copy under `git/` to clone it again.
+- **Repositories cloned before light clones** become light the next time they're opened, but only when nothing local could be lost: at most a clean copy of the default branch, and every local branch already on the host. Otherwise they stay full and keep working.
 - **GitLab sign-in** is covered by the same code and tests as GitHub, but has not been tried against a real GitLab instance yet.
 - **Access tokens reach the worker.** Workers get short-lived access tokens (GitHub: 8 hours, GitLab: 2 hours) for the calls they make, never refresh tokens.
 - **The sandbox has gaps.**

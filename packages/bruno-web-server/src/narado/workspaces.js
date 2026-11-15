@@ -172,6 +172,7 @@ class WorkspaceManager {
     // any command, so every command on one gets the person's token: authFor(hostId) -> header.
     this.authFor = authFor;
     this.partial = new Map(); // base -> boolean
+    this.lightenedBases = new Map(); // base -> converted to a light clone on the last open
     // Generated Bruno collections for OpenAPI repos, mirroring the worktree layout.
     this.viewsRoot = path.join(dataDir, 'views');
     fs.mkdirSync(this.root, { recursive: true });
@@ -286,9 +287,46 @@ class WorkspaceManager {
    * Clone (bare) on first use, then fetch. With `forkCloneUrl`, also keep a `fork`
    * remote pointing at the person's fork. Returns the bare repo path.
    */
-  async ensureBase({ hostId, repoPath, cloneUrl, authHeader, forkCloneUrl, partial = false }) {
+  /**
+   * Turn a full clone made before light clones into a light one, when nothing local could
+   * be lost: at most a clean working copy of the default branch, and every local branch
+   * equal to the host's. Returns true when it did. Otherwise the clone stays as it is.
+   */
+  async lighten({ base, defaultBranch }) {
+    if (!fs.existsSync(path.join(base, 'HEAD')) || this.isPartial(base)) return false;
+    await this.git(['worktree', 'prune'], { cwd: base });
+    const list = (await this.git(['worktree', 'list', '--porcelain'], { cwd: base })).stdout;
+    const worktrees = list
+      .split('\n\n')
+      .map((block) => ({ path: (/^worktree (.+)$/m.exec(block) || [])[1], branch: ((/^branch refs\/heads\/(.+)$/m.exec(block) || [])[1]) || null, bare: /^bare$/m.test(block) }))
+      .filter((w) => w.path && !w.bare);
+    for (const w of worktrees) {
+      if (w.branch !== defaultBranch) return false;
+      const st = parseStatus((await this.git(['status', '--porcelain=v1', '-b', '-z'], { cwd: w.path })).stdout);
+      if (st.files.length) return false;
+    }
+    const heads = (await this.git(['for-each-ref', '--format=%(refname:short) %(objectname)', 'refs/heads'], { cwd: base })).stdout.split('\n').filter(Boolean);
+    for (const line of heads) {
+      const [branch, sha] = line.split(' ');
+      const { stdout, code } = await this.git(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`], { cwd: base, allowExit: [1] });
+      if (code !== 0 || stdout.trim() !== sha) return false; // not on the host as it is here
+    }
+    for (const w of worktrees) await this.git(['worktree', 'remove', '--force', w.path], { cwd: base });
+    fs.rmSync(base, { recursive: true, force: true });
+    this.partial.delete(base);
+    return true;
+  }
+
+  async ensureBase({ hostId, repoPath, cloneUrl, authHeader, forkCloneUrl, partial = false, defaultBranch = null }) {
     const base = this.basePath(hostId, repoPath);
     const env = authEnv(authHeader);
+    let lightened = false;
+    if (partial && defaultBranch && fs.existsSync(path.join(base, 'HEAD')) && !this.isPartial(base)) {
+      // Fetch first, so "equal to the host" means the host as it is now.
+      await this.git(['fetch', '--prune', '--quiet', 'origin'], { cwd: base, env });
+      lightened = await this.lighten({ base, defaultBranch });
+    }
+    this.lightenedBases.set(base, lightened);
     if (!fs.existsSync(path.join(base, 'HEAD'))) {
       fs.mkdirSync(path.dirname(base), { recursive: true });
       // A code repository is cloned without file contents; Git fetches the ones it needs.
@@ -355,7 +393,8 @@ class WorkspaceManager {
     const remote = via === 'fork' ? 'fork' : 'origin';
 
     return this.withLock(`${hostId}/${repoPath}`, async () => {
-      const base = await this.ensureBase({ hostId, repoPath, cloneUrl, authHeader, forkCloneUrl: via === 'fork' ? forkCloneUrl : undefined, partial: !!sparse });
+      const base = await this.ensureBase({ hostId, repoPath, cloneUrl, authHeader, forkCloneUrl: via === 'fork' ? forkCloneUrl : undefined, partial: !!sparse, defaultBranch });
+      const lightened = !!this.lightenedBases.get(base);
       const wt = this.worktreePath(hostId, repoPath, branch);
 
       // A branch belongs to one route (the repo or the fork); never switch it silently.
@@ -393,7 +432,7 @@ class WorkspaceManager {
       // (fast-forward only, and never over uncommitted edits).
       if (branch === defaultBranch) await this.fastForward(wt, `origin/${defaultBranch}`);
 
-      return { path: wt, branch, via: await this.viaFor(wt, branch), collections: findCollections(wt) };
+      return { path: wt, branch, via: await this.viaFor(wt, branch), collections: findCollections(wt), lightened };
     });
   }
 

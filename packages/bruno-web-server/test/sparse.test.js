@@ -112,3 +112,46 @@ test('API repos and repos opened without folders are still full clones', async (
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('an old full clone becomes light when nothing local could be lost, and stays full otherwise', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'narado-sparse-'));
+  try {
+    const { url } = await codeRepo(tmp);
+    const mgr = new WorkspaceManager({ dataDir: path.join(tmp, 'data'), authFor: async () => null });
+    const repo = { hostId: 'local', repoPath: 'acme/payments-service', cloneUrl: url, defaultBranch: 'main' };
+    const base = mgr.basePath('local', 'acme/payments-service');
+    const sparse = ['services/payments/api'];
+
+    // Made before light clones: a full clone with main open.
+    const full = await mgr.open({ ...repo, branch: 'main' });
+    assert.equal(mgr.isPartial(base), false);
+
+    // Uncommitted edits on main: left alone.
+    fs.appendFileSync(path.join(full.path, 'README.md'), 'local edit\n');
+    let again = await mgr.open({ ...repo, branch: 'main', sparse });
+    assert.equal(again.lightened, false);
+    assert.equal(mgr.isPartial(base), false);
+    assert.match(fs.readFileSync(path.join(full.path, 'README.md'), 'utf8'), /local edit/, 'the edit is still there');
+    await runGit(['checkout', '--', 'README.md'], { cwd: full.path });
+
+    // A local branch the host doesn't have: left alone.
+    const change = await mgr.open({ ...repo, branch: 'narado/alice/unpushed' });
+    fs.appendFileSync(path.join(change.path, 'README.md'), 'more\n');
+    await mgr.commit({ path: change.path, message: 'Not pushed yet', user });
+    again = await mgr.open({ ...repo, branch: 'main', sparse });
+    assert.equal(again.lightened, false);
+    assert.equal(mgr.isPartial(base), false);
+
+    // Pushed and closed: now it is safe, and main comes back as a light working copy.
+    await mgr.push({ ...repo, path: change.path, branch: 'narado/alice/unpushed', authHeader: null });
+    await runGit(['worktree', 'remove', '--force', change.path], { cwd: base });
+    again = await mgr.open({ ...repo, branch: 'main', sparse });
+    assert.equal(again.lightened, true);
+    assert.equal(mgr.isPartial(base), true);
+    assert.deepEqual(files(again.path).sort(), ['README.md', 'services/payments/api/.client/allowed-hosts.yml', 'services/payments/api/openapi.yaml']);
+    const { stdout } = await runGit(['ls-remote', url, 'refs/heads/narado/alice/unpushed']);
+    assert.ok(stdout.trim(), 'the pushed branch is safe on the host');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
