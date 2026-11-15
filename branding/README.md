@@ -128,6 +128,8 @@ Audited 15 Nov 2026. In narado, Bruno appears only where narado means Bruno itse
 - **The User-Agent:** requests say `narado bruno-runtime/<version>`, so APIs that recognise Bruno's runtime still do.
 - **Bruno's CDN:** Generate Documentation says, correctly, that it loads Bruno's scripts from a CDN.
 
+OAuth 2 sign-ins to APIs come back to narado's own `/oauth2/callback` (and `narado://` on the desktop), not `oauth.usebruno.com`.
+
 Hidden in narado: Bruno's documentation links (menu, search, Preferences → Beta, the apps' empty state), Bruno's announcements (the bell; narado doesn't contact appinfo.usebruno.com), usage data, and the `bruno://` link handler.
 
 Icons in the page: narado's favicon, icons, title, theme colour and manifest are in the HTML itself (`packages/bruno-app/rsbuild.config.mjs`), and the server answers `/favicon.ico` with narado's. Bump `ICON_VERSION` when the icons change. A paper-aeroplane icon on a tab is the Claude browser extension marking a tab it controls, not narado.
