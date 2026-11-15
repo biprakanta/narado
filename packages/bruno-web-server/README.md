@@ -345,7 +345,6 @@ The workspace tests run real Git against a local repo standing in for the host, 
 - **Git accounts and sign-in** are matched by verified email, which only works when people use their work email on the Git host; otherwise set `NARADO_GIT_ACCOUNT_MATCH=off` and rely on one account per person.
 - **Partial clones need the host for some local commands.** Reading a file Git hasn't fetched yet (a merge outside the collection folders, an allowlist file) contacts the host with the person's token, so it fails while the host is unreachable or the account is disconnected.
 - **Repositories cloned before light clones** become light the next time they're opened, but only when nothing local could be lost: at most a clean copy of the default branch, and every local branch already on the host. Otherwise they stay full and keep working.
-- **GitLab sign-in** is covered by the same code and tests as GitHub, but has not been tried against a real GitLab instance yet.
 - **Access tokens reach the worker.** Workers get short-lived access tokens (GitHub: 8 hours, GitLab: 2 hours) for the calls they make, never refresh tokens.
 - **The sandbox has gaps.**
   - Workers run as the same operating-system account as the front.
@@ -366,4 +365,4 @@ The workspace tests run real Git against a local repo standing in for the host, 
 - **Masking** skips values shorter than 4 characters, and does not catch a value inside Basic auth's encoded `user:password`.
 - **During a conflict**, the affected request shows as unreadable in the sidebar until a side is chosen, because the file holds Git's conflict markers.
 - **No webhooks yet:** merge request status is read when the Git panel opens or is refreshed.
-- **GitLab** is covered by unit tests only so far; it has not been run against a real GitLab instance.
+- **GitLab** has been tried against GitLab.com (connecting an account, a light clone, a merge request); self-managed GitLab uses the same code but hasn't been tried.

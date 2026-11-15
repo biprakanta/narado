@@ -60,9 +60,9 @@ narado is in active development and not production-ready yet.
 | | |
 |---|---|
 | Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · a separate, sandboxed Bruno process per person · secrets from Vault, AWS, Google Cloud and Azure · request safety (block list and per-repo host allowlists) · each person's own Git account (GitHub App, GitLab OAuth) · an API catalogue across repositories, including code repositories carrying their API, cloned with only their collection folders · one-click Sync of a personal copy into your workspace · branding |
-| Next | A desktop app for Windows and Mac (which also reaches services on your own machine), GitLab against a real instance, hosting, and checks that build on per-person accounts (branch protection on the allowlist, repo access for secrets rules). |
+| Next | A desktop app for Windows and Mac (which also reaches services on your own machine), and one container or OS user per person's worker. |
 
-GitLab support has been tested against unit-test fakes only so far, not a real GitLab instance.
+GitHub and GitLab have both been tried end to end against GitHub.com and GitLab.com: connecting an account, opening a repository (light clones included), editing, and opening a pull or merge request as the person.
 
 ## Built on Bruno
 
