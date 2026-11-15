@@ -46,7 +46,7 @@ jobs:
       matrix:
         include:
           # One Mac builds both chips (Intel is cross-built, as on a developer's Mac).
-          - { name: macOS, os: macos-14, target: mac, arch: 'arm64,x64' }
+          - { name: macOS, os: macos-latest, target: mac, arch: 'arm64,x64' }
           - { name: Windows, os: windows-latest, target: win, arch: x64 }
           - { name: Linux, os: ubuntu-latest, target: linux, arch: x64 }
     runs-on: ${{ matrix.os }}
