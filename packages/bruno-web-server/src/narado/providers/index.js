@@ -33,17 +33,22 @@ const loadHostConfig = (dataDir) => {
   if (!fs.existsSync(file)) return DEFAULT_HOSTS;
   const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (parsed.hosts === undefined) return DEFAULT_HOSTS;
-  if (!Array.isArray(parsed.hosts)) throw new Error(`${file}: "hosts" must be an array`);
-  for (const h of parsed.hosts) {
-    if (!h.id || !['github', 'gitlab'].includes(h.type)) {
-      throw new Error(`${file}: each host needs an "id" and a "type" of github or gitlab`);
+  return validateHosts(parsed.hosts, file);
+};
+
+const validateHosts = (hosts, where) => {
+  if (!Array.isArray(hosts)) throw new Error(`${where}: "hosts" must be an array`);
+  for (const h of hosts) {
+    if (!h || typeof h.id !== 'string' || !h.id || !['github', 'gitlab'].includes(h.type)) {
+      throw new Error(`${where}: each host needs an "id" and a "type" of github or gitlab`);
     }
-    if ('token' in h) throw new Error(`${file}: tokens must come from environment variables, not this file`);
+    if ('token' in h) throw new Error(`${where}: tokens must come from environment variables, not this file`);
+    if (h.url !== undefined && !/^https?:\/\/[^\s]+$/.test(String(h.url))) throw new Error(`${where}: "url" on host "${h.id}" must be an http(s) address`);
     if (h.exploreNamespaces !== undefined && (!Array.isArray(h.exploreNamespaces) || h.exploreNamespaces.some((n) => typeof n !== 'string'))) {
-      throw new Error(`${file}: "exploreNamespaces" on host "${h.id}" must be a list of user, organisation or group names`);
+      throw new Error(`${where}: "exploreNamespaces" on host "${h.id}" must be a list of user, organisation or group names`);
     }
   }
-  return parsed.hosts;
+  return hosts;
 };
 
 class ProviderRegistry {
@@ -52,6 +57,12 @@ class ProviderRegistry {
     this.env = env;
     this.fetchImpl = fetchImpl;
     this.tokenFor = tokenFor;
+    this.cache = new Map();
+  }
+
+  /** Replace the hosts (narado desktop takes them from its server). */
+  setHosts(hosts) {
+    this.hosts = validateHosts(hosts, 'hosts').map((h) => ({ ...h, tokenEnv: tokenEnvFor(h) }));
     this.cache = new Map();
   }
 

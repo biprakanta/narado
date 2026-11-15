@@ -1,0 +1,360 @@
+/**
+ * narado desktop's front (desktop phase D2, docs/desktop.md 3.1 and 3.5): the calls a
+ * worker makes to the server's front (Git tokens, secrets, devices), made over HTTPS with
+ * this computer's device session.
+ *
+ * Signing in: a one-time loopback listener on 127.0.0.1, PKCE and a state, the person
+ * signs in and approves this computer in the system browser, then the code is exchanged
+ * for a refresh token (rotating, kept encrypted with the OS's secure storage: Keychain,
+ * DPAPI or libsecret, through Electron's safeStorage) and an access token (memory only).
+ */
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const http = require('node:http');
+const os = require('node:os');
+const path = require('node:path');
+
+const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
+
+class NeedsSignIn extends Error {
+  constructor(message = 'Sign in to your narado server first (Git section, ⋯ menu).') {
+    super(message);
+    this.code = 'NEEDS_SIGN_IN';
+  }
+}
+
+class NeedsConnection extends Error {
+  constructor(server) {
+    super(`Can't reach your narado server (${server}). This needs a connection.`);
+    this.code = 'NEEDS_CONNECTION';
+  }
+}
+
+/** A server address people type: https, or http only for this computer (development). */
+const normaliseServer = (input) => {
+  let s = String(input || '').trim();
+  if (!s) throw new Error('Enter your narado server address');
+  if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+  let u;
+  try {
+    u = new URL(s);
+  } catch {
+    throw new Error(`"${input}" is not a web address`);
+  }
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && local)) throw new Error('The narado server address must start with https://');
+  if (u.username || u.password || u.search || u.hash) throw new Error('Enter just the server address, like https://narado.example.com');
+  return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`;
+};
+
+const htmlPage = (title, text) =>
+  `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font-family:system-ui;background:#17121F;color:#EDE4D8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p style="max-width:420px;text-align:center;line-height:1.5">${text}</p></body>`;
+
+class RemoteFront {
+  /**
+   * @param dataDir      where the (encrypted) session is kept
+   * @param safeStorage  Electron's safeStorage (encryptString / decryptString / isEncryptionAvailable)
+   * @param openExternal opens a URL in the system browser
+   */
+  constructor({ dataDir, safeStorage, openExternal, fetchImpl = fetch, deviceName = os.hostname(), platform = process.platform, log = console }) {
+    this.dataDir = dataDir;
+    this.safeStorage = safeStorage;
+    this.openExternal = openExternal;
+    this.fetch = fetchImpl;
+    this.deviceName = deviceName;
+    this.platform = platform;
+    this.log = log;
+    this.file = path.join(dataDir, 'desktop-session.bin');
+    this.serverFile = path.join(dataDir, 'desktop-server.json');
+    this.server = null;
+    this.refreshToken = null;
+    this.access = null; // { token, exp }
+    this.session = null; // { user, device, policy, hosts }
+    this.refreshing = null;
+    this.listeners = new Set();
+    this.load();
+
+    const call = (method, ...args) => this.call(method, args);
+    // Git access tokens, in memory only, until 5 minutes before they expire (10 minutes
+    // at most, so a disconnected account stops working here soon).
+    this.gitTokens = new Map();
+    this.git = {
+      status: () => call('git.status'),
+      token: async (hostId, opts = {}) => {
+        const hit = this.gitTokens.get(hostId);
+        if (hit && !opts.force && hit.until > Date.now()) return hit.value;
+        const value = await call('git.token', hostId, opts);
+        const until = Math.min(Date.now() + 10 * 60 * 1000, value && value.expiresAt ? value.expiresAt - 5 * 60 * 1000 : Infinity);
+        this.gitTokens.set(hostId, { value, until });
+        return value;
+      }
+    };
+    this.secrets = {
+      stores: () => call('secrets.stores'),
+      resolve: (refs, ctx) => call('secrets.resolve', refs, ctx || {}),
+      list: (store, prefix, ctx) => call('secrets.list', store, prefix, ctx || {}),
+      check: (ref, ctx) => call('secrets.check', ref, ctx || {}),
+      reveal: (ref, ctx) => call('secrets.reveal', ref, ctx || {})
+    };
+    this.devices = {
+      list: () => call('devices.list'),
+      revoke: (id) => call('devices.revoke', id)
+    };
+  }
+
+  /* ------------------------------------------------------------ saved session */
+
+  load() {
+    try {
+      const saved = JSON.parse(fs.readFileSync(this.serverFile, 'utf8'));
+      this.server = saved.server ? normaliseServer(saved.server) : null;
+      this.session = saved.session || null; // last known (shown while offline)
+    } catch {}
+    try {
+      if (this.server && fs.existsSync(this.file) && this.safeStorage.isEncryptionAvailable()) {
+        this.refreshToken = this.safeStorage.decryptString(fs.readFileSync(this.file));
+      }
+    } catch (err) {
+      this.log.warn(`[narado] desktop: couldn't read the saved sign-in (${err.message}); sign in again`);
+      this.refreshToken = null;
+    }
+  }
+
+  save() {
+    fs.mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(this.serverFile, JSON.stringify({ server: this.server, session: this.session }, null, 2), { mode: 0o600 });
+    if (this.refreshToken) {
+      if (!this.safeStorage.isEncryptionAvailable()) throw new Error("This computer's secure storage isn't available, so narado can't keep you signed in");
+      fs.writeFileSync(this.file, this.safeStorage.encryptString(this.refreshToken), { mode: 0o600 });
+    } else {
+      fs.rmSync(this.file, { force: true });
+    }
+  }
+
+  onChange(fn) {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  changed() {
+    for (const fn of this.listeners) {
+      try {
+        fn(this.status());
+      } catch {}
+    }
+  }
+
+  get signedIn() {
+    return !!(this.server && this.refreshToken);
+  }
+
+  status() {
+    return {
+      mode: 'server',
+      server: this.server,
+      signedIn: this.signedIn,
+      user: this.signedIn && this.session ? this.session.user : null,
+      device: this.signedIn && this.session ? this.session.device : null,
+      policy: this.session ? this.session.policy : null,
+      signingIn: !!this.pendingSignIn
+    };
+  }
+
+  /* ------------------------------------------------------------------- HTTP */
+
+  async post(pathname, body, token) {
+    let res;
+    try {
+      res = await this.fetch(`${this.server}${pathname}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(body)
+      });
+    } catch {
+      throw new NeedsConnection(this.server);
+    }
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  }
+
+  async get(pathname, token) {
+    let res;
+    try {
+      res = await this.fetch(`${this.server}${pathname}`, { headers: { authorization: `Bearer ${token}` } });
+    } catch {
+      throw new NeedsConnection(this.server);
+    }
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  }
+
+  /** Swap the refresh token (rotating) for a new access token. */
+  async refresh() {
+    if (!this.signedIn) throw new NeedsSignIn();
+    if (!this.refreshing) {
+      this.refreshing = (async () => {
+        const r = await this.post('/desktop/api/token', { grant_type: 'refresh_token', refresh_token: this.refreshToken });
+        if (r.status !== 200) {
+          if (r.body.error === 'invalid_grant') {
+            this.forget();
+            throw new NeedsSignIn(`${r.body.message || 'This computer was signed out.'} Sign in to your narado server again.`);
+          }
+          throw new Error(r.body.message || `narado server answered ${r.status}`);
+        }
+        this.accept(r.body);
+      })().finally(() => {
+        this.refreshing = null;
+      });
+    }
+    return this.refreshing;
+  }
+
+  accept(body) {
+    this.refreshToken = body.refresh_token;
+    this.access = { token: body.access_token, exp: Date.now() + (Number(body.expires_in) || 3600) * 1000 - 60 * 1000 };
+    this.session = { ...(this.session || {}), user: body.user, device: body.device };
+    this.save();
+  }
+
+  async accessToken() {
+    if (!this.access || this.access.exp < Date.now()) await this.refresh();
+    return this.access.token;
+  }
+
+  /** A front call (git.*, secrets.*, devices.*) as this computer's person. */
+  async call(method, args = []) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const token = await this.accessToken();
+      const r = await this.post('/desktop/api/call', { method, args }, token);
+      if (r.status === 401 && attempt === 0) {
+        this.access = null; // e.g. the server restarted
+        continue;
+      }
+      if (r.status !== 200) throw new Error(r.body.message || r.body.error || `narado server answered ${r.status}`);
+      return r.body.result;
+    }
+    throw new NeedsSignIn();
+  }
+
+  /** The person, device, policy and Git hosts from the server. */
+  async loadSession() {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await this.get('/desktop/api/session', await this.accessToken());
+      if (r.status === 401 && attempt === 0) {
+        this.access = null;
+        continue;
+      }
+      if (r.status !== 200) throw new Error(r.body.message || `narado server answered ${r.status}`);
+      this.session = r.body;
+      this.save();
+      this.changed();
+      return r.body;
+    }
+    throw new NeedsSignIn();
+  }
+
+  /** Report sends (desktop audit). Failures are left to the caller (queued in D3). */
+  async audit(events) {
+    if (!this.signedIn || !events.length) return;
+    const r = await this.post('/desktop/api/audit', { events }, await this.accessToken());
+    if (r.status !== 200) throw new Error(r.body.message || `narado server answered ${r.status}`);
+  }
+
+  /* ---------------------------------------------------------------- sign-in */
+
+  /**
+   * Sign in to `server` through the system browser. Resolves with the session once the
+   * person approved this computer; rejects if they cancel or after 5 minutes.
+   */
+  async signIn(serverInput) {
+    const server = normaliseServer(serverInput || this.server);
+    if (this.pendingSignIn) this.pendingSignIn.cancel('Started again');
+    const verifier = b64url(crypto.randomBytes(48));
+    const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
+    const state = b64url(crypto.randomBytes(24));
+
+    let finish;
+    const done = new Promise((resolve, reject) => (finish = { resolve, reject }));
+    done.catch(() => {}); // the browser may answer before we start waiting; handled below
+    const listener = http.createServer((req, res) => {
+      const url = new URL(req.url, 'http://127.0.0.1');
+      if (url.pathname !== '/callback') return res.writeHead(404).end();
+      if (url.searchParams.get('state') !== state) {
+        res.writeHead(400, { 'content-type': 'text/html; charset=utf-8' }).end(htmlPage('narado', 'This sign-in is out of date. Start again from narado desktop.'));
+        return;
+      }
+      const error = url.searchParams.get('error');
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(htmlPage('narado', error ? 'Sign-in cancelled. You can close this tab.' : 'narado desktop is signed in. You can close this tab and go back to the app.'));
+      if (error) finish.reject(new Error(error === 'access_denied' ? 'Sign-in was cancelled in the browser' : `Sign-in failed: ${error}`));
+      else finish.resolve(url.searchParams.get('code'));
+    });
+    await new Promise((resolve, reject) => listener.listen(0, '127.0.0.1', resolve).on('error', reject));
+    const redirectUri = `http://127.0.0.1:${listener.address().port}/callback`;
+    const timer = setTimeout(() => finish.reject(new Error('Sign-in timed out. Start again.')), SIGN_IN_TIMEOUT_MS);
+    this.pendingSignIn = { cancel: (why) => finish.reject(new Error(why)) };
+
+    try {
+      const start = new URL(`${server}/auth/desktop/start`);
+      start.search = new URLSearchParams({
+        redirect_uri: redirectUri,
+        state,
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        device_name: this.deviceName,
+        platform: this.platform
+      }).toString();
+      this.pendingSignIn.url = start.toString();
+      this.changed();
+      // If the browser doesn't open, the interface offers this link to copy.
+      await Promise.resolve(this.openExternal(start.toString())).catch((err) => this.log.warn(`[narado] desktop: couldn't open the browser (${err.message})`));
+      const code = await done;
+      this.server = server;
+      const r = await this.post('/desktop/api/token', { grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: redirectUri });
+      if (r.status !== 200) throw new Error(r.body.message || `Sign-in failed (${r.status})`);
+      this.accept(r.body);
+      this.log.log(`[narado] desktop: signed in to ${server} as ${r.body.user.name} (device ${r.body.device.id})`);
+      await this.loadSession();
+      return this.status();
+    } finally {
+      clearTimeout(timer);
+      listener.close();
+      this.pendingSignIn = null;
+    }
+  }
+
+  /** Sign this computer out (on the server too, when reachable). */
+  async signOut() {
+    if (this.signedIn) {
+      try {
+        const token = await this.accessToken();
+        await this.post('/desktop/api/logout', {}, token);
+      } catch (err) {
+        this.log.warn(`[narado] desktop: couldn't tell the server about signing out (${err.message})`);
+      }
+    }
+    this.forget();
+    return this.status();
+  }
+
+  forget() {
+    this.refreshToken = null;
+    this.access = null;
+    this.gitTokens.clear();
+    if (this.session) this.session = { policy: this.session.policy, hosts: this.session.hosts };
+    this.save();
+    this.changed();
+  }
+
+  /** The link for the sign-in in progress, for people whose browser didn't open. */
+  signInLink() {
+    return this.pendingSignIn && this.pendingSignIn.url ? this.pendingSignIn.url : null;
+  }
+
+  /** Where to connect a Git account, in the system browser (the account stays on the server). */
+  connectUrl(hostId) {
+    if (!this.server) throw new NeedsSignIn();
+    return `${this.server}/auth/git/${encodeURIComponent(hostId)}/connect?return=${encodeURIComponent('/auth/desktop/done')}`;
+  }
+}
+
+module.exports = { RemoteFront, NeedsSignIn, NeedsConnection, normaliseServer };

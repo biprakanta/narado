@@ -162,12 +162,16 @@ const StatusBar = () => {
 
             <div className="status-bar-divider"></div>
 
-            <div className="status-bar-version" style={isNarado() ? { display: 'flex', alignItems: 'center', gap: 6 } : undefined}>
+            <div
+              className="status-bar-version"
+              style={isNarado() ? { display: 'flex', alignItems: 'center', gap: 6 } : undefined}
+              // Bruno is credited here and in the licence files (MIT), not in the bar itself.
+              title={isNarado() ? `Built on Bruno v${version}, the open-source API client` : undefined}
+            >
               {isNarado() ? (
                 <>
                   <NaradoMark size={14} />
                   <span style={{ fontWeight: 600 }}>narado</span>
-                  <span className="opacity-60">on Bruno v{version}</span>
                 </>
               ) : (
                 <>v{version}</>

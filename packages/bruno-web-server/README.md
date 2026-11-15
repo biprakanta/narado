@@ -306,6 +306,15 @@ claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Autho
 
 `scripts/mcp-smoke.js` exercises the endpoint with the MCP SDK's client.
 
+## narado desktop
+
+narado desktop (`npm run dev:narado-desktop` from the repository root, design in the design repo's `docs/desktop.md`) runs a person's worker on their own computer and uses this server as its front, over HTTPS. It needs sign-in to be configured.
+
+- **Signing in a computer:** the app opens `/auth/desktop/start` in the system browser with a loopback address (`http://127.0.0.1:<port>/callback`), PKCE and a state. The person signs in as usual and approves the computer on narado's page. The one-time code goes only to the loopback address and is exchanged at `POST /desktop/api/token`.
+- **Device sessions:** each computer gets a refresh token, which rotates on use, expires after 30 days unused (1 year at most) and is kept with the OS's secure storage (Keychain, DPAPI, libsecret). It also gets a 1-hour access token held in memory. Reusing an old refresh token signs the device out. People see their computers under **Devices** (Git section, ⋯ menu) and can sign any of them out; that takes effect at the device's next contact.
+- **The channel** (`/desktop/api/*`, Bearer token; requests with a browser `Origin` are refused) carries only `git.status`, `git.token`, `git.disconnect`, `secrets.*` and `devices.*`, checked as the person, as for a worker. The server logs each Git token and each secret resolved for a device, and every send a device reports (person, device, method, host, repository, status; no paths, headers or bodies).
+- **Git accounts** are connected in the system browser and stay on the server. The desktop caches Git access tokens in memory for at most 10 minutes.
+
 ## Settings
 
 | Variable | Default | Meaning |
@@ -314,7 +323,7 @@ claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Autho
 | `BRUNO_WEB_HOST` | `127.0.0.1` | Address to listen on |
 | `BRUNO_WEB_ORIGINS` | `http://localhost:3000`, `http://127.0.0.1:3000` and the server's own origin | Browser origins allowed to connect, comma-separated |
 | `BRUNO_WEB_DATA_DIR` | `~/.bruno-web` | Sign-in database, MCP tokens, `narado.json`; with sign-in, each person's folder under `users/` |
-| `BRUNO_WEB_SERVER` | `http://127.0.0.1:4100` | Where the rsbuild dev server forwards `/ipc` |
+| `BRUNO_WEB_SERVER` | `http://127.0.0.1:4100` | Where the rsbuild dev server forwards `/ipc`, `/auth` and `/desktop/api` |
 | `NARADO_<HOST ID>_APP_CLIENT_ID`, `_APP_CLIENT_SECRET`, `_APP_SLUG` | none | The GitHub App or GitLab application people connect their accounts through (see Git accounts) |
 | `NARADO_GIT_TOKEN_KEY` | a key file in the data folder | 32 bytes, base64: encrypts stored Git tokens |
 | `NARADO_<HOST ID>_TOKEN` | none | Shared token for a Git host, local mode only |
@@ -332,6 +341,7 @@ claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Autho
 | `NARADO_SECRETS_<STORE ID>_*` | none | Secrets store credentials (see Secrets) |
 | `NARADO_SECRETS_CACHE_SECONDS` | `60` | How long the front keeps a secret's value |
 | `NARADO_SECRETS_REVEAL` | on | `0` stops people seeing secret values in the Secrets dialog (Reveal) |
+| `NARADO_DESKTOP_SEND` | `any` | What narado desktop may send to: `any`, `private-only` or `allowlist-only` (enforced from desktop phase D3) |
 
 ## Tests
 

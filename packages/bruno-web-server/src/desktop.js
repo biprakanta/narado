@@ -11,10 +11,12 @@
  *     so values never reach the window (as the worker cleans what it sends to the browser);
  *   - the Git panel's view of the repo's allowlist.
  *
- * The "front" (Git accounts, secrets stores, MCP tokens) is, for now (desktop phase D1), the
- * same code running here with the desktop's own data folder, as in the server's single-user
- * local mode: Git uses NARADO_<HOST>_TOKEN. Phase D2 replaces it with calls to the team's
- * narado server over HTTPS (sign-in, Git tokens and secrets from the server).
+ * The "front" (Git accounts, secrets stores, devices) is the team's narado server, reached
+ * over HTTPS with this computer's device session (narado/desktop-front.js, desktop phase
+ * D2): Git access tokens and secret values come from the server, which keeps refresh
+ * tokens and store credentials. Until a server is set (or with none, for development), the
+ * same code runs here as in the server's single-user local mode: Git uses NARADO_<HOST>_TOKEN.
+ * NARADO_SERVER_URL presets the server address (an organisation's install setting).
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -24,6 +26,7 @@ const { SecretsService } = require('./narado/secrets');
 const { Identity } = require('./narado/secrets/identity');
 const { SecretRefs, REVEAL_CHANNEL } = require('./narado/secrets/worker-side');
 const { AllowlistReader } = require('./narado/requests/allowlist');
+const { RemoteFront, NeedsSignIn, normaliseServer } = require('./narado/desktop-front');
 
 /** Electron's ipcMain, with the getHandler the shared code expects. */
 const withGetHandler = (ipcMain) => {
@@ -81,11 +84,97 @@ const cleanOutgoing = ({ ipc, ipcMain, mainWindow, secretRefs }) => {
   return ipc;
 };
 
-const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollection, env = process.env, log = console }) => {
+/**
+ * The front in use: the server's once one is set, otherwise the local one. Calls are
+ * forwarded at call time, so signing in or out switches without restarting.
+ */
+const switchingFront = ({ local, remote }) => {
+  const current = () => (remote.server ? remote : local);
+  const notSignedIn = (fn) => async (...args) => {
+    const f = current();
+    if (f === remote && !remote.signedIn) throw new NeedsSignIn();
+    return fn(f)(...args);
+  };
+  return {
+    current,
+    git: {
+      status: async () => {
+        const f = current();
+        if (f === remote && !remote.signedIn) {
+          // Show the server's hosts as not connected, so the interface can say why.
+          const hosts = (remote.session && remote.session.hosts) || [];
+          return hosts.map((h) => ({ id: h.id, type: h.type, name: h.name || h.id, url: h.url, connected: false, needsSignIn: true }));
+        }
+        return f.git.status();
+      },
+      token: notSignedIn((f) => f.git.token)
+    },
+    secrets: {
+      stores: notSignedIn((f) => f.secrets.stores),
+      resolve: notSignedIn((f) => f.secrets.resolve),
+      list: notSignedIn((f) => f.secrets.list),
+      check: notSignedIn((f) => f.secrets.check),
+      reveal: notSignedIn((f) => f.secrets.reveal)
+    }
+  };
+};
+
+/** Sends made from this computer, reported to the server (person, device, method, host, repo, status). */
+const auditSends = ({ ipcMain, remote, locateRepo, log, intervalMs = 15000 }) => {
+  const queue = [];
+  const MAX = 5000; // kept in memory until reported (D3 keeps them across restarts)
+  const flush = async () => {
+    if (!queue.length || !remote.signedIn) return;
+    const batch = queue.splice(0, 500);
+    try {
+      await remote.audit(batch);
+    } catch (err) {
+      queue.unshift(...batch);
+      if (queue.length > MAX) queue.splice(0, queue.length - MAX);
+      log.warn(`[narado] desktop: ${queue.length} send report(s) waiting for the server (${err.message})`);
+    }
+  };
+  const timer = setInterval(flush, intervalMs);
+  if (timer.unref) timer.unref();
+  const handlers = ipcMain._invokeHandlers;
+  const original = handlers && handlers.get('send-http-request');
+  if (original) {
+    ipcMain.removeHandler('send-http-request');
+    ipcMain.handle('send-http-request', async (event, item, collection, ...rest) => {
+      const res = await original(event, item, collection, ...rest);
+      if (remote.signedIn) {
+        let host = '(templated)';
+        try {
+          host = new URL(String((item && item.request && item.request.url) || '')).host || host;
+        } catch {}
+        const loc = collection && collection.pathname ? locateRepo(collection.pathname) : null;
+        queue.push({
+          at: Date.now(),
+          method: String((item && item.request && item.request.method) || 'GET').toUpperCase(),
+          host,
+          repo: loc ? `${loc.hostId}:${loc.repoPath}` : null,
+          status: res && Number.isInteger(res.status) ? res.status : res && res.error ? 'error' : '?'
+        });
+        if (queue.length > MAX) queue.splice(0, queue.length - MAX);
+      }
+      return res;
+    });
+  }
+  return { flush, queue, stop: () => clearInterval(timer) };
+};
+
+const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollection, env = process.env, log = console, electron }) => {
+  const { shell, safeStorage } = electron || require('electron');
   const dataDir = path.join(app.getPath('userData'), 'narado-data');
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const ipc = withGetHandler(ipcMain);
-  const front = localFront({ dataDir, env });
+  const local = localFront({ dataDir, env });
+  const remote = new RemoteFront({ dataDir, safeStorage, openExternal: (url) => shell.openExternal(url), log });
+  if (!remote.server && env.NARADO_SERVER_URL) {
+    remote.server = normaliseServer(env.NARADO_SERVER_URL);
+    remote.save();
+  }
+  const front = switchingFront({ local, remote });
 
   const narado = registerNaradoIpc({
     ipcMain,
@@ -97,6 +186,17 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
     env,
     git: front.git
   });
+
+  // The server's Git hosts (self-managed GitLab included) replace the defaults.
+  const useServerHosts = (hosts) => {
+    if (!Array.isArray(hosts) || !hosts.length) return;
+    try {
+      narado.registry.setHosts(hosts);
+    } catch (err) {
+      log.warn(`[narado] desktop: ignoring the server's Git hosts (${err.message})`);
+    }
+  };
+  if (remote.server && remote.session) useServerHosts(remote.session.hosts);
 
   // A synced copy counts as part of the repo it came from, for secrets and request rules.
   const locateRepo = (p) => narado.workspaces.locate(p) || narado.sync.sourceOf(p);
@@ -126,17 +226,69 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
     };
   });
 
+  // Signing this computer in to the team's narado server (desktop phase D2).
+  const status = () => (remote.server ? remote.status() : { mode: 'local', server: null, signedIn: false, user: null, device: null, policy: null });
+  remote.onChange(() => {
+    if (!(mainWindow.isDestroyed && mainWindow.isDestroyed())) mainWindow.webContents.send('narado:desktop-status', status());
+  });
+  ipcMain.handle('narado:desktop-status', async () => status());
+  ipcMain.handle('narado:desktop-sign-in', async (_e, { server } = {}) => {
+    await remote.signIn(server);
+    useServerHosts(remote.session && remote.session.hosts);
+    if (!(mainWindow.isDestroyed && mainWindow.isDestroyed()) && mainWindow.focus) mainWindow.focus();
+    return status();
+  });
+  ipcMain.handle('narado:desktop-sign-in-link', async () => remote.signInLink());
+  ipcMain.handle('narado:desktop-sign-out', async () => {
+    await audit.flush();
+    await remote.signOut();
+    return status();
+  });
+  ipcMain.handle('narado:desktop-connect-git', async (_e, { hostId } = {}) => {
+    if (!remote.signedIn) throw new NeedsSignIn();
+    await shell.openExternal(remote.connectUrl(String(hostId || '')));
+    return true;
+  });
+  ipcMain.handle('narado:desktop-disconnect-git', async (_e, { hostId } = {}) => {
+    if (!remote.signedIn) throw new NeedsSignIn();
+    remote.gitTokens.delete(String(hostId || ''));
+    return remote.call('git.disconnect', [String(hostId || '')]);
+  });
+  ipcMain.handle('narado:devices', async () => {
+    if (!remote.signedIn) throw new NeedsSignIn();
+    return remote.devices.list();
+  });
+  ipcMain.handle('narado:device-revoke', async (_e, { id } = {}) => {
+    if (!remote.signedIn) throw new NeedsSignIn();
+    const ok = await remote.devices.revoke(id);
+    // Signing out this computer from its own Devices list.
+    if (remote.session && remote.session.device && remote.session.device.id === id) remote.forget();
+    return ok;
+  });
+
   // MCP on the desktop (a local MCP server for assistants on this computer) is phase D5.
   ipcMain.handle('narado:mcp-info', async () => ({ available: false, note: 'MCP comes to narado desktop in a later version.' }));
   ipcMain.handle('narado:mcp-tokens', async () => []);
 
+  const audit = auditSends({ ipcMain, remote, locateRepo, log });
   cleanOutgoing({ ipc, ipcMain, mainWindow, secretRefs });
 
-  const hosts = await front.git.status();
   log.log(`[narado] desktop: data in ${dataDir}`);
-  log.log(`[narado] desktop: Git hosts ${hosts.map((h) => `${h.id} (${h.connected ? `connected${h.via === 'server' ? ' with a token' : ''}` : 'not connected'})`).join(', ')}`);
-  log.log(`[narado] desktop: secrets stores ${front.secretsService.enabled ? front.secretsService.listStores().map((s) => s.id).join(', ') : 'none'}`);
-  return { narado, dataDir };
+  if (remote.server) {
+    log.log(`[narado] desktop: server ${remote.server} (${remote.signedIn ? 'signed in' : 'not signed in'})`);
+    // Refresh the person, policy and hosts in the background; offline keeps the last ones.
+    if (remote.signedIn) {
+      remote
+        .loadSession()
+        .then((s) => useServerHosts(s.hosts))
+        .catch((err) => log.warn(`[narado] desktop: ${err.message}`));
+    }
+  } else {
+    const hosts = await local.git.status();
+    log.log(`[narado] desktop: no narado server set; local mode. Git hosts ${hosts.map((h) => `${h.id} (${h.connected ? `connected${h.via === 'server' ? ' with a token' : ''}` : 'not connected'})`).join(', ')}`);
+    log.log(`[narado] desktop: secrets stores ${local.secretsService.enabled ? local.secretsService.listStores().map((s) => s.id).join(', ') : 'none'}`);
+  }
+  return { narado, dataDir, remote, front, audit };
 };
 
-module.exports = { start, withGetHandler, localFront, cleanOutgoing };
+module.exports = { start, withGetHandler, localFront, cleanOutgoing, switchingFront, auditSends };

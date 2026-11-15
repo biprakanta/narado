@@ -38,15 +38,22 @@ const ExploreModal = ({ onClose, onOpened, onMoreOptions, onSynced }) => {
   const timer = useRef(null);
   const store = useStore();
 
-  useEffect(() => {
+  const loadHosts = () =>
     naradoApi
       .hosts()
       .then((list) => {
         setHosts(list);
         const first = list.find((h) => h.connected);
-        if (first) setHostId(first.id);
+        if (first) setHostId((id) => id || first.id);
       })
       .catch((err) => setError(errorText(err)));
+
+  useEffect(() => {
+    loadHosts();
+    // narado desktop connects accounts in the system browser: look again on coming back.
+    if (!window.isNaradoDesktop) return undefined;
+    window.addEventListener('focus', loadHosts);
+    return () => window.removeEventListener('focus', loadHosts);
   }, []);
 
   const load = (refresh = false) =>

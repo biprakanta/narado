@@ -67,6 +67,10 @@ export default defineConfig({
       // Sign-in routes (narado Phase 4b).
       '/auth': {
         target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100'
+      },
+      // narado desktop's channel to the server (desktop phase D2).
+      '/desktop/api': {
+        target: process.env.BRUNO_WEB_SERVER || 'http://127.0.0.1:4100'
       }
     }
   },

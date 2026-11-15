@@ -35,12 +35,16 @@ const OpenRepoModal = ({ onClose, onOpened, initialHostId = '', initialRepoPath 
         setHosts(list);
         const preferred = list.find((h) => h.connected && h.id === initialHostId);
         const first = preferred || list.find((h) => h.connected);
-        setHostId(first ? first.id : '');
+        setHostId((cur) => (cur && list.some((h) => h.connected && h.id === cur) ? cur : first ? first.id : ''));
       })
       .catch((err) => setError(errorText(err)));
 
   useEffect(() => {
     loadHosts();
+    // narado desktop connects accounts in the system browser: look again on coming back.
+    if (!window.isNaradoDesktop) return undefined;
+    window.addEventListener('focus', loadHosts);
+    return () => window.removeEventListener('focus', loadHosts);
   }, []);
 
   const disconnect = async (h) => {

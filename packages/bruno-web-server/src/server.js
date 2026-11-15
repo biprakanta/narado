@@ -31,6 +31,7 @@ const { tokenService } = require('./narado/token-service');
 const { SecretsService, secretsService } = require('./narado/secrets');
 const { Identity } = require('./narado/secrets/identity');
 const { GitAccounts, gitService } = require('./narado/git-accounts');
+const { createDesktopAuth } = require('./narado/devices');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -96,8 +97,23 @@ const main = async () => {
     }
     return secretCalls(user, method, args);
   };
+  // narado desktop (desktop phase D2): sign-in for computers, devices, and its HTTPS channel.
+  let desktop = null;
   const rpc = (user, method, args) =>
-    method.startsWith('secrets.') ? checkedSecretCalls(user, method, args) : method.startsWith('git.') ? gitCalls(user, method, args) : tokenCalls(user, method, args);
+    method.startsWith('secrets.')
+      ? checkedSecretCalls(user, method, args)
+      : method.startsWith('git.')
+        ? gitCalls(user, method, args)
+        : method.startsWith('devices.')
+          ? desktop.deviceCalls(user, method, args)
+          : tokenCalls(user, method, args);
+  desktop = createDesktopAuth({
+    auth,
+    dataDir: DATA_DIR,
+    rpc,
+    // The desktop builds its Git host list from the server's (self-managed hosts included).
+    hosts: () => gitAccounts.registry.hosts.map(({ tokenEnv, ...h }) => h)
+  });
   const pool = new WorkerPool({ dataDir: DATA_DIR, multiUser: auth.enabled, publicPort: PORT, rpc, privateEnv: gitAccounts.tokenEnvNames() });
 
   const fail = (res, err) => {
@@ -148,6 +164,7 @@ const main = async () => {
         }
         if (await gitAccounts.handle(req, res, { user, allowedOrigins: ALLOWED_ORIGINS })) return;
       }
+      if (await desktop.handle(req, res)) return;
       if (await auth.handle(req, res)) return;
       if (new URL(req.url, 'http://x').pathname === '/mcp') return handleMcp(req, res);
       if (auth.enabled && !auth.userFor(req)) {
@@ -201,6 +218,7 @@ const main = async () => {
       `[narado] Git accounts: ${gitAccounts.status(null).map((h) => `${h.id} (${h.canConnect ? 'people connect their own' : 'no app configured'}${gitAccounts.sharedTokens && process.env[h.tokenEnv] ? ', shared token' : ''})`).join(', ')}`
     );
     console.log(`[narado] secrets stores: ${secrets.enabled ? secrets.listStores().map((s) => `${s.id} (${s.type}${s.configured ? '' : ', no credentials'})`).join(', ') : 'none'}`);
+    console.log(`[narado] narado desktop: ${auth.enabled ? `sign-in on, sends allowed: ${desktop.sendPolicy}` : 'off (needs sign-in)'}`);
     console.log(`[narado] MCP server at http://127.0.0.1:${PORT}/mcp`);
     console.log(`[narado] listening on http://${HOST}:${PORT} (data: ${DATA_DIR})`);
   });

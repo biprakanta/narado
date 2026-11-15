@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { IconCloudDownload, IconCompass, IconDots, IconGitBranch, IconKey, IconLock, IconLogout, IconRefresh } from '@tabler/icons';
+import { IconCloudDownload, IconCompass, IconDeviceLaptop, IconDots, IconGitBranch, IconKey, IconLock, IconLogin, IconLogout, IconRefresh } from '@tabler/icons';
 import toast from 'react-hot-toast';
 import SidebarSection from 'components/Sidebar/SidebarSection';
 import ActionIcon from 'ui/ActionIcon';
@@ -12,7 +12,9 @@ import ExploreModal, { syncSummary } from './ExploreModal';
 import GitPanelModal from './GitPanelModal';
 import McpTokensModal from './McpTokensModal';
 import SecretsModal from './SecretsModal';
-import { naradoApi, errorText, signOut, connectGitAccount } from './api';
+import DevicesModal from './DevicesModal';
+import DesktopSignInModal from './DesktopSignInModal';
+import { naradoApi, desktopApi, errorText, signOut, connectGitAccount } from './api';
 
 const OFFERED_KEY = 'narado.git-connect-offered';
 
@@ -40,12 +42,39 @@ const GitSection = () => {
   const [tokensOpen, setTokensOpen] = useState(false);
   const [secretsOpen, setSecretsOpen] = useState(false);
   const [auth, setAuth] = useState(() => window.naradoAuth || { mode: 'unknown', user: null });
+  const [devicesOpen, setDevicesOpen] = useState(false);
+  // narado desktop: this computer's sign-in to the team's narado server.
+  const [desk, setDesk] = useState(null);
+  const [signInOpen, setSignInOpen] = useState(false);
 
   useEffect(() => {
     const onAuth = (e) => setAuth(e.detail);
     window.addEventListener('narado:auth', onAuth);
     return () => window.removeEventListener('narado:auth', onAuth);
   }, []);
+
+  useEffect(() => {
+    if (!window.isNaradoDesktop) return undefined;
+    desktopApi
+      .status()
+      .then(setDesk)
+      .catch(() => {});
+    return desktopApi.onStatus((s) => s && setDesk(s));
+  }, []);
+
+  // On the desktop with a server set but not signed in, Git and secrets wait for sign-in.
+  const needsSignIn = !!(desk && desk.mode === 'server' && !desk.signedIn);
+  const serverHost = desk && desk.server ? desk.server.replace(/^https?:\/\//, '') : '';
+
+  const desktopSignOut = async () => {
+    if (!window.confirm(`Sign this computer out of ${serverHost}?`)) return;
+    try {
+      setDesk(await desktopApi.signOut());
+      toast.success(`Signed out of ${serverHost}`);
+    } catch (err) {
+      toast.error(errorText(err));
+    }
+  };
 
   const load = useCallback(() => {
     naradoApi
@@ -124,17 +153,25 @@ const GitSection = () => {
   }, []);
 
   // Explore is the everyday action; the rest lives in one menu.
+  const webSignedIn = !window.isNaradoDesktop && auth.mode === 'oidc' && auth.user;
+  const deskSignedIn = !!(desk && desk.signedIn);
   const menuItems = [
-    ...(auth.mode === 'oidc' && auth.user ? [{ id: 'who', type: 'label', label: auth.user.name || auth.user.email }] : []),
+    ...(webSignedIn ? [{ id: 'who', type: 'label', label: auth.user.name || auth.user.email }] : []),
+    ...(deskSignedIn ? [{ id: 'who', type: 'label', label: `${desk.user ? desk.user.name : 'Signed in'} · ${serverHost}` }] : []),
+    ...(window.isNaradoDesktop && !deskSignedIn ? [{ id: 'signin', label: 'Sign in to narado server…', leftSection: IconLogin, onClick: () => setSignInOpen(true) }] : []),
     { id: 'secrets', label: 'Secrets', leftSection: IconLock, onClick: () => setSecretsOpen(true) },
-    { id: 'mcp', label: 'MCP tokens', leftSection: IconKey, onClick: () => setTokensOpen(true) },
+    // The desktop's own MCP server comes later (desktop phase D5).
+    ...(window.isNaradoDesktop ? [] : [{ id: 'mcp', label: 'MCP tokens', leftSection: IconKey, onClick: () => setTokensOpen(true) }]),
+    ...(webSignedIn || deskSignedIn ? [{ id: 'devices', label: 'Devices', leftSection: IconDeviceLaptop, onClick: () => setDevicesOpen(true) }] : []),
     { id: 'refresh', label: 'Refresh', leftSection: IconRefresh, onClick: load },
-    ...(auth.mode === 'oidc' && auth.user ? [{ id: 'd1', type: 'divider' }, { id: 'signout', label: 'Sign out', leftSection: IconLogout, onClick: signOut }] : [])
+    ...(webSignedIn ? [{ id: 'd1', type: 'divider' }, { id: 'signout', label: 'Sign out', leftSection: IconLogout, onClick: signOut }] : []),
+    ...(deskSignedIn ? [{ id: 'd1', type: 'divider' }, { id: 'signout', label: `Sign out of ${serverHost}`, leftSection: IconLogout, onClick: desktopSignOut }] : [])
   ];
+  const exploreOrSignIn = () => (needsSignIn ? setSignInOpen(true) : setExplore(true));
 
   const actions = (
     <>
-      <ActionIcon label="Explore APIs" onClick={() => setExplore(true)} data-testid="narado-open-btn">
+      <ActionIcon label="Explore APIs" onClick={exploreOrSignIn} data-testid="narado-open-btn">
         <IconCompass size={14} stroke={1.5} aria-hidden="true" />
       </ActionIcon>
       <MenuDropdown items={menuItems} placement="bottom-end" data-testid="narado-git-menu">
@@ -157,6 +194,19 @@ const GitSection = () => {
   return (
     <>
       {secretsOpen && <SecretsModal onClose={() => setSecretsOpen(false)} />}
+      {devicesOpen && <DevicesModal thisDeviceId={desk && desk.device ? desk.device.id : null} onClose={() => setDevicesOpen(false)} />}
+      {signInOpen && (
+        <DesktopSignInModal
+          initialServer={(desk && desk.server) || ''}
+          onClose={(status) => {
+            setSignInOpen(false);
+            if (status) {
+              setDesk(status);
+              load();
+            }
+          }}
+        />
+      )}
       {tokensOpen && <McpTokensModal onClose={() => setTokensOpen(false)} />}
       {explore && (
         <ExploreModal
@@ -197,7 +247,12 @@ const GitSection = () => {
       )}
       <SidebarSection id="narado-git" title="Git" icon={IconGitBranch} actions={actions} className="narado-git-section">
         <GitSectionStyles className="flex flex-col pb-1" data-testid="narado-workspaces">
-          {workspaces.length === 0 && synced.length === 0 && (
+          {needsSignIn && (
+            <button type="button" className="narado-empty" onClick={() => setSignInOpen(true)} data-testid="narado-desktop-sign-in-prompt">
+              Sign in to {serverHost} to use your Git accounts and secrets
+            </button>
+          )}
+          {!needsSignIn && workspaces.length === 0 && synced.length === 0 && (
             <button type="button" className="narado-empty" onClick={() => setExplore(true)} data-testid="narado-explore-empty">
               Explore your team's APIs
             </button>

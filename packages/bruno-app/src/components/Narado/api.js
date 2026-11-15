@@ -36,17 +36,33 @@ export const naradoApi = {
   mcpInfo: () => invoke('narado:mcp-info'),
   mcpTokens: () => invoke('narado:mcp-tokens'),
   createMcpToken: (name, scope) => invoke('narado:mcp-tokens:create', { name, scope }),
-  revokeMcpToken: (id) => invoke('narado:mcp-tokens:revoke', { id })
+  revokeMcpToken: (id) => invoke('narado:mcp-tokens:revoke', { id }),
+  // Computers signed in with narado desktop (desktop phase D2).
+  devices: () => invoke('narado:devices'),
+  revokeDevice: (id) => invoke('narado:device-revoke', { id })
+};
+
+/** narado desktop: signing this computer in to the team's narado server. */
+export const desktopApi = {
+  status: () => invoke('narado:desktop-status'),
+  signIn: (server) => invoke('narado:desktop-sign-in', { server }),
+  signInLink: () => invoke('narado:desktop-sign-in-link'),
+  signOut: () => invoke('narado:desktop-sign-out'),
+  /** Status changes pushed by the app (signed in, signed out, session refreshed). */
+  onStatus: (fn) => (window.ipcRenderer && window.ipcRenderer.on ? window.ipcRenderer.on('narado:desktop-status', fn) : () => {})
 };
 
 /** Start connecting a Git account: the host asks the person, then sends them back here. */
 export const connectGitAccount = (host) => {
+  // narado desktop: the account is connected on the server, in the system browser.
+  if (window.isNaradoDesktop) return invoke('narado:desktop-connect-git', { hostId: host.id });
   const back = window.location.pathname + window.location.search;
   window.location.assign(`${host.connectUrl}?return=${encodeURIComponent(back)}`);
 };
 
 /** Disconnect a Git account (also withdraws narado's access on the host). */
 export const disconnectGitAccount = async (hostId) => {
+  if (window.isNaradoDesktop) return invoke('narado:desktop-disconnect-git', { hostId });
   const res = await fetch(`/auth/git/${encodeURIComponent(hostId)}/disconnect`, { method: 'POST', credentials: 'same-origin' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Could not disconnect (${res.status})`);

@@ -270,9 +270,10 @@ class GitAccounts {
       throw new NotConnected(this.notConnectedText(h));
     }
     const fresh = !account.accessExpiresAt || account.accessExpiresAt - Date.now() > REFRESH_MARGIN_MS;
-    if (fresh && !force) return { token: account.accessToken, via: 'account', login: account.login };
+    const expiresAt = account.accessExpiresAt || null;
+    if (fresh && !force) return { token: account.accessToken, via: 'account', login: account.login, expiresAt };
     if (!account.refreshToken) {
-      if (fresh) return { token: account.accessToken, via: 'account', login: account.login };
+      if (fresh) return { token: account.accessToken, via: 'account', login: account.login, expiresAt };
       this.store.remove(key, hostId);
       throw new NotConnected(`Your ${h.id} sign-in has expired. ${this.notConnectedText(h)}`);
     }
@@ -282,7 +283,8 @@ class GitAccounts {
       this.refreshing.set(k, p);
     }
     const token = await this.refreshing.get(k);
-    return { token, via: 'account', login: account.login };
+    const now = this.store.get(key, hostId);
+    return { token, via: 'account', login: account.login, expiresAt: (now && now.accessExpiresAt) || null };
   }
 
   /**
@@ -361,6 +363,23 @@ class GitAccounts {
       refreshToken: t.refreshToken || account.refreshToken
     });
     return t.accessToken;
+  }
+
+  /** Remove the person's account for a host, and withdraw narado's access on the host. */
+  async disconnect(user, hostId) {
+    const h = this.host(hostId);
+    const key = this.userKey(user);
+    if (!key) throw new Error('Sign in first');
+    const app = this.app(hostId);
+    const account = this.store.get(key, hostId);
+    this.store.remove(key, hostId);
+    if (app && account && account.accessToken) {
+      // The local record is gone either way.
+      const oauth = oauthFor(h, this.registry.build(h, 'placeholder'));
+      await oauth.revoke(app, account.accessToken, this.fetch).catch((err) => this.log.warn(`[narado] could not revoke the ${hostId} grant: ${err.message}`));
+    }
+    this.log.log(`[narado] ${key} disconnected ${hostId}`);
+    return true;
   }
 
   /** Handles /auth/git/<host>/connect, /auth/git/<host>/disconnect and /auth/<host>/callback. */
@@ -455,13 +474,7 @@ class GitAccounts {
     if (action === 'disconnect' && req.method === 'POST') {
       const origin = req.headers.origin;
       if (!origin || !allowedOrigins.has(origin)) return send(403, { error: 'Cross-site request refused' }), true;
-      const account = this.store.get(key, hostId);
-      this.store.remove(key, hostId);
-      if (account && account.accessToken) {
-        // Also withdraw narado's access on the host; the local record is gone either way.
-        await oauth.revoke(app, account.accessToken, this.fetch).catch((err) => this.log.warn(`[narado] could not revoke the ${hostId} grant: ${err.message}`));
-      }
-      this.log.log(`[narado] ${key} disconnected ${hostId}`);
+      await this.disconnect(user, hostId);
       return send(200, { ok: true }), true;
     }
 
@@ -475,6 +488,8 @@ const gitService = (accounts) => async (user, method, args) => {
   switch (method) {
     case 'git.status':
       return accounts.status(user);
+    case 'git.disconnect':
+      return accounts.disconnect(user, String(args[0] || ''));
     case 'git.token': {
       const [hostId, opts] = args;
       try {

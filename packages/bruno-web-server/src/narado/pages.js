@@ -58,6 +58,11 @@ h1{margin:0;font-family:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;font-
 .loading img{width:72px;height:72px}
 .going .btn{display:none}.going .loading{display:flex}
 .foot{margin-top:18px;font-size:12px;color:#958A9B}
+.secondary{display:block;width:100%;margin-top:10px;padding:11px 16px;border-radius:10px;cursor:pointer;
+  font:600 15px/1.2 inherit;color:#EDE4D8;background:transparent;border:1px solid #4A3F57}
+.secondary:hover{background:rgba(255,255,255,.04)}
+.device{margin:0 0 18px;font-size:14px;line-height:1.6;color:#C7BCCB;text-align:left}
+.device b{color:#EDE4D8;font-weight:600}
 `;
 
 const shell = ({ title, body }) => `<!doctype html>
@@ -89,4 +94,31 @@ ${notice ? `<p class="note${notice.error ? ' error' : ''}" role="${notice.error 
 window.addEventListener('pageshow',function(e){if(e.persisted)document.getElementById('card').classList.remove('going')});</script>`
   });
 
-module.exports = { signInPage, serveAsset, esc };
+/**
+ * Approving narado desktop on a computer (desktop sign-in, docs/desktop.md 3.5). The form
+ * posts to `action` with the one-time `request` id.
+ */
+const PLATFORM_NAMES = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
+
+const desktopApprovePage = ({ action, request, deviceName, platform, userName }) =>
+  shell({
+    title: 'Sign in narado desktop · narado',
+    body: `<form class="card" method="post" action="${esc(action)}">
+<p class="note">Sign in narado desktop as <b>${esc(userName)}</b>?</p>
+<p class="device">Computer: <b>${esc(deviceName || 'Unnamed computer')}</b>${platform ? ` (${esc(PLATFORM_NAMES[platform] || platform)})` : ''}<br>
+It will use your Git accounts and secrets for requests sent from that computer. You can sign it out at any time under Devices.</p>
+<input type="hidden" name="request" value="${esc(request)}">
+<button class="btn" name="decision" value="allow" type="submit">Sign in narado desktop</button>
+<button class="secondary" name="decision" value="deny" type="submit">Cancel</button>
+</form>
+<p class="foot">Only continue if you just started signing in from narado desktop.</p>`
+  });
+
+/** A short message page (desktop sign-in finished, cancelled or failed). */
+const messagePage = ({ title, text, error = false }) =>
+  shell({
+    title: `${title} · narado`,
+    body: `<div class="card"><p class="note${error ? ' error' : ''}" role="${error ? 'alert' : 'status'}">${esc(text)}</p></div>`
+  });
+
+module.exports = { signInPage, desktopApprovePage, messagePage, serveAsset, esc };

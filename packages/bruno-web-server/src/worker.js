@@ -304,6 +304,11 @@ const front = (() => {
       list: (store, prefix, ctx) => call('secrets.list', store, prefix, ctx),
       check: (ref, ctx) => call('secrets.check', ref, ctx),
       reveal: (ref, ctx) => call('secrets.reveal', ref, ctx)
+    },
+    // This person's narado desktop sign-ins (desktop phase D2).
+    devices: {
+      list: () => call('devices.list'),
+      revoke: (id) => call('devices.revoke', id)
     }
   };
 })();
@@ -359,6 +364,9 @@ const main = async () => {
     reviewCache.set(key, { at: Date.now(), value });
     return value;
   };
+
+  ipcMain.handle('narado:devices', async () => front.devices.list());
+  ipcMain.handle('narado:device-revoke', async (_e, { id } = {}) => front.devices.revoke(id));
 
   ipcMain.handle('narado:request-rules', async (_e, { path: p } = {}) => {
     const { rules, repo } = await rulesFor(p);
