@@ -3,8 +3,11 @@
  *
  * AI assistants connect over MCP's Streamable HTTP transport at /mcp and can:
  *   - list workspaces, repos, requests and environments, and read requests and specs;
+ *   - find APIs across the person's repositories (explore_apis) and sync a personal copy;
  *   - send a request, only to hosts the workspace itself names (its environments and the
- *     spec's servers, plus `.narado/allowed-hosts.yml`), with scripts and tests switched off;
+ *     spec's servers, plus `.narado/allowed-hosts.yml`), with scripts and tests switched off:
+ *     HTTP and GraphQL (send_request), WebSocket (send_websocket) and gRPC (call_grpc);
+ *   - pick one collection when a repository holds several (the `collection` argument);
  *   - when the server runs with NARADO_MCP_ALLOW_WRITE=1, also edit requests and save
  *     changes (branch or fork, merge request), through the same code as the interface.
  *
@@ -34,8 +37,9 @@ const MASK = '••••••';
 const text = (value) => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] });
 const fail = (message) => ({ isError: true, content: [{ type: 'text', text: message }] });
 
-/** Request files in a collection folder: .bru, and .yml requests in the newer format. */
-const listRequestFiles = (root) => {
+/** Request files in a collection folder (.bru), leaving out other collections inside it. */
+const listRequestFiles = (root, others = []) => {
+  const skip = new Set(others.map((o) => path.resolve(o)).filter((o) => o !== path.resolve(root)));
   const out = [];
   const walk = (dir) => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -43,7 +47,7 @@ const listRequestFiles = (root) => {
       const p = path.join(dir, e.name);
       const rel = path.relative(root, p);
       if (e.isDirectory()) {
-        if (rel !== 'environments') walk(p);
+        if (rel !== 'environments' && !skip.has(path.resolve(p))) walk(p);
       } else if (e.name.endsWith('.bru') && !['collection.bru', 'folder.bru'].includes(e.name)) {
         out.push(rel);
       }
@@ -140,7 +144,7 @@ const allowedHostsFor = ({ repoPath, collectionRoot }) => {
  * @param {object}   deps.workspaces      WorkspaceManager
  * @param {Function} deps.collectionsFor  (worktreePath) => [collection folders]
  */
-const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, workspaces, collectionsFor, dataDir, port, tokens: tokenStore, rulesFor = null, env = process.env, log = console }) => {
+const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, workspaces, collectionsFor, dataDir, port, tokens: tokenStore, rulesFor = null, onEvent = null, env = process.env, log = console }) => {
   const signInOn = !!(auth && auth.enabled);
   // The token store: the file in the data folder, or (in a per-user worker) the front
   // process's store, reached over IPC and limited to this worker's user.
@@ -207,13 +211,65 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
   }
   const allowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`];
 
-  /** Resolve a workspace id (its path, as list_workspaces returns it) to its collection folder. */
-  const resolveWorkspace = async (id) => {
+  /** A collection's folder in the repository ('' for the root), from its opened path. */
+  const collectionDir = (loc, p) => {
+    const view = workspaces.viewPath ? workspaces.viewPath(loc.path) : null;
+    const rel = view && (p === view || p.startsWith(view + path.sep)) ? path.relative(view, p) : path.relative(loc.path, p);
+    return rel.split(path.sep).join('/');
+  };
+
+  /**
+   * Resolve a workspace id (its path, as list_workspaces returns it) to one of its
+   * collections: `collection` is its folder in the repository (list_collections), or the
+   * first one when not given.
+   */
+  const resolveWorkspace = async (id, collection) => {
     const loc = workspaces.locate(String(id || ''));
     if (!loc) throw new Error(`Unknown workspace "${id}". Use list_workspaces, or open_repo to open one.`);
     const collections = await collectionsFor(loc.path);
     if (!collections.length) throw new Error('This workspace has no collection yet');
-    return { ...loc, collectionRoot: collections[0] };
+    let root = collections[0];
+    if (collection !== undefined && collection !== null) {
+      root = collections.find((c) => collectionDir(loc, c) === String(collection).replace(/^\/+|\/+$/g, ''));
+      if (!root) throw new Error(`No collection at "${collection}". Use list_collections to see this workspace's collections.`);
+    }
+    return { ...loc, collectionRoot: root, collections };
+  };
+
+  /** Bruno's item type, in words: http, graphql, grpc or websocket. */
+  const kindOf = (item) => ({ 'graphql-request': 'graphql', 'grpc-request': 'grpc', 'ws-request': 'websocket' })[item.type] || 'http';
+
+  /**
+   * Refuse a target the workspace may not reach: its repo's allowlist from the default
+   * branch (with request rules on), else the hosts it names itself. Any scheme: http(s),
+   * ws(s), grpc(s).
+   */
+  const checkTarget = async (ws, rawUrl, vars) => {
+    const resolved = interpolate(String(rawUrl || ''), vars);
+    // Path parameters (:id) would read as a port; fill them in after the host only.
+    const m = /^([a-z][a-z0-9+.-]*:\/\/[^/]+)(.*)$/i.exec(resolved);
+    const filled = m ? m[1] + m[2].replace(/:([A-Za-z0-9_]+)/g, 'x') : resolved;
+    let u;
+    try {
+      u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(filled) ? filled : `http://${filled}`);
+    } catch {
+      throw new Error(`The URL does not resolve to a full address: ${rawUrl}. Pick an environment that defines its variables.`);
+    }
+    const secure = ['https:', 'wss:', 'grpcs:'].includes(u.protocol);
+    const port = Number(u.port) || (secure ? 443 : 80);
+    if (rulesFor) {
+      const { rules } = await rulesFor(ws.collectionRoot);
+      const ok = rules && (['http:', 'https:'].includes(u.protocol) ? rules.allowsRequest(u.hostname, port, u.pathname) : rules.allowsHost(u.hostname, port));
+      if (!ok) {
+        const listed = rules ? rules.summary() : [];
+        throw new Error(`${u.hostname}:${port} is not on this repo's allowlist (its default branch). Allowed: ${listed.join(', ') || 'none'}. Add it to .narado/allowed-hosts.yml through a merge request.`);
+      }
+      return;
+    }
+    const allowed = allowedHostsFor({ repoPath: ws.path, collectionRoot: ws.collectionRoot });
+    if (!allowed.has(u.hostname.toLowerCase()) && !allowed.has(`${u.hostname.toLowerCase()}:${port}`)) {
+      throw new Error(`${u.hostname} is not a host this workspace names. Allowed: ${[...allowed].join(', ') || 'none'}. Add it to an environment or to .narado/allowed-hosts.yml.`);
+    }
   };
 
   const buildServer = (record, user) => {
@@ -225,9 +281,11 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
       { name: 'narado', version: '0.1.0' },
       {
         instructions:
-          'narado holds API collections stored in Git (OpenAPI specs plus client data). Start with list_workspaces; '
-          + 'open_repo opens a repo if needed. Requests are identified by their file path from list_requests. '
-          + 'send_request only reaches hosts the workspace itself names, and runs without scripts or tests. '
+          'narado holds API collections stored in Git (OpenAPI specs plus client data). To find an API, use explore_apis; '
+          + 'open_repo opens a repository (or sync_collection copies a collection into the person\'s workspace). Start from list_workspaces; '
+          + 'a repository can hold several collections (list_collections; pass `collection` to other tools). '
+          + 'Requests are identified by their file path from list_requests, which also gives their kind: send_request for http and graphql, '
+          + 'send_websocket for websocket, call_grpc for grpc. Sends only reach hosts the repository allows, and run without scripts or tests. '
           + (allowWrite ? 'Edits (update_request) stay local until save_changes commits, pushes and opens a merge request.' : 'This token is read-only.')
       }
     );
@@ -272,15 +330,68 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
     }, { readOnlyHint: true });
 
     tool(
-      'list_requests',
-      'Requests in a workspace, with the id (file path) used by get_request and send_request.',
+      'list_collections',
+      'Collections in a workspace. A code repository can hold several (for example one per service); pass the folder as `collection` to the other tools.',
       { workspace: z.string() },
       async ({ workspace }) => {
         const ws = await resolveWorkspace(workspace);
         return text(
-          listRequestFiles(ws.collectionRoot).map((rel) => {
+          ws.collections.map((c) => {
+            let name = path.basename(c);
+            try {
+              name = JSON.parse(fs.readFileSync(path.join(c, 'bruno.json'), 'utf8')).name || name;
+            } catch {}
+            return { collection: collectionDir(ws, c), name, requests: listRequestFiles(c, ws.collections).length };
+          })
+        );
+      },
+      { readOnlyHint: true }
+    );
+
+    tool(
+      'explore_apis',
+      'APIs across every repository the person can see on a Git host: the repositories that hold collections, and where. Found through the host, without cloning. '
+      + 'Open one with open_repo, or copy it into the person\'s workspace with sync_collection.',
+      { host: z.string().describe('Host id from list_hosts'), filter: z.string().optional().describe('Only APIs whose name, repository or folder contains this text') },
+      async ({ host, filter }) => {
+        let data = await call('narado:catalogue', { hostId: host });
+        for (let i = 0; i < 60 && data.scanning; i++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          data = await call('narado:catalogue', { hostId: host });
+        }
+        const words = String(filter || '').toLowerCase().split(/\s+/).filter(Boolean);
+        const repos = data.repos.filter((r) => !words.length || words.every((w) => [r.path, r.description, ...r.collections.map((c) => `${c.name} ${c.dir}`)].join(' ').toLowerCase().includes(w)));
+        return text({
+          repos: repos.map((r) => ({ repo: r.path, kind: r.shape === 'api' ? 'API repo' : 'code + API', access: r.access, collections: r.collections.map((c) => ({ name: c.name, folder: c.dir, type: c.kind, ...(c.problem ? { problem: c.problem } : {}) })) })),
+          withoutCollections: data.withoutCollections,
+          ...(data.scanning ? { note: 'Still looking through repositories; call again for the rest.' } : {}),
+          ...(data.errors.length ? { errors: data.errors } : {})
+        });
+      },
+      { readOnlyHint: true, openWorldHint: true }
+    );
+
+    tool(
+      'sync_collection',
+      'Copy a collection from a repository\'s default branch into the person\'s own workspace, or update their copy. Their edits to the copy are kept; nothing goes back to Git.',
+      { host: z.string(), repo: z.string().describe('owner/name'), folder: z.string().optional().describe('Collection folder from explore_apis; empty for the repository root') },
+      async ({ host, repo, folder }) => {
+        const res = await call('narado:sync', { hostId: host, repoPath: repo, dir: folder || '' });
+        return text({ name: res.name, commit: res.commit, branch: res.branch, added: res.added, updated: res.updated, removed: res.removed, keptYourEdits: res.kept, first: res.first });
+      },
+      { readOnlyHint: false, openWorldHint: true }
+    );
+
+    tool(
+      'list_requests',
+      'Requests in a collection, with the id (file path) used by get_request and the send tools, and their kind: http, graphql (send_request), websocket (send_websocket) or grpc (call_grpc).',
+      { workspace: z.string(), collection: z.string().optional().describe('Collection folder from list_collections, when the repository holds several') },
+      async ({ workspace, collection }) => {
+        const ws = await resolveWorkspace(workspace, collection);
+        return text(
+          listRequestFiles(ws.collectionRoot, ws.collections).map((rel) => {
             const { item } = readRequest(ws.collectionRoot, rel);
-            return { request: rel, name: item.name, method: item.request.method, url: item.request.url, folder: path.dirname(rel) === '.' ? null : path.dirname(rel) };
+            return { request: rel, name: item.name, kind: kindOf(item), method: item.request.method, url: item.request.url, folder: path.dirname(rel) === '.' ? null : path.dirname(rel) };
           })
         );
       },
@@ -290,9 +401,9 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
     tool(
       'get_request',
       'One request in full (secrets masked). For OpenAPI repos, also the operation from the spec.',
-      { workspace: z.string(), request: z.string().describe('Request id from list_requests') },
-      async ({ workspace, request }) => {
-        const ws = await resolveWorkspace(workspace);
+      { workspace: z.string(), collection: z.string().optional().describe('Collection folder from list_collections, when the repository holds several'), request: z.string().describe('Request id from list_requests') },
+      async ({ workspace, collection, request }) => {
+        const ws = await resolveWorkspace(workspace, collection);
         const { item } = readRequest(ws.collectionRoot, request);
         const result = { request, ...maskItem(item) };
         const specFile = findSpec(ws.path);
@@ -313,11 +424,10 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
     tool(
       'get_spec',
       'The OpenAPI spec of a workspace, as stored in the repo.',
-      { workspace: z.string() },
-      async ({ workspace }) => {
-        const loc = workspaces.locate(String(workspace));
-        if (!loc) throw new Error(`Unknown workspace "${workspace}"`);
-        const specFile = findSpec(loc.path);
+      { workspace: z.string(), collection: z.string().optional().describe('Collection folder from list_collections, when the repository holds several') },
+      async ({ workspace, collection }) => {
+        const ws = await resolveWorkspace(workspace, collection);
+        const specFile = findSpec(path.join(ws.path, ...collectionDir(ws, ws.collectionRoot).split('/').filter(Boolean)));
         if (!specFile) throw new Error('This workspace has no OpenAPI spec');
         return text(fs.readFileSync(specFile, 'utf8'));
       },
@@ -327,9 +437,9 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
     tool(
       'list_environments',
       'Environments of a workspace and their variables (secrets masked).',
-      { workspace: z.string() },
-      async ({ workspace }) => {
-        const ws = await resolveWorkspace(workspace);
+      { workspace: z.string(), collection: z.string().optional().describe('Collection folder from list_collections, when the repository holds several') },
+      async ({ workspace, collection }) => {
+        const ws = await resolveWorkspace(workspace, collection);
         return text(readEnvironments(ws.collectionRoot).map((e) => ({ name: e.name, variables: e.variables.map((v) => ({ name: v.name, value: maskValue(v.name, v.value, v.secret) })) })));
       },
       { readOnlyHint: true }
@@ -341,15 +451,20 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
       + 'Pre- and post-request scripts and tests do not run for requests sent this way.',
       {
         workspace: z.string(),
+        collection: z.string().optional().describe('Collection folder from list_collections, when the repository holds several'),
         request: z.string(),
         environment: z.string().optional().describe('Environment name from list_environments; defaults to the first'),
         params: z.record(z.string(), z.string()).optional().describe('Query or path parameter values to use for this send only'),
         headers: z.record(z.string(), z.string()).optional().describe('Header values to use for this send only'),
-        body: z.string().optional().describe('Body text to use for this send only (JSON as a string)')
+        body: z.string().optional().describe('Body text to use for this send only (JSON as a string; for GraphQL, the query)'),
+        variables: z.string().optional().describe('GraphQL variables as a JSON string, for this send only')
       },
-      async ({ workspace, request, environment, params, headers, body }) => {
-        const ws = await resolveWorkspace(workspace);
+      async ({ workspace, collection, request, environment, params, headers, body, variables }) => {
+        const ws = await resolveWorkspace(workspace, collection);
         const { full, item } = readRequest(ws.collectionRoot, request);
+        const kind = kindOf(item);
+        if (kind === 'grpc') throw new Error('This is a gRPC request: use call_grpc.');
+        if (kind === 'websocket') throw new Error('This is a WebSocket request: use send_websocket.');
         const envs = readEnvironments(ws.collectionRoot);
         const env = environment ? envs.find((e) => e.name === environment) : envs[0];
         if (environment && !env) throw new Error(`No environment "${environment}". Available: ${envs.map((e) => e.name).join(', ') || 'none'}`);
@@ -374,38 +489,25 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
             req.headers = [...(req.headers || []), { name: k, value: v, enabled: true }];
           }
         }
-        if (body !== undefined) req.body = { mode: req.body && req.body.mode !== 'none' ? req.body.mode : 'json', json: body, text: body };
+        if (kind === 'graphql') {
+          const gql = (req.body && req.body.graphql) || {};
+          if (body !== undefined || variables !== undefined) {
+            req.body = { ...(req.body || {}), mode: 'graphql', graphql: { query: body !== undefined ? body : gql.query || '', variables: variables !== undefined ? variables : gql.variables || '' } };
+          }
+        } else if (body !== undefined) req.body = { mode: req.body && req.body.mode !== 'none' ? req.body.mode : 'json', json: body, text: body };
         // Rebuild the query string from params, as Bruno's interface does.
         const base = String(req.url).split('?')[0];
         const query = (req.params || []).filter((p) => p.type === 'query' && p.enabled !== false).map((p) => (p.value === '' ? p.name : `${p.name}=${p.value}`)).join('&');
         req.url = query ? `${base}?${query}` : base;
 
         // Host check on the URL as it will be sent.
-        const target = hostOf(interpolate(req.url, vars).replace(/:([A-Za-z0-9_]+)/g, 'x'));
-        if (!target) throw new Error(`The URL does not resolve to a full address: ${req.url}. Pick an environment that defines its variables.`);
-        if (rulesFor) {
-          // The repo's allowlist from its default branch (Phase 4a), as for every send.
-          const u = new URL(interpolate(req.url, vars).replace(/:([A-Za-z0-9_]+)/g, 'x'));
-          const { rules } = await rulesFor(ws.path);
-          const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
-          if (!rules || !rules.allowsRequest(u.hostname, port, u.pathname)) {
-            const listed = rules ? rules.summary() : [];
-            throw new Error(
-              `${u.hostname}:${port} is not on this repo's allowlist (its default branch). Allowed: ${listed.join(', ') || 'none'}. Add it to .narado/allowed-hosts.yml through a merge request.`
-            );
-          }
-        } else {
-          const allowed = allowedHostsFor({ repoPath: ws.path, collectionRoot: ws.collectionRoot });
-          if (!allowed.has(target)) {
-            throw new Error(`${target} is not a host this workspace names. Allowed: ${[...allowed].join(', ') || 'none'}. Add it to an environment or to .narado/allowed-hosts.yml.`);
-          }
-        }
+        await checkTarget(ws, req.url, vars);
 
         // Scripts and tests can change the URL or make their own calls, so they are off here.
         req.script = {};
         req.tests = '';
         const sendItem = { ...item, uid: crypto.randomUUID(), pathname: full, request: req };
-        const collection = {
+        const brunoCollection = {
           uid: crypto.createHash('sha1').update(ws.collectionRoot).digest('hex').slice(0, 21),
           name: path.basename(ws.collectionRoot),
           pathname: ws.collectionRoot,
@@ -416,7 +518,7 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
           items: [sendItem]
         };
         const envForBruno = env ? { name: env.name, variables: env.variables.map((v) => ({ ...v, uid: crypto.randomUUID(), enabled: v.enabled !== false })) } : null;
-        const res = await call('send-http-request', sendItem, collection, envForBruno, {});
+        const res = await call('send-http-request', sendItem, brunoCollection, envForBruno, {});
 
         if (res && res.error && !res.status) throw new Error(`Request failed: ${res.error}`);
         let data = res.data;
@@ -431,6 +533,127 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
           ...(truncated ? { note: `Body truncated to ${MAX_BODY_CHARS} characters` } : {}),
           scriptsRun: false
         });
+      },
+      { readOnlyHint: false, openWorldHint: true }
+    );
+
+    /** Environment, Bruno collection and a target check for the streaming tools. */
+    const prepareStream = async ({ workspace, collection, request, environment, url }) => {
+      const ws = await resolveWorkspace(workspace, collection);
+      const { full, item } = readRequest(ws.collectionRoot, request);
+      const envs = readEnvironments(ws.collectionRoot);
+      const env = environment ? envs.find((e) => e.name === environment) : envs[0];
+      if (environment && !env) throw new Error(`No environment "${environment}". Available: ${envs.map((e) => e.name).join(', ') || 'none'}`);
+      const vars = Object.fromEntries(((env && env.variables) || []).filter((v) => v.enabled !== false).map((v) => [v.name, v.value]));
+      const req = JSON.parse(JSON.stringify(item.request));
+      if (url) req.url = url;
+      await checkTarget(ws, req.url, vars);
+      req.script = {};
+      req.tests = '';
+      let brunoConfig = { version: '1', name: path.basename(ws.collectionRoot), type: 'collection' };
+      try {
+        brunoConfig = { ...JSON.parse(fs.readFileSync(path.join(ws.collectionRoot, 'bruno.json'), 'utf8')), ...brunoConfig };
+      } catch {}
+      const sendItem = { ...item, uid: crypto.randomUUID(), pathname: full, request: req };
+      const brunoCollection = {
+        uid: crypto.createHash('sha1').update(ws.collectionRoot).digest('hex').slice(0, 21),
+        name: path.basename(ws.collectionRoot),
+        pathname: ws.collectionRoot,
+        root: { request: {} },
+        brunoConfig,
+        globalEnvironmentVariables: {},
+        runtimeVariables: {},
+        items: [sendItem]
+      };
+      const envForBruno = env ? { name: env.name, variables: env.variables.map((v) => ({ ...v, uid: crypto.randomUUID(), enabled: v.enabled !== false })) } : null;
+      return { item, sendItem, brunoCollection, envForBruno };
+    };
+
+    /** Collect Bruno's events for one request until `done` says so or the time runs out. */
+    const collectEvents = (requestId, prefix, done, timeoutMs) => {
+      if (!onEvent) throw new Error('Live connections are not available here');
+      const events = [];
+      let stop;
+      const finished = new Promise((resolve) => {
+        const timer = setTimeout(() => resolve('timeout'), timeoutMs);
+        stop = onEvent((channel, args) => {
+          if (!channel.startsWith(prefix) || args[0] !== requestId) return;
+          const name = channel.slice(prefix.length);
+          if (['request', 'connections-changed', 'connecting', 'disconnecting'].includes(name)) return;
+          events.push({ event: name, data: args[2] === undefined ? null : args[2] });
+          if (done(name)) {
+            clearTimeout(timer);
+            resolve(name);
+          }
+        });
+      });
+      return { events, finished: finished.finally(() => stop()) };
+    };
+
+    const trimEvents = (events) => {
+      let size = 0;
+      const out = [];
+      for (const e of events) {
+        const s = JSON.stringify(e);
+        size += s.length;
+        if (size > MAX_BODY_CHARS) return { events: out, note: `Stopped after ${out.length} events (size limit)` };
+        out.push(e);
+      }
+      return { events: out };
+    };
+
+    tool(
+      'send_websocket',
+      'Open a WebSocket request, send its messages (or the ones given), and return what the server sends back within a few seconds. Same host rules as send_request; scripts do not run.',
+      {
+        workspace: z.string(),
+        collection: z.string().optional().describe('Collection folder from list_collections, when the repository holds several'),
+        request: z.string().describe('A websocket request id from list_requests'),
+        environment: z.string().optional(),
+        messages: z.array(z.string()).optional().describe('Messages to send instead of the request\'s own'),
+        listen_seconds: z.number().min(1).max(30).optional().describe('How long to listen for replies; default 5')
+      },
+      async ({ workspace, collection, request, environment, messages, listen_seconds: seconds = 5 }) => {
+        const { item, sendItem, brunoCollection, envForBruno } = await prepareStream({ workspace, collection, request, environment });
+        if (kindOf(item) !== 'websocket') throw new Error('This is not a WebSocket request; use send_request or call_grpc.');
+        if (messages) sendItem.request.body = { ...(sendItem.request.body || {}), mode: 'ws', ws: messages.map((m, i) => ({ name: `message ${i + 1}`, type: 'json', content: m })) };
+        const { events, finished } = collectEvents(sendItem.uid, 'main:ws:', (n) => ['close', 'error'].includes(n), seconds * 1000);
+        try {
+          await call('renderer:ws:start-connection', { request: sendItem, collection: brunoCollection, environment: envForBruno, runtimeVariables: {}, settings: {} });
+          await finished;
+        } finally {
+          await Promise.resolve(call('renderer:ws:close-connection', sendItem.uid, 1000, 'done')).catch(() => {});
+        }
+        return text({ ...trimEvents(events), scriptsRun: false });
+      },
+      { readOnlyHint: false, openWorldHint: true }
+    );
+
+    tool(
+      'call_grpc',
+      'Call a gRPC request\'s method with its message (or the one given) and return the responses, status and trailers. Same host rules as send_request; scripts do not run.',
+      {
+        workspace: z.string(),
+        collection: z.string().optional().describe('Collection folder from list_collections, when the repository holds several'),
+        request: z.string().describe('A grpc request id from list_requests'),
+        environment: z.string().optional(),
+        message: z.string().optional().describe('Request message as JSON, instead of the request\'s own'),
+        timeout_seconds: z.number().min(1).max(60).optional().describe('How long to wait; default 15')
+      },
+      async ({ workspace, collection, request, environment, message, timeout_seconds: seconds = 15 }) => {
+        const { item, sendItem, brunoCollection, envForBruno } = await prepareStream({ workspace, collection, request, environment });
+        if (kindOf(item) !== 'grpc') throw new Error('This is not a gRPC request; use send_request or send_websocket.');
+        if (message !== undefined) sendItem.request.body = { ...(sendItem.request.body || {}), mode: 'grpc', grpc: [{ name: 'message 1', content: message }] };
+        const { events, finished } = collectEvents(sendItem.uid, 'grpc:', (n) => ['status', 'error', 'server-end-stream', 'server-cancel-stream'].includes(n), seconds * 1000);
+        try {
+          const started = await call('grpc:start-connection', { request: sendItem, collection: brunoCollection, environment: envForBruno, runtimeVariables: {} });
+          if (started && started.success === false) throw new Error(started.error || 'The call did not start');
+          await Promise.resolve(call('grpc:end-request', { requestId: sendItem.uid })).catch(() => {});
+          const outcome = await finished;
+          return text({ ...trimEvents(events), ...(outcome === 'timeout' ? { note: `No final status within ${seconds} seconds` } : {}), scriptsRun: false });
+        } finally {
+          await Promise.resolve(call('grpc:cancel-request', { requestId: sendItem.uid })).catch(() => {});
+        }
       },
       { readOnlyHint: false, openWorldHint: true }
     );
@@ -455,6 +678,7 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
         'Edit a request. Edits stay local in the workspace until save_changes. In OpenAPI repos they update the spec and .narado files.',
         {
           workspace: z.string(),
+          collection: z.string().optional().describe('Collection folder from list_collections, when the repository holds several'),
           request: z.string(),
           name: z.string().optional(),
           method: z.string().optional(),
@@ -464,8 +688,8 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
           params: z.array(z.object({ name: z.string(), value: z.string(), type: z.enum(['query', 'path']), enabled: z.boolean().optional() })).optional().describe('Replaces all parameters'),
           headers: z.array(z.object({ name: z.string(), value: z.string(), enabled: z.boolean().optional() })).optional().describe('Replaces all headers')
         },
-        async ({ workspace, request, name, method, url, docs, body, params, headers }) => {
-          const ws = await resolveWorkspace(workspace);
+        async ({ workspace, collection, request, name, method, url, docs, body, params, headers }) => {
+          const ws = await resolveWorkspace(workspace, collection);
           const { full, item } = readRequest(ws.collectionRoot, request);
           if (name !== undefined) item.name = name;
           if (method !== undefined) item.request.method = method.toUpperCase();

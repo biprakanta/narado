@@ -356,7 +356,14 @@ const main = async () => {
   const sockets = new Set();
   const pending = new Map(); // server -> browser requests awaiting a reply
 
+  // Listeners on Bruno's events, for MCP tools that wait for gRPC and WebSocket replies.
+  const eventTaps = new Set();
   hooks.broadcast = (channel, args) => {
+    for (const tap of eventTaps) {
+      try {
+        tap(channel, secretRefs.clean(args));
+      } catch {}
+    }
     const msg = JSON.stringify({ t: 'evt', ch: channel, ...encodeArgs(secretRefs.clean(args)) });
     for (const ws of sockets) if (ws.readyState === ws.OPEN) ws.send(msg);
   };
@@ -407,7 +414,11 @@ const main = async () => {
     dataDir: DATA_DIR,
     port: PUBLIC_PORT,
     tokens: front.tokens,
-    rulesFor
+    rulesFor,
+    onEvent: (fn) => {
+      eventTaps.add(fn);
+      return () => eventTaps.delete(fn);
+    }
   });
 
   const server = http.createServer(async (req, res) => {

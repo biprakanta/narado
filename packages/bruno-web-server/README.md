@@ -285,12 +285,12 @@ AI assistants can use narado through MCP (Streamable HTTP) at `http://127.0.0.1:
 **Tokens.** Each person creates their own tokens in narado: Git section, key button, **MCP tokens**. A token acts as the person who made it:
 
 - It records their account on each connected Git host when it is created. If narado is later connected to a different account, the token is refused.
-- **Read** tokens can list hosts, repos, workspaces, requests and environments, read requests and OpenAPI specs, and send requests.
+- **Read** tokens can find APIs across the person's repositories (`explore_apis`), list hosts, repos, workspaces, collections, requests and environments, read requests and OpenAPI specs, sync a personal copy of a collection (`sync_collection`), and send requests: HTTP and GraphQL (`send_request`), WebSocket (`send_websocket`, which sends the messages and collects replies for a few seconds) and gRPC (`call_grpc`). In a repository with several collections, tools take a `collection` folder (from `list_collections`).
 - **Read and write** tokens can also edit requests (`update_request`) and save changes (`save_changes`: a new branch or fork plus a merge request, or a commit on a change branch). Merge requests opened this way name the person and the token.
 - The token is shown once; only its SHA-256 hash is stored, in `<data dir>/mcp-tokens.json`. Tokens can be revoked from the same dialog.
 - `NARADO_MCP_ALLOW_WRITE=0` turns write tools off for every token.
 
-**Sending requests.** `send_request` only reaches hosts on the repo's allowlist from its default branch (see Request safety). Pre- and post-request scripts and tests do not run for MCP sends, because they could change the target or make their own calls. Secrets are masked in tool results.
+**Sending requests.** The send tools only reach hosts on the repo's allowlist from its default branch (see Request safety). Pre- and post-request scripts and tests do not run for MCP sends, because they could change the target or make their own calls. Secrets are masked in tool results.
 
 **Other protections.** Requests with a browser `Origin` are refused, and the `Host` header must be the server's own address.
 
@@ -348,7 +348,6 @@ The workspace tests run real Git against a local repo standing in for the host, 
   - Native add-ons are allowed, for file watching.
   - Network rules (Request safety) are enforced in the worker itself; a container per worker with its own egress rules adds a second layer.
   - For a hosted service, run each worker in its own container or OS user as well.
-- **MCP** sends HTTP requests only; GraphQL, gRPC and WebSocket requests are used from the interface.
 - **Request rules and other programs.** The block list and allowlists are applied inside the worker's Node process; programs it starts (git) are not covered, but their targets are narado's configured Git hosts. Names are resolved once per connection, by the system resolver.
 - **The allowlist's repo** is found from the collection's folder; a person's worker reads it from its own clone of the default branch, fetched with their own Git account.
 - **Data from before Phase 4d** at the top of the data folder is not moved into anyone's `users/` folder; people re-open their repositories.
