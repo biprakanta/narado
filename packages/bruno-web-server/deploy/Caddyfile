@@ -1,0 +1,10 @@
+# HTTPS for narado; WebSockets (/ipc) and MCP (/mcp) pass straight through.
+{$NARADO_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy narado:4100
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}

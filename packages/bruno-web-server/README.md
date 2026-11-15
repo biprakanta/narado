@@ -21,7 +21,7 @@ What each phase added:
 
 ## Run
 
-From the repo root, after `npm run setup`:
+To run narado for a team (Docker, HTTPS, backups), see [`deploy/README.md`](deploy/README.md). For development, from the repo root, after `npm run setup`:
 
 ```bash
 NARADO_GITHUB_TOKEN=<token> node packages/bruno-web-server/src/server.js

@@ -40,7 +40,7 @@ npm run dev:web
 
 Open http://localhost:3000. Without sign-in configured, narado is a single-user tool that uses that one Git token, and only listens on `127.0.0.1`. With sign-in, each person connects their own GitHub or GitLab account through narado's GitHub App or GitLab application instead. To try sign-in locally, start the Keycloak realm in [`packages/bruno-web-server/dev/keycloak`](packages/bruno-web-server/dev/keycloak) and follow its README.
 
-Configuration, Git hosts, sign-in, the MCP server and known limits are documented in [`packages/bruno-web-server/README.md`](packages/bruno-web-server/README.md).
+Configuration, Git hosts, sign-in, the MCP server and known limits are documented in [`packages/bruno-web-server/README.md`](packages/bruno-web-server/README.md). To run it for a team with Docker and HTTPS, see [`packages/bruno-web-server/deploy`](packages/bruno-web-server/deploy/README.md).
 
 ## How it fits together
 

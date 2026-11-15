@@ -1,0 +1,36 @@
+# narado behind Caddy, which gets and renews the TLS certificate for your domain.
+#   cp narado.env.example narado.env   # fill it in
+#   NARADO_DOMAIN=narado.example.com docker compose up -d
+services:
+  narado:
+    image: narado:latest
+    build:
+      context: ../../..
+      dockerfile: packages/bruno-web-server/deploy/Dockerfile
+    env_file: narado.env
+    environment:
+      NARADO_PUBLIC_URL: https://${NARADO_DOMAIN}
+      BRUNO_WEB_ORIGINS: https://${NARADO_DOMAIN}
+    volumes:
+      - narado-data:/data
+    restart: unless-stopped
+    expose:
+      - "4100"
+
+  caddy:
+    image: caddy:2.8.4
+    environment:
+      NARADO_DOMAIN: ${NARADO_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - narado
+    restart: unless-stopped
+
+volumes:
+  narado-data:
+  caddy-data:
