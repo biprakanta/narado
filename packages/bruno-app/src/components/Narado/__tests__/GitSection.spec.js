@@ -51,7 +51,8 @@ describe('Git section', () => {
     });
     renderSection();
     await waitFor(() => expect(assign).toHaveBeenCalledWith('/auth/git/github/connect?return=%2F'));
-    expect(screen.getByText('Explore your team\'s APIs')).toBeInTheDocument();
+    expect(screen.getByText('No repositories open')).toBeInTheDocument();
+    expect(screen.getByTestId('narado-explore-empty')).toHaveTextContent('Explore APIs');
 
     assign.mockClear();
     renderSection();

@@ -316,14 +316,13 @@ const SCRIPT = `
 })();
 `;
 
-const initials = (name) =>
-  String(name || '?')
-    .replace(/@.*/, '')
-    .split(/[\s._-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join('') || '?';
+const initials = (name) => {
+  // A name's first and last words (Mary-Jane Watson: MW); an email's name part (alice.smith@: AS).
+  const raw = String(name || '').trim();
+  const words = (raw.includes('@') ? raw.replace(/@.*/, '').split(/[._-]+/) : raw.split(/\s+/)).filter(Boolean);
+  if (!words.length) return '?';
+  return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : '')).toUpperCase();
+};
 
 /**
  * A page in the admin console.

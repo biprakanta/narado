@@ -62,6 +62,59 @@ const GitSectionStyles = styled.div`
     text-decoration: underline;
   }
 
+  .narado-empty-state {
+    margin: 4px 8px 8px;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px dashed ${(props) => props.theme.border?.border1 || 'rgba(127,127,127,.3)'};
+  }
+  .narado-empty-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .narado-empty-text {
+    margin-top: 4px;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    opacity: 0.7;
+  }
+  .narado-empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .narado-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid ${(props) => props.theme.border?.border1 || 'rgba(127,127,127,.3)'};
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+  .narado-btn:hover {
+    background: ${(props) => props.theme.sidebar?.collection?.item?.hoverBg || 'rgba(127,127,127,.12)'};
+  }
+  .narado-btn-primary {
+    border-color: transparent;
+    color: #1b1205;
+    background: ${(props) => props.theme.brand || '#FB9B1A'};
+  }
+  .narado-btn-primary:hover {
+    background: ${(props) => props.theme.brand || '#FB9B1A'};
+    filter: brightness(1.06);
+  }
+  .narado-btn:focus-visible {
+    outline: 2px solid ${(props) => props.theme.brand || '#FB9B1A'};
+    outline-offset: 1px;
+  }
+
   .narado-offline {
     display: flex;
     align-items: center;

@@ -16,6 +16,7 @@ import Bruno from 'components/Bruno';
 import { NaradoMark } from 'components/Narado/Brand';
 import { isNaradoWeb } from 'utils/common/product';
 import { isNaradoAvailable } from 'components/Narado/api';
+import AccountMenu from 'components/Narado/AccountMenu';
 import MenuDropdown from 'ui/MenuDropdown';
 import ActionIcon from 'ui/ActionIcon';
 import IconSidebarToggle from 'components/Icons/IconSidebarToggle';
@@ -316,6 +317,7 @@ const AppTitleBar = () => {
 
         {/* Right section: Action buttons */}
         <div className="titlebar-right">
+          {isNaradoWeb() && <AccountMenu />}
           <div className="titlebar-actions">
             {/* Toggle sidebar */}
             <ActionIcon
