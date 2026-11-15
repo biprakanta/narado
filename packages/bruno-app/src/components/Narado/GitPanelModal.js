@@ -12,6 +12,13 @@ const REVIEW_LABEL = { approved: 'approved', changes_requested: 'changes request
  * Git panel for one working copy: changes, commit, push, merge request,
  * update from the default branch and conflict resolution (design §7).
  */
+// What applies to sends from narado desktop, by the organisation's policy (NARADO_DESKTOP_SEND).
+const DESKTOP_RULES = {
+  'any': ' On this computer, public hosts must be listed; private and local addresses (localhost, your network, VPN) don\'t need to be. Cloud metadata addresses are always refused.',
+  'private-only': ' Your organisation lets narado desktop send only to private and local addresses (localhost, your network, VPN).',
+  'allowlist-only': ' Your organisation lets narado desktop send only to hosts listed here, private ones included.'
+};
+
 const GitPanelModal = ({ path, onClose, onSwitch }) => {
   const [status, setStatus] = useState(null);
   const [error, setError] = useState('');
@@ -59,9 +66,16 @@ const GitPanelModal = ({ path, onClose, onSwitch }) => {
       <div className="font-medium text-sm">Hosts this repo may send to</div>
       <div className="opacity-80">
         From {rules.branch || 'the default branch'}: <code>.narado/allowed-hosts.yml</code>, the spec's servers and URLs in environments. A host
-        added on a branch counts once it is merged.{rules.enforced ? '' : ' Not enforced on this server (single-user mode), except for MCP.'}
+        added on a branch counts once it is merged.
+        {rules.desktop
+          ? DESKTOP_RULES[rules.policy] || DESKTOP_RULES.any
+          : rules.enforced
+            ? ''
+            : ' Not enforced on this server (single-user mode), except for MCP.'}
       </div>
-      <div className="opacity-90" data-testid="narado-request-hosts">{rules.hosts.length ? rules.hosts.join(' · ') : 'None yet: every request from this repo is refused.'}</div>
+      <div className="opacity-90" data-testid="narado-request-hosts">
+        {rules.hosts.length ? rules.hosts.join(' · ') : rules.desktop && rules.policy !== 'allowlist-only' ? 'None yet: only private and local addresses can be reached.' : 'None yet: every request from this repo is refused.'}
+      </div>
       {!rules.codeowners && (
         <div style={{ color: 'var(--color-text-warning, #e8590c)' }} data-testid="narado-codeowners-warning">
           CODEOWNERS doesn't cover every .narado/allowed-hosts.yml on {rules.branch || 'the default branch'}. Add one, and require code-owner review in

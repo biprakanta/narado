@@ -103,4 +103,4 @@ class AddressPolicy {
   }
 }
 
-module.exports = { AddressPolicy, normalise, parseNetworks };
+module.exports = { AddressPolicy, normalise, parseNetworks, ALWAYS, PRIVATE, listOf };

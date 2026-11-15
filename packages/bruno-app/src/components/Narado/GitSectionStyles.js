@@ -61,6 +61,19 @@ const GitSectionStyles = styled.div`
     opacity: 1;
     text-decoration: underline;
   }
+
+  .narado-offline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 8px 4px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    color: ${(props) => props.theme.colors?.text?.warning || '#e8590c'};
+    background: ${(props) => props.theme.requestTabs?.bg || 'transparent'};
+    cursor: default;
+  }
 `;
 
 export default GitSectionStyles;

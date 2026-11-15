@@ -407,8 +407,12 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
   });
 
   /** Reopen a working copy's collections, for example after a server restart. */
+  // Needs nothing from the host, so a working copy opens offline too (narado desktop).
   ipcMain.handle('narado:reopen', async (_e, { path: folder }) => {
-    const ws = await workspaceFor(folder);
+    if (typeof folder !== 'string') throw new Error('A workspace path is required');
+    const ws = workspaces.locate(folder);
+    if (!ws) throw new Error('That folder is not a narado Git workspace');
+    await settle(ws.path);
     const collections = await collectionsFor(ws.path);
     await openCollections(collections);
     return { collections };

@@ -16,6 +16,8 @@ const path = require('node:path');
 
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
+const SECRET_OFFLINE_MS = 8 * 60 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 15 * 1000;
 
 class NeedsSignIn extends Error {
   constructor(message = 'Sign in to your narado server first (Git section, ⋯ menu).') {
@@ -72,6 +74,7 @@ class RemoteFront {
     this.access = null; // { token, exp }
     this.session = null; // { user, device, policy, hosts }
     this.refreshing = null;
+    this.online = true; // until a call fails
     this.listeners = new Set();
     this.load();
 
@@ -96,6 +99,32 @@ class RemoteFront {
       list: (store, prefix, ctx) => call('secrets.list', store, prefix, ctx || {}),
       check: (ref, ctx) => call('secrets.check', ref, ctx || {}),
       reveal: (ref, ctx) => call('secrets.reveal', ref, ctx || {})
+    };
+    // Offline (desktop phase D3): values resolved earlier in this session stay usable for
+    // 8 hours, in memory only, never on disk. Online, every send asks the server again,
+    // so its access rules and any change of value apply.
+    this.secretCache = new Map(); // `${ctx}|${ref}` -> { value, at }
+    this.secrets.resolve = async (refs, ctx = {}) => {
+      const scope = `${ctx.hostId || ''}:${ctx.repoPath || ''}`;
+      try {
+        const values = await call('secrets.resolve', refs, ctx);
+        for (const ref of refs) if (values && ref in values) this.secretCache.set(`${scope}|${ref}`, { value: values[ref], at: Date.now() });
+        return values;
+      } catch (err) {
+        if (err.code !== 'NEEDS_CONNECTION') throw err;
+        const out = {};
+        for (const ref of refs) {
+          const hit = this.secretCache.get(`${scope}|${ref}`);
+          if (!hit || Date.now() - hit.at > SECRET_OFFLINE_MS) {
+            const e = new Error(`${ref} can't be used offline: it wasn't used in the last 8 hours on this computer. Connect to your narado server to use it.`);
+            e.code = 'NEEDS_CONNECTION';
+            throw e;
+          }
+          out[ref] = hit.value;
+        }
+        this.log.log(`[narado] desktop: offline, using ${refs.length} secret value(s) from earlier in this session`);
+        return out;
+      }
     };
     this.devices = {
       list: () => call('devices.list'),
@@ -157,34 +186,48 @@ class RemoteFront {
       user: this.signedIn && this.session ? this.session.user : null,
       device: this.signedIn && this.session ? this.session.device : null,
       policy: this.session ? this.session.policy : null,
-      signingIn: !!this.pendingSignIn
+      signingIn: !!this.pendingSignIn,
+      online: this.online
     };
   }
 
   /* ------------------------------------------------------------------- HTTP */
 
-  async post(pathname, body, token) {
+  /** Whether the server answered last time (or false after a failed attempt). */
+  setOnline(online) {
+    if (this.online === online) return;
+    this.online = online;
+    this.log.log(`[narado] desktop: ${online ? 'connected to' : "can't reach"} ${this.server}`);
+    this.changed();
+  }
+
+  async request(pathname, init) {
     let res;
     try {
-      res = await this.fetch(`${this.server}${pathname}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify(body)
-      });
+      res = await this.fetch(`${this.server}${pathname}`, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     } catch {
+      this.setOnline(false);
       throw new NeedsConnection(this.server);
     }
+    // Behind a proxy (Caddy, the dev server), a server that's down answers 502-504.
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      this.setOnline(false);
+      throw new NeedsConnection(this.server);
+    }
+    this.setOnline(true);
     return { status: res.status, body: await res.json().catch(() => ({})) };
   }
 
-  async get(pathname, token) {
-    let res;
-    try {
-      res = await this.fetch(`${this.server}${pathname}`, { headers: { authorization: `Bearer ${token}` } });
-    } catch {
-      throw new NeedsConnection(this.server);
-    }
-    return { status: res.status, body: await res.json().catch(() => ({})) };
+  post(pathname, body, token) {
+    return this.request(pathname, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body)
+    });
+  }
+
+  get(pathname, token) {
+    return this.request(pathname, { headers: { authorization: `Bearer ${token}` } });
   }
 
   /** Swap the refresh token (rotating) for a new access token. */
@@ -340,6 +383,7 @@ class RemoteFront {
     this.refreshToken = null;
     this.access = null;
     this.gitTokens.clear();
+    this.secretCache.clear();
     if (this.session) this.session = { policy: this.session.policy, hosts: this.session.hosts };
     this.save();
     this.changed();

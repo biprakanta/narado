@@ -314,6 +314,8 @@ narado desktop (`npm run dev:narado-desktop` from the repository root, design in
 - **Device sessions:** each computer gets a refresh token, which rotates on use, expires after 30 days unused (1 year at most) and is kept with the OS's secure storage (Keychain, DPAPI, libsecret). It also gets a 1-hour access token held in memory. Reusing an old refresh token signs the device out. People see their computers under **Devices** (Git section, ⋯ menu) and can sign any of them out; that takes effect at the device's next contact.
 - **The channel** (`/desktop/api/*`, Bearer token; requests with a browser `Origin` are refused) carries only `git.status`, `git.token`, `git.disconnect`, `secrets.*` and `devices.*`, checked as the person, as for a worker. The server logs each Git token and each secret resolved for a device, and every send a device reports (person, device, method, host, repository, status; no paths, headers or bodies).
 - **Git accounts** are connected in the system browser and stay on the server. The desktop caches Git access tokens in memory for at most 10 minutes.
+- **What the desktop may send** (`src/narado/requests/desktop-guard.js`): cloud metadata and other link-local addresses never. Private and local addresses (localhost, the person's network, VPN) always, without being listed. Public hosts only if they're on the repo's allowlist from its default branch, path included. Collections outside Git can send anywhere not blocked. `NARADO_DESKTOP_SEND` narrows this: `private-only`, or `allowlist-only` (every send listed, nothing outside a repo). narado's own server and Git hosts are checked only against the blocked addresses.
+- **Offline:** working copies reopen, edits, commits and sends to reachable hosts work. Secret values resolved in the last 8 hours on that computer are reused, from memory only. Push, pull, new secrets and Explore scans need a connection; Explore shows its cached results. Send reports wait on disk (`pending-send-reports.json`: time, method, host, repository, status) and arrive marked "offline" when the app reconnects. It tries every 30 seconds, and a proxy's 502–504 counts as unreachable.
 
 ## Settings
 
@@ -341,7 +343,7 @@ narado desktop (`npm run dev:narado-desktop` from the repository root, design in
 | `NARADO_SECRETS_<STORE ID>_*` | none | Secrets store credentials (see Secrets) |
 | `NARADO_SECRETS_CACHE_SECONDS` | `60` | How long the front keeps a secret's value |
 | `NARADO_SECRETS_REVEAL` | on | `0` stops people seeing secret values in the Secrets dialog (Reveal) |
-| `NARADO_DESKTOP_SEND` | `any` | What narado desktop may send to: `any`, `private-only` or `allowlist-only` (enforced from desktop phase D3) |
+| `NARADO_DESKTOP_SEND` | `any` | What narado desktop may send to: `any`, `private-only` or `allowlist-only` (see narado desktop) |
 
 ## Tests
 

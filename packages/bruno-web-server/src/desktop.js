@@ -24,7 +24,9 @@ const { registerNaradoIpc } = require('./narado/ipc');
 const { GitAccounts } = require('./narado/git-accounts');
 const { SecretsService } = require('./narado/secrets');
 const { Identity } = require('./narado/secrets/identity');
-const { SecretRefs, REVEAL_CHANNEL } = require('./narado/secrets/worker-side');
+const { SecretRefs, REVEAL_CHANNEL, SEND_CHANNELS, collectionPathIn } = require('./narado/secrets/worker-side');
+const { DesktopGuard } = require('./narado/requests/desktop-guard');
+const { installSendRules } = require('./narado/requests/guard');
 const { AllowlistReader } = require('./narado/requests/allowlist');
 const { RemoteFront, NeedsSignIn, normaliseServer } = require('./narado/desktop-front');
 
@@ -120,17 +122,42 @@ const switchingFront = ({ local, remote }) => {
 };
 
 /** Sends made from this computer, reported to the server (person, device, method, host, repo, status). */
-const auditSends = ({ ipcMain, remote, locateRepo, log, intervalMs = 15000 }) => {
-  const queue = [];
-  const MAX = 5000; // kept in memory until reported (D3 keeps them across restarts)
+const auditSends = ({ ipcMain, remote, locateRepo, log, file = null, intervalMs = 15000 }) => {
+  const MAX = 5000;
+  // Kept on disk until reported, so reports made offline survive a restart. They hold no
+  // paths, headers or bodies: time, method, host, repository and status only.
+  let queue = [];
+  if (file) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (Array.isArray(saved)) queue = saved.slice(-MAX);
+    } catch {}
+  }
+  let saving = null;
+  const save = () => {
+    if (!file || saving) return;
+    saving = setTimeout(() => {
+      saving = null;
+      try {
+        if (queue.length) fs.writeFileSync(file, JSON.stringify(queue), { mode: 0o600 });
+        else fs.rmSync(file, { force: true });
+      } catch (err) {
+        log.warn(`[narado] desktop: couldn't keep send reports (${err.message})`);
+      }
+    }, 500);
+    if (saving.unref) saving.unref();
+  };
   const flush = async () => {
     if (!queue.length || !remote.signedIn) return;
     const batch = queue.splice(0, 500);
     try {
       await remote.audit(batch);
+      save();
+      if (queue.length) return flush();
     } catch (err) {
       queue.unshift(...batch);
       if (queue.length > MAX) queue.splice(0, queue.length - MAX);
+      save();
       log.warn(`[narado] desktop: ${queue.length} send report(s) waiting for the server (${err.message})`);
     }
   };
@@ -153,14 +180,21 @@ const auditSends = ({ ipcMain, remote, locateRepo, log, intervalMs = 15000 }) =>
           method: String((item && item.request && item.request.method) || 'GET').toUpperCase(),
           host,
           repo: loc ? `${loc.hostId}:${loc.repoPath}` : null,
-          status: res && Number.isInteger(res.status) ? res.status : res && res.error ? 'error' : '?'
+          status:
+            res && Number.isInteger(res.status)
+              ? res.status
+              : res && res.error
+                ? /ENARADOREFUSED|RequestRefused|narado never sends|allowlist|lets narado desktop/.test(String(res.error)) ? 'refused' : 'error'
+                : '?',
+          ...(remote.online === false ? { offline: true } : {})
         });
         if (queue.length > MAX) queue.splice(0, queue.length - MAX);
+        save();
       }
       return res;
     });
   }
-  return { flush, queue, stop: () => clearInterval(timer) };
+  return { flush, get queue() { return queue; }, stop: () => clearInterval(timer) };
 };
 
 const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollection, env = process.env, log = console, electron }) => {
@@ -200,15 +234,44 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
 
   // A synced copy counts as part of the repo it came from, for secrets and request rules.
   const locateRepo = (p) => narado.workspaces.locate(p) || narado.sync.sourceOf(p);
+
+  // Request rules on this computer (desktop phase D3, narado/requests/desktop-guard.js):
+  // cloud metadata never; public hosts only from the repo's allowlist; private and local
+  // addresses allowed; the organisation's policy can narrow it. Installed before secrets,
+  // so secret values are fetched from the server outside the send's rules.
+  const allowlists = new AllowlistReader({ envFor: (base) => narado.workspaces.gitEnvFor(base) });
+  const sendPolicy = () => (remote.server && remote.session && remote.session.policy && remote.session.policy.send) || 'any';
+  const hostNameOf = (u) => {
+    try {
+      return new URL(u).hostname;
+    } catch {
+      return null;
+    }
+  };
+  const rulesFor = async (collectionPath) => {
+    const loc = collectionPath ? locateRepo(collectionPath) : null;
+    if (!loc) return { rules: null, repo: null };
+    const repo = `${loc.hostId}:${loc.repoPath}`;
+    return { rules: await allowlists.rulesFor({ base: narado.workspaces.basePath(loc.hostId, loc.repoPath), repo }), repo };
+  };
+  const rulesOn = remote.server || env.NARADO_REQUEST_RULES !== '0'; // off only for local development without a server
+  if (rulesOn) {
+    const guard = new DesktopGuard({
+      policy: sendPolicy,
+      trusted: () => [hostNameOf(remote.server), ...narado.registry.listHosts().map((h) => hostNameOf(h.url))].filter(Boolean),
+      log
+    });
+    guard.install();
+    installSendRules({ ipcMain: ipc, guard, channels: SEND_CHANNELS, collectionPathIn, rulesFor });
+  }
+
   const secretRefs = new SecretRefs({ secrets: front.secrets, workspaces: { locate: locateRepo } });
   secretRefs.install(ipc);
 
-  // The Git panel's "hosts this repo may send to". Request rules for the desktop (cloud
-  // metadata refused, public hosts on the allowlist) come in desktop phase D3.
-  const allowlists = new AllowlistReader({ envFor: (base) => narado.workspaces.gitEnvFor(base) });
+  // The Git panel's "hosts this repo may send to".
   ipcMain.handle('narado:request-rules', async (_e, { path: p } = {}) => {
     const loc = p ? locateRepo(p) : null;
-    if (!loc) return { enforced: false, repo: null, branch: null, hosts: [], codeowners: false, codeOwnerReview: null, protectedBranch: null };
+    if (!loc) return { enforced: !!rulesOn, desktop: true, policy: sendPolicy(), repo: null, branch: null, hosts: [], codeowners: false, codeOwnerReview: null, protectedBranch: null };
     const rules = await allowlists.rulesFor({ base: narado.workspaces.basePath(loc.hostId, loc.repoPath), repo: `${loc.hostId}:${loc.repoPath}` });
     let review = { protected: null, codeOwnerReview: null };
     try {
@@ -216,7 +279,10 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
       if (provider.reviewRules && rules.branch) review = await provider.reviewRules(loc.repoPath, rules.branch);
     } catch {}
     return {
-      enforced: false,
+      enforced: !!rulesOn,
+      // On the desktop, private and local addresses don't need to be listed.
+      desktop: true,
+      policy: sendPolicy(),
       repo: `${loc.hostId}:${loc.repoPath}`,
       branch: rules.branch,
       hosts: rules.summary(),
@@ -270,7 +336,24 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
   ipcMain.handle('narado:mcp-info', async () => ({ available: false, note: 'MCP comes to narado desktop in a later version.' }));
   ipcMain.handle('narado:mcp-tokens', async () => []);
 
-  const audit = auditSends({ ipcMain, remote, locateRepo, log });
+  const audit = auditSends({ ipcMain, remote, locateRepo, log, file: path.join(dataDir, 'pending-send-reports.json') });
+
+  // Offline: look for the server every 30 seconds; when it's back, refresh the session and
+  // send the reports made meanwhile.
+  const reconnect = setInterval(() => {
+    if (!remote.signedIn || remote.online) return;
+    remote
+      .loadSession()
+      .then((s) => {
+        useServerHosts(s.hosts);
+        return audit.flush();
+      })
+      .catch(() => {});
+  }, 30 * 1000);
+  if (reconnect.unref) reconnect.unref();
+  remote.onChange((s) => {
+    if (s.online) audit.flush();
+  });
   cleanOutgoing({ ipc, ipcMain, mainWindow, secretRefs });
 
   log.log(`[narado] desktop: data in ${dataDir}`);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { IconCloudDownload, IconCompass, IconDeviceLaptop, IconDots, IconGitBranch, IconKey, IconLock, IconLogin, IconLogout, IconRefresh } from '@tabler/icons';
+import { IconCloudDownload, IconCloudOff, IconCompass, IconDeviceLaptop, IconDots, IconGitBranch, IconKey, IconLock, IconLogin, IconLogout, IconRefresh } from '@tabler/icons';
 import toast from 'react-hot-toast';
 import SidebarSection from 'components/Sidebar/SidebarSection';
 import ActionIcon from 'ui/ActionIcon';
@@ -247,6 +247,17 @@ const GitSection = () => {
       )}
       <SidebarSection id="narado-git" title="Git" icon={IconGitBranch} actions={actions} className="narado-git-section">
         <GitSectionStyles className="flex flex-col pb-1" data-testid="narado-workspaces">
+          {desk && desk.signedIn && desk.online === false && (
+            <div
+              className="narado-offline"
+              role="status"
+              title={`Can't reach ${serverHost}. Opening working copies, editing, committing and sending to hosts you can reach still work; push, pull, Explore and new secrets wait for a connection. narado tries again every 30 seconds.`}
+              data-testid="narado-offline"
+            >
+              <IconCloudOff size={14} stroke={1.5} aria-hidden="true" />
+              <span>Offline · working on this computer</span>
+            </div>
+          )}
           {needsSignIn && (
             <button type="button" className="narado-empty" onClick={() => setSignInOpen(true)} data-testid="narado-desktop-sign-in-prompt">
               Sign in to {serverHost} to use your Git accounts and secrets

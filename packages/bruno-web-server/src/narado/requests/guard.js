@@ -109,13 +109,13 @@ class RequestGuard {
     }
   }
 
-  checkAddress(address, host) {
+  checkAddress(address, host, port) {  
     const why = this.addresses.check(address, { trusted: this.trusted.has(String(host || '').toLowerCase()) });
     if (why) throw new RequestRefused(`${host && host !== address ? `${host} (${address})` : address} is a ${why}; narado does not send requests there`);
   }
 
   /** A dns.lookup-compatible function that refuses blocked addresses. */
-  checkingLookup(original, host) {
+  checkingLookup(original, host, port) {
     const guard = this;
     return function lookup(hostname, options, callback) {
       if (typeof options === 'function') {
@@ -127,7 +127,7 @@ class RequestGuard {
         if (err) return callback(err, address, family);
         guard.recordLookup(hostname, Array.isArray(address) ? address : [address]);
         try {
-          for (const a of Array.isArray(address) ? address.map((x) => x.address) : [address]) guard.checkAddress(a, host || hostname);
+          for (const a of Array.isArray(address) ? address.map((x) => x.address) : [address]) guard.checkAddress(a, host || hostname, port);
         } catch (e) {
           return callback(e);
         }
@@ -179,11 +179,11 @@ class RequestGuard {
       const secure = !!(this.encrypted || options.servername || this._tlsOptions);
       try {
         guard.checkHost(host, portOf(options.port, secure));
-        if (net.isIP(host)) guard.checkAddress(host, host);
+        if (net.isIP(host)) guard.checkAddress(host, host, portOf(options.port, secure));
       } catch (err) {
         return fail(err);
       }
-      const next = net.isIP(host) ? options : { ...options, lookup: guard.checkingLookup(options.lookup, host) };
+      const next = net.isIP(host) ? options : { ...options, lookup: guard.checkingLookup(options.lookup, host, portOf(options.port, secure)) };
       return cb ? originalConnect.call(this, next, cb) : originalConnect.call(this, next);
     };
 
@@ -249,7 +249,7 @@ class RequestGuard {
   }
 }
 
-module.exports = { RequestGuard, RequestRefused };
+module.exports = { RequestGuard, RequestRefused, portOf };
 
 /**
  * Wrap Bruno's send handlers so each runs inside a send context for its collection's repo.
