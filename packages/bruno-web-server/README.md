@@ -323,6 +323,11 @@ When a request's OAuth 2 settings leave *Callback URL* empty, narado uses its ow
 - Because the binding comes from the default branch, adding a secret goes through the repository's review.
 - Stores that sign in as each person still decide for themselves.
 - Admins' access rules cover anything not bound.
+- **Protected environments.** `.narado/environments.yml` at the repository's root (default branch) maps environment names to the access a person needs on the repository to use their secrets:
+  ```yaml
+  production: write
+  ```
+  The levels are `read` (the default), `write` or `admin`, as narado counts them: GitHub Maintain counts as write, and GitLab Maintainer and Owner count as admin. narado asks the host for the person's access, as them. A secret also used by an unprotected environment needs only read. If the file can't be read, every environment needs admin until it's fixed. When a read is refused, the message names the environments and the access they need.
 - The bindings are read as the person, through the host's API, and cached for 5 minutes (`src/narado/secrets/bindings.js`).
 
 **The narado command** (`bin/narado.js`) lets people use their secrets in local tools, with their SSO sign-in as the credential:

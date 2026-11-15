@@ -31,7 +31,7 @@ const { VaultStore } = require('./vault');
 const { AwsSecretsStore } = require('./aws');
 const { GcpSecretsStore } = require('./gcp');
 const { AzureKeyVaultStore } = require('./azure');
-const { isBound, mayHoldBound } = require('./bindings');
+const { isBound, bindingFor, mayHoldBound } = require('./bindings');
 
 const TYPES = { vault: VaultStore, aws: AwsSecretsStore, gcp: GcpSecretsStore, azure: AzureKeyVaultStore };
 const STORE_ID_RE = /^[A-Za-z0-9_-]+$/;
@@ -156,6 +156,12 @@ class SecretsService {
     if (!parsed) throw new SecretError(400, `Not a secret reference: ${ref}`);
     const store = this.storeFor(parsed.store);
     if (!this.allowed(user, parsed.store, parsed.path, context) && !(await this.boundFor(user, store, parsed, context))) {
+      // Bound, but only by protected environments the person's access doesn't cover: say so.
+      const b = store.perPerson ? null : bindingFor(await this.boundSecrets(user, context), parsed.store, parsed.path);
+      if (b && !b.usable) {
+        const envs = b.environments.map((e) => e.name).filter((n, i, all) => all.indexOf(n) === i).join(', ');
+        throw new SecretError(403, `${parsed.store}/${parsed.path} is only used by protected environments (${envs}) in ${this.repoKey(context)}, which need ${b.needs} access to the repository`);
+      }
       throw new SecretError(403, `You may not use ${parsed.store}/${parsed.path}${this.repoKey(context) ? ` in ${this.repoKey(context)}` : ''}: bind it in an environment of the repository (on its default branch), or ask an admin for an access rule`);
     }
     const key = JSON.stringify([parsed.store, parsed.path, parsed.field, store.perPerson ? user && user.id : null]);
