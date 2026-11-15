@@ -77,7 +77,7 @@ Welcome! A few things that will save you time.
 **Where things live**
 
 - This repository, branch **`web`** (the default branch). `main` is Bruno's code; Bruno itself is the `upstream` remote (`https://github.com/usebruno/bruno.git`) for merging its changes.
-- Designs, decisions and progress notes are in the design repository, [`biprakanta/api-client-design`](https://github.com/biprakanta/api-client-design): `docs/design.md` for the server and `docs/desktop.md` for the desktop app. Read those before larger changes; they say what was decided and why.
+- Designs, decisions and progress notes are in the design repository, [`biprakanta/api-client-design`](https://github.com/biprakanta/api-client-design): [`docs/features.md`](https://github.com/biprakanta/api-client-design/blob/main/docs/features.md) lists every feature with its status, code and open items; `docs/design.md` covers the server and `docs/desktop.md` the desktop app. Read those before larger changes; they say what was decided and why. A change that adds or changes a feature updates its row in `features.md`.
 - Brand rules (names, colours, type, where the veena may appear) are in [`branding/README.md`](branding/README.md). The veena is brand-only: it never stands in for a feature icon.
 
 **Set up**
