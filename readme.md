@@ -76,7 +76,15 @@ Welcome! A few things that will save you time.
 
 **Where things live**
 
-- This repository, branch **`web`** (the default branch). `main` is Bruno's code; Bruno itself is the `upstream` remote (`https://github.com/usebruno/bruno.git`) for merging its changes.
+- This repository, branch **`main`**. Bruno itself is the `upstream` remote (`https://github.com/usebruno/bruno.git`); its changes are merged into `main` with `git fetch upstream && git merge upstream/main`.
+- Until 15 Nov 2026 narado lived on a branch called `web`, with `main` holding Bruno's code. If your clone still has `web`, switch it over:
+  ```bash
+  git fetch origin && git checkout main && git reset --hard origin/main
+  ```
+  ```bash
+  git branch -D web && git remote prune origin
+  ```
+  (The reset throws away local commits on `main`; it only matters if you made any there.)
 - Designs, decisions and progress notes are in the design repository, [`biprakanta/api-client-design`](https://github.com/biprakanta/api-client-design): [`docs/features.md`](https://github.com/biprakanta/api-client-design/blob/main/docs/features.md) lists every feature with its status, code and open items; `docs/design.md` covers the server and `docs/desktop.md` the desktop app. Read those before larger changes; they say what was decided and why. A change that adds or changes a feature updates its row in `features.md`.
 - Brand rules (names, colours, type, where the veena may appear) are in [`branding/README.md`](branding/README.md). The veena is brand-only: it never stands in for a feature icon.
 
@@ -126,8 +134,8 @@ The server tests take about 15 seconds and need no network. For changes you can 
 
 **Making changes**
 
-- Branch from `web`, and open a pull request against `web`. Don't force-push shared branches.
-- Every pull request runs narado's tests in GitHub Actions ([`narado-tests.yml`](.github/workflows/narado-tests.yml)): the server, desktop and CLI tests, and the narado interface tests. Bruno's own workflows only run in Bruno's repository.
+- Branch from `main`, and open a pull request against `main`. Don't force-push shared branches.
+- Every pull request runs narado's tests in GitHub Actions ([`narado-tests.yml`](.github/workflows/narado-tests.yml)): the server, desktop and CLI tests, and the narado interface tests. Bruno's own test and lint workflows are switched off in this repository (Actions → the workflow → Enable to run one); they test Bruno, and their macOS minutes are expensive on a private repository.
 - Dependencies: Dependabot only opens pull requests for security fixes here. Bruno's routine upgrades arrive when Bruno's changes are merged in from `upstream`.
 - Keep upstream Bruno code changes small and marked with a `narado` comment, so merges from Bruno stay easy. narado's own code lives under `packages/bruno-web-server/src/narado` and `packages/bruno-app/src/components/Narado`.
 - Write commit messages, comments and interface text in plain, short sentences that say what happens and why.

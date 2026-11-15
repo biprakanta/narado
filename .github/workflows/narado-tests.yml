@@ -1,12 +1,12 @@
-# narado's tests, for every pull request and for pushes to narado's branch.
-# (Bruno's own workflows only run for main and release/* in Bruno's repository.)
+# narado's tests, for every pull request and for pushes to main.
+# (Bruno's own test and lint workflows are switched off in this repository's Actions settings.)
 name: narado tests
 
 on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: [web, main]
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
