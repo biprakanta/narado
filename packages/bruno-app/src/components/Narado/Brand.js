@@ -6,6 +6,9 @@ import React from 'react';
 import { useTheme } from 'providers/Theme';
 import { isNaradoAvailable } from './api';
 
+/** narado's display face (branding/README.md): the wordmark and narado's own headings. */
+export const DISPLAY_FONT = '\'Space Grotesk\', Inter, sans-serif';
+
 export const NaradoMark = ({ size = 18 }) => {
   const { displayedTheme } = useTheme();
   const src = displayedTheme === 'dark' ? '/narado/narado-veena-cream.svg' : '/narado/narado-veena.svg';
@@ -63,7 +66,7 @@ export const NaradoIllustration = ({ size = 160 }) => (
 export const NaradoHome = () => (
   <div className="flex flex-col items-center justify-center h-full gap-2 px-4 text-center" data-testid="narado-home">
     <NaradoIllustration size={180} />
-    <div style={{ fontSize: 28, fontWeight: 700, marginTop: 14, letterSpacing: 0.2 }}>narado</div>
+    <div style={{ fontFamily: DISPLAY_FONT, fontSize: 30, fontWeight: 700, marginTop: 14, letterSpacing: -0.2 }}>narado</div>
     <div className="text-muted" style={{ fontSize: 14 }}>API collections in Git, for your whole team.</div>
     <div className="text-muted" style={{ fontSize: 13, marginTop: 14, maxWidth: 420, lineHeight: 1.5 }}>
       Open a request from the sidebar, or open a repository from the <strong>Git</strong> section at the bottom of the sidebar.
@@ -120,7 +123,7 @@ export const NaradoBanner = ({ workspaceName }) => {
       </svg>
       <NaradoIllustration size={84} />
       <div style={{ position: 'relative', minWidth: 0 }}>
-        <div style={{ fontSize: 20, fontWeight: 700, color: '#FDEED2' }}>
+        <div style={{ fontFamily: DISPLAY_FONT, fontSize: 22, fontWeight: 700, color: '#FDEED2' }}>
           {first ? `${greeting()}, ${first}` : 'Welcome to narado'}
         </div>
         <div style={{ fontSize: 13, color: '#E3D3E6', marginTop: 4 }}>

@@ -12,7 +12,8 @@ const ASSETS = {
   'narado-illustration-512.png': 'image/png',
   'narado-loader-dark.svg': 'image/svg+xml',
   'narado-favicon.svg': 'image/svg+xml',
-  'favicon.ico': 'image/x-icon'
+  'favicon.ico': 'image/x-icon',
+  'space-grotesk-700.woff2': 'font/woff2'
 };
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -33,6 +34,7 @@ const serveAsset = (pathname, res) => {
 };
 
 const STYLE = `
+@font-face{font-family:"Space Grotesk";font-style:normal;font-weight:700;font-display:swap;src:url(/auth/assets/space-grotesk-700.woff2) format("woff2")}
 :root{color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;
@@ -42,7 +44,7 @@ body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:c
     radial-gradient(50rem 40rem at 10% 100%,rgba(101,7,72,.45),transparent 60%)}
 main{width:100%;max-width:400px;text-align:center}
 .art{width:220px;height:220px;display:block;margin:0 auto 4px}
-h1{margin:0;font-size:34px;font-weight:700;letter-spacing:.3px;color:#FDEED2}
+h1{margin:0;font-family:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;font-size:36px;font-weight:700;letter-spacing:-.2px;color:#FDEED2}
 .tagline{margin:8px 0 28px;color:#C7BCCB;font-size:15px;line-height:1.5}
 .card{background:rgba(36,29,47,.85);border:1px solid #342B40;border-radius:14px;padding:22px}
 .note{margin:0 0 16px;font-size:14px;line-height:1.5;color:#EDE4D8}

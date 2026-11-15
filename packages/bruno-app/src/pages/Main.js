@@ -13,6 +13,11 @@ import 'codemirror/lib/codemirror.css';
 import 'graphiql/graphiql.min.css';
 import 'react-tooltip/dist/react-tooltip.css';
 import '@usebruno/graphql-docs/dist/esm/index.css';
+// narado's display face, for the wordmark and narado's own headings (web build only).
+if (typeof window !== 'undefined' && window.isBrunoWeb) {
+  import('@fontsource/space-grotesk/600.css');
+  import('@fontsource/space-grotesk/700.css');
+}
 import '@fontsource/inter/100.css';
 import '@fontsource/inter/200.css';
 import '@fontsource/inter/300.css';

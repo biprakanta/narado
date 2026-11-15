@@ -96,8 +96,9 @@ const Wrapper = styled.div`
     }
 
     .narado-wordmark {
+      font-family: 'Space Grotesk', Inter, sans-serif;
       font-weight: 700;
-      letter-spacing: 0.2px;
+      letter-spacing: -0.1px;
     }
   }
 

@@ -19,7 +19,7 @@ The **veena mark** is traced from the artwork's own veena as a single path, so i
 
 ### Wordmark
 
-Write the name in lower case: **narado**. In the interface it is set in the interface font, weight 700, next to the veena mark, with a gap of one third of the mark's height.
+Write the name in lower case: **narado**. It is set in Space Grotesk, weight 700, next to the veena mark, with a gap of one third of the mark's height.
 
 ### Using the logo
 
@@ -29,6 +29,12 @@ Write the name in lower case: **narado**. In the interface it is set in the inte
 - **Quiet places.** In empty states the veena is drawn in the theme's muted surface colour (`NaradoVeena`), not the gradient, so it doesn't compete with the Send button.
 - **Minimum size.** Veena mark 24 px; below that use the favicon tile, whose indigo square keeps the shape readable at 16 px.
 - **Don't** stretch, recolour outside this palette, add effects (shadows, glows, outlines), place the illustration on busy photos, or crop the sage.
+
+## Type
+
+- **Space Grotesk** (weights 600 and 700) is narado's display face: the wordmark, the sign-in page's heading, and narado's own headings (the home screen greeting and empty states). Use it sparingly, for short text only.
+- **Inter** is the interface face, as in Bruno, for everything else.
+- Both are bundled (`@fontsource`), so nothing is fetched from Google at run time. Space Grotesk is under the SIL Open Font Licence; its licence file sits beside the font in `packages/bruno-app/public/narado/`.
 
 ## Colour
 
@@ -109,7 +115,6 @@ All of it applies only to the web build (`window.isBrunoWeb`). The Electron app 
 ## Not done yet
 
 - The provider's own sign-in form (Keycloak in development) is not branded; narado's page comes before it.
-- No typeface has been chosen beyond the interface's own.
 - The app's JavaScript has to download before the start-up screen can show, so a slow first load is briefly blank.
 
 The veena is narado's mark, not an icon for a feature: keep it off sections and buttons such as Git, which use ordinary icons.
