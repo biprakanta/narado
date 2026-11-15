@@ -87,7 +87,7 @@ test('setup link: only the latest token works, gives a setup session, ends when 
     const cookie = opened.headers.get('set-cookie').split(';')[0];
     assert.match(opened.headers.get('set-cookie'), /HttpOnly; SameSite=Lax/);
     const pageText = await (await fetch(`${a.publicUrl}/admin`, { headers: { cookie } })).text();
-    assert.match(pageText, /First-time setup/);
+    assert.match(pageText, /Set up narado/);
 
     // Naming admins: from another site refused; from here saved, then narado restarts.
     assert.equal((await a.post('/admin/admins', { NARADO_ADMINS: 'alice@acme.com' }, { cookie, origin: 'https://evil.example' })).status, 403);
@@ -353,9 +353,55 @@ test('access rules: added, edited and deleted from the admin page, and checked l
     // A broad rule is flagged; deleting removes it.
     await a.post('/admin/secrets/rules/add', { store: 'vault' }, cookie);
     await wait(400);
-    assert.match(await (await fetch(`${a.publicUrl}/admin`, { headers: cookie })).text(), /Anyone signed in may read any secret from <code>vault<\/code>, from any repository or none\. <span class="pill"[^>]*>Broad/);
+    assert.match(await (await fetch(`${a.publicUrl}/admin`, { headers: cookie })).text(), /Anyone signed in may read any secret from <code>vault<\/code>, from any repository or none\. <span class="pill warn"[^>]*>Broad/);
     await a.post('/admin/secrets/rules/1/delete', { was: JSON.stringify(rules()[1]) }, cookie);
     assert.equal(rules().length, 1);
+  } finally {
+    await a.close();
+  }
+});
+
+test('admins: added and removed one at a time; nobody removes themselves', async () => {
+  const users = { alice: { id: 'alice', name: 'Alice', email: 'alice@acme.com' } };
+  const dataDir = tmp();
+  new SettingsStore({ dataDir, env: {} }).set({ NARADO_ADMINS: 'alice@acme.com' }, 'test');
+  const a = await startAdmin({ users, dataDir });
+  const cookie = { cookie: 'sid=alice' };
+  try {
+    const page = await (await fetch(`${a.publicUrl}/admin`, { headers: cookie })).text();
+    assert.match(page, /alice@acme\.com <span class="chip">You<\/span>/);
+    assert.match(page, /action="\/admin\/admins\/add"/);
+    assert.equal((await a.post('/admin/admins/add', { email: 'bob@acme.com' }, { ...cookie, origin: 'https://evil.example' })).status, 403);
+    assert.match(await (await a.post('/admin/admins/add', { email: 'not an email' }, cookie)).text(), /isn’t an email address/);
+    // Each change restarts narado (after 200 ms) with the new list.
+    const restarted = () => new Promise((r) => setTimeout(r, 350));
+    assert.equal((await a.post('/admin/admins/add', { email: 'Bob@acme.com' }, cookie)).status, 200);
+    assert.equal(a.settings.get('NARADO_ADMINS'), 'alice@acme.com,bob@acme.com');
+    await restarted();
+    // Adding someone already listed changes nothing.
+    await a.post('/admin/admins/add', { email: 'bob@acme.com' }, cookie);
+    assert.equal(a.settings.get('NARADO_ADMINS'), 'alice@acme.com,bob@acme.com');
+    await restarted();
+    assert.match(await (await a.post('/admin/admins/remove', { email: 'alice@acme.com' }, cookie)).text(), /can&#39;t remove yourself/);
+    await a.post('/admin/admins/remove', { email: 'bob@acme.com' }, cookie);
+    assert.equal(a.settings.get('NARADO_ADMINS'), 'alice@acme.com');
+  } finally {
+    await a.close();
+  }
+});
+
+test('admin console: overview, attention and centred refusals', async () => {
+  const users = { alice: { id: 'alice', name: 'Alice', email: 'alice@acme.com' }, eve: { id: 'eve', name: 'Eve', email: 'eve@acme.com' } };
+  const a = await startAdmin({ users, env: { NARADO_ADMINS: 'alice@acme.com' } });
+  try {
+    const page = await (await fetch(`${a.publicUrl}/admin`, { headers: { cookie: 'sid=alice' } })).text();
+    assert.match(page, /<section id="overview">/);
+    // No sign-in issuer and no Git app here: both are flagged.
+    assert.match(page, /data-testid="attention"[\s\S]*Sign-in isn’t set up[\s\S]*No Git connector is set up/);
+    assert.match(page, /aria-label="Account"/);
+    const denied = await fetch(`${a.publicUrl}/admin`, { headers: { cookie: 'sid=eve' } });
+    assert.equal(denied.status, 403);
+    assert.match(await denied.text(), /<h1>Admins only<\/h1>/);
   } finally {
     await a.close();
   }
