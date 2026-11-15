@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import SidebarSection from 'components/Sidebar/SidebarSection';
 import ActionIcon from 'ui/ActionIcon';
 import OpenRepoModal from './OpenRepoModal';
-import ExploreModal from './ExploreModal';
+import ExploreModal, { syncSummary } from './ExploreModal';
 import GitPanelModal from './GitPanelModal';
 import McpTokensModal from './McpTokensModal';
 import SecretsModal from './SecretsModal';
@@ -15,6 +15,8 @@ const OFFERED_KEY = 'narado.git-connect-offered';
 /** Sidebar section listing narado's Git working copies (one per repo and branch). */
 const GitSection = () => {
   const [workspaces, setWorkspaces] = useState([]);
+  const [synced, setSynced] = useState([]);
+  const [syncing, setSyncing] = useState(null);
   const [openRepo, setOpenRepo] = useState(false); // false, or { hostId, repoPath } to preselect
   const [explore, setExplore] = useState(false);
   const [panelPath, setPanelPath] = useState(null);
@@ -33,7 +35,23 @@ const GitSection = () => {
       .workspaces()
       .then(setWorkspaces)
       .catch(() => setWorkspaces([]));
+    naradoApi
+      .synced()
+      .then(setSynced)
+      .catch(() => setSynced([]));
   }, []);
+
+  const syncAgain = async (c) => {
+    setSyncing(c.path);
+    try {
+      toast.success(syncSummary(await naradoApi.sync(c.hostId, c.repoPath, c.dir)), { duration: 6000 });
+      load();
+    } catch (err) {
+      toast.error(errorText(err));
+    } finally {
+      setSyncing(null);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -120,6 +138,7 @@ const GitSection = () => {
           onClose={() => setExplore(false)}
           // Browsing opens straight into the collections; the Git panel stays out of the way.
           onOpened={() => load()}
+          onSynced={() => load()}
           onMoreOptions={(hostId, repoPath) => {
             setExplore(false);
             setOpenRepo({ hostId, repoPath });
@@ -166,6 +185,25 @@ const GitSection = () => {
               Explore your team's APIs
             </button>
           )}
+          {synced.length > 0 && (
+            <div className="px-4 pt-1 text-xs opacity-60" data-testid="narado-synced-title">
+              Synced to your workspace
+            </div>
+          )}
+          {synced.map((c) => (
+            <div key={c.path} className="px-4 py-1 flex items-center gap-2" data-testid="narado-synced">
+              <div className="flex flex-col min-w-0 flex-1" title={`${c.repoPath}${c.dir ? `/${c.dir}` : ''} · ${c.branch} at ${c.commit}`}>
+                <span className="truncate text-sm">{c.name}</span>
+                <span className="truncate text-xs opacity-70">
+                  {c.repoPath} · {c.commit}
+                </span>
+              </div>
+              <button type="button" className="text-xs underline shrink-0" onClick={() => syncAgain(c)} disabled={!!syncing} data-testid="narado-sync-again">
+                {syncing === c.path ? 'Syncing…' : 'Sync'}
+              </button>
+            </div>
+          ))}
+          {synced.length > 0 && workspaces.length > 0 && <div className="px-4 pt-1 text-xs opacity-60">Working on</div>}
           {workspaces.map((w) => (
             <button
               type="button"

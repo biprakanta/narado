@@ -16,6 +16,7 @@ What each phase added:
 - **Phase 4e:** secrets from HashiCorp Vault, AWS Secrets Manager, Google Secret Manager and Azure Key Vault.
 - **Phase 4a:** request safety: a platform block list for every connection, and each repo's host allowlist for every send.
 - **Phase 4c:** each person connects their own GitHub or GitLab account, and narado works on Git as them.
+- **Sync:** a one-click personal copy of any collection in your workspace, kept up to date without losing your edits.
 - **Explore APIs:** a catalogue of every repository the person can see that holds collections, including code repositories that carry their API in a subfolder. One click opens one.
 
 ## Run
@@ -124,6 +125,15 @@ The **Explore APIs** button in the Git section lists every repository the person
 - **Cost:** one file-list call per repository, plus one call per collection for its name. Results are cached in the person's folder per repository, keyed by its default branch and last push, so later visits only read repositories that changed. If the host rate-limits narado, it stops and carries on next time.
 - **Opening** a collection opens the repository's default branch, with every collection in it, and shows the one chosen. Edits are saved to a branch or fork as usual. **Change or branch…** opens the full dialog.
 - **Right after sign-in,** a person with no Git account connected is sent to connect one, once per browser session. If GitHub has already authorised the app for the account signed in to that browser, this returns at once with no prompt.
+
+### Sync to your workspace
+
+Next to **Open**, each collection in Explore APIs has **Sync**: one action that copies the collection from the repository's default branch into the person's own workspace, as an ordinary collection named "… (synced)". It is theirs to use and change; nothing goes back to Git. The Git section lists synced copies with **Sync** to update them.
+
+- **Syncing again** brings in what changed on the default branch, file by file. Files the person hasn't touched are updated or removed; files they edited are kept and reported ("kept your edits to 1 file"); files they deleted stay deleted.
+- **Same rules as the repo.** A copy counts as part of the repository it came from: requests must match that repository's allowlist, and secrets rules see that repository.
+- **Where:** `<person's folder>/synced/<host>/<repo>/<folder>`; what was synced, from which commit, is in `synced-state.json`.
+- Use **Open** to change the collection for everyone (through a pull request), **Sync** to use it yourself.
 
 ### How workspaces work
 

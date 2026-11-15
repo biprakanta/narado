@@ -14,6 +14,8 @@ export const naradoApi = {
   repos: (hostId) => invoke('narado:repos', { hostId }),
   me: (hostId) => invoke('narado:me', { hostId }),
   catalogue: (hostId, refresh = false) => invoke('narado:catalogue', { hostId, refresh }),
+  sync: (hostId, repoPath, dir = '') => invoke('narado:sync', { hostId, repoPath, dir }),
+  synced: () => invoke('narado:synced'),
   repo: (hostId, repoPath) => invoke('narado:repo', { hostId, repoPath }),
   open: (args) => invoke('narado:open', args),
   initCollection: (path, name) => invoke('narado:init-collection', { path, name }),

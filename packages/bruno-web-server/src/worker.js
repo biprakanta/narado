@@ -312,14 +312,16 @@ const main = async () => {
   const { mainWindow, onBrowserConnected, narado } = await startBruno();
 
   // secret:// references are resolved just before a send, and cleaned from what goes back.
-  const secretRefs = new SecretRefs({ secrets: front.secrets, workspaces: narado.workspaces });
+  // A synced copy (narado/sync.js) counts as part of the repo it came from, for secrets and request rules.
+  const locateRepo = (p) => narado.workspaces.locate(p) || narado.sync.sourceOf(p);
+  const secretRefs = new SecretRefs({ secrets: front.secrets, workspaces: { locate: locateRepo } });
   secretRefs.install(ipcMain);
 
   // Request safety (Phase 4a): with sign-in on, every connection is checked against the
   // platform block list, and sends against their repo's allowlist from its default branch.
   const allowlists = new AllowlistReader({ envFor: (base) => narado.workspaces.gitEnvFor(base) });
   const rulesFor = async (collectionPath) => {
-    const loc = collectionPath ? narado.workspaces.locate(collectionPath) : null;
+    const loc = collectionPath ? locateRepo(collectionPath) : null;
     if (!loc) return { rules: null, repo: null };
     const repo = `${loc.hostId}:${loc.repoPath}`;
     return { rules: await allowlists.rulesFor({ base: narado.workspaces.basePath(loc.hostId, loc.repoPath), repo }), repo };

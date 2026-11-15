@@ -14,7 +14,19 @@ const KIND_LABEL = { openapi: 'OpenAPI', bruno: 'Bruno' };
  * opens a repository's default branch with its collections; editing then saves to a
  * branch or fork as usual.
  */
-const ExploreModal = ({ onClose, onOpened, onMoreOptions }) => {
+/** One line on what a sync did. */
+export const syncSummary = (res) => {
+  if (res.first) return `${res.name} is in your workspace (${res.branch} at ${res.commit})`;
+  const parts = [];
+  if (res.added) parts.push(`${res.added} new`);
+  if (res.updated) parts.push(`${res.updated} updated`);
+  if (res.removed) parts.push(`${res.removed} removed`);
+  const changes = parts.length ? parts.join(', ') : 'already up to date';
+  const kept = res.kept && res.kept.length ? `; kept your edits to ${res.kept.length} file${res.kept.length === 1 ? '' : 's'}` : '';
+  return `Synced ${res.name}: ${changes}${kept}`;
+};
+
+const ExploreModal = ({ onClose, onOpened, onMoreOptions, onSynced }) => {
   const [hosts, setHosts] = useState(null);
   const [hostId, setHostId] = useState('');
   const [data, setData] = useState(null);
@@ -89,6 +101,24 @@ const ExploreModal = ({ onClose, onOpened, onMoreOptions }) => {
       onClose();
     } catch (err) {
       setError(errorText(err));
+    }
+  };
+
+  /** Copy a collection into the person's workspace (or update their copy). */
+  const syncCopy = async (repo, collection) => {
+    const key = `${repo.path}/${collection.dir}`;
+    setOpening(`sync:${key}`);
+    setError('');
+    try {
+      const res = await naradoApi.sync(hostId, repo.path, collection.dir);
+      toast.success(syncSummary(res), { duration: 6000 });
+      onSynced && onSynced(res);
+      onClose();
+      focusCollection(store, res.path);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setOpening(null);
     }
   };
 
@@ -194,26 +224,38 @@ const ExploreModal = ({ onClose, onOpened, onMoreOptions }) => {
               {r.collections.map((c) => {
                 const key = `${r.path}/${c.dir}`;
                 return (
-                  <button
-                    type="button"
-                    key={key}
-                    className="text-left flex items-center gap-2 px-2 py-1 rounded hover:bg-black/10"
-                    onClick={() => open(r, c)}
-                    disabled={!!opening}
-                    data-testid={`narado-explore-open-${key}`}
-                  >
-                    <span className="truncate">{opening === key ? `Opening ${c.name}…` : c.name}</span>
-                    <span className="text-xs opacity-60 shrink-0">{KIND_LABEL[c.kind] || c.kind}</span>
-                    <span className="text-xs opacity-60 truncate" title={c.spec || ''}>
-                      {c.dir ? `${c.dir}/` : 'repository root'}
-                      {c.config ? ' · .narado' : ''}
-                    </span>
-                    {c.problem && (
-                      <span className="text-xs truncate" style={{ color: 'var(--color-text-warning, #d4a106)' }} title={c.problem}>
-                        {c.problem}
+                  <div key={key} className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="flex-1 min-w-0 text-left flex items-center gap-2 px-2 py-1 rounded hover:bg-black/10"
+                      onClick={() => open(r, c)}
+                      disabled={!!opening}
+                      title="Open the repository's default branch; changes go to a branch or fork"
+                      data-testid={`narado-explore-open-${key}`}
+                    >
+                      <span className="truncate">{opening === key ? `Opening ${c.name}…` : c.name}</span>
+                      <span className="text-xs opacity-60 shrink-0">{KIND_LABEL[c.kind] || c.kind}</span>
+                      <span className="text-xs opacity-60 truncate" title={c.spec || ''}>
+                        {c.dir ? `${c.dir}/` : 'repository root'}
+                        {c.config ? ' · .narado' : ''}
                       </span>
-                    )}
-                  </button>
+                      {c.problem && (
+                        <span className="text-xs truncate" style={{ color: 'var(--color-text-warning, #d4a106)' }} title={c.problem}>
+                          {c.problem}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-secondary shrink-0"
+                      onClick={() => syncCopy(r, c)}
+                      disabled={!!opening || !!c.problem}
+                      title="Copy into your workspace to use as your own; Sync again later for updates"
+                      data-testid={`narado-explore-sync-${key}`}
+                    >
+                      {opening === `sync:${key}` ? 'Syncing…' : 'Sync'}
+                    </button>
+                  </div>
                 );
               })}
               {r.truncated && <div className="text-xs opacity-60">Very large repository: some folders may not be listed.</div>}
@@ -231,7 +273,7 @@ const ExploreModal = ({ onClose, onOpened, onMoreOptions }) => {
         )}
 
         <div className="flex justify-between text-xs opacity-80">
-          <span>Opening shows the default branch. Edits are saved to a branch or your fork when you choose.</span>
+          <span>Open works on the repository (changes go through a pull request). Sync puts a copy in your workspace that's yours to use.</span>
           <button type="button" className="underline" onClick={() => onMoreOptions && onMoreOptions(hostId, '')} data-testid="narado-explore-more">
             Open another repository…
           </button>

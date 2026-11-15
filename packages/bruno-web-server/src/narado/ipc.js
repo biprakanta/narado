@@ -10,6 +10,7 @@ const { ProviderRegistry } = require('./providers');
 const { WorkspaceManager, branchFor, runGit } = require('./workspaces');
 const { collectionsInTree, Catalogue } = require('./catalogue');
 const { findSpec, readConfig } = require('./openapi/config');
+const { SyncManager } = require('./sync');
 const { Projection } = require('./openapi/projection');
 
 const REPO_TTL_MS = 5 * 60 * 1000;
@@ -20,6 +21,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
   const registry = new ProviderRegistry({ dataDir: configDir, env, tokenFor: git ? async (hostId, opts) => (await git.token(hostId, opts)).token : undefined });
   const workspaces = new WorkspaceManager({ dataDir, authFor: async (hostId) => registry.get(hostId).gitAuthHeader() });
   const catalogue = new Catalogue({ registry, dataDir });
+  const sync = new SyncManager({ dataDir });
   const users = new Map(); // hostId -> { user, at }
   const repos = new Map(); // hostId/repoPath -> { repo, at }
 
@@ -141,6 +143,40 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
       await openCollection(mainWindow, collectionWatcher, p);
     }
   };
+
+  /**
+   * Sync: copy a repo's collection (from its default branch) into the person's own
+   * workspace, or bring an existing copy up to date. Edits to the copy are kept.
+   */
+  ipcMain.handle('narado:sync', async (_e, { hostId, repoPath, dir = '' } = {}) => {
+    if (typeof repoPath !== 'string' || typeof dir !== 'string' || dir.split('/').includes('..')) throw new Error('Invalid collection');
+    const provider = registry.get(hostId);
+    const repo = await repoInfo(hostId, repoPath, { fresh: true });
+    if (repo.access === 'none') throw new Error(`You do not have access to ${repoPath}`);
+    const ws = await workspaces.open({
+      hostId,
+      repoPath,
+      cloneUrl: repo.cloneUrl,
+      authHeader: await provider.gitAuthHeader(),
+      branch: repo.defaultBranch,
+      defaultBranch: repo.defaultBranch,
+      sparse: await sparseFor(provider, repo, repo.defaultBranch)
+    });
+    const opened = await collectionsFor(ws.path);
+    const parts = dir ? dir.split('/') : [];
+    const sourceDir = [path.join(workspaces.viewPath(ws.path), ...parts), path.join(ws.path, ...parts)].find((p) => opened.includes(p));
+    if (!sourceDir) throw new Error(`${repoPath} has no collection at ${dir || 'its root'} on ${repo.defaultBranch}`);
+    let name = dir ? path.basename(dir) : repo.name;
+    try {
+      name = JSON.parse(fs.readFileSync(path.join(sourceDir, 'bruno.json'), 'utf8')).name || name;
+    } catch {}
+    const commit = (await runGit(['rev-parse', '--short', 'HEAD'], { cwd: ws.path })).stdout.trim();
+    const res = sync.sync({ hostId, repoPath, dir, sourceDir, name, commit, branch: repo.defaultBranch });
+    await openCollections([res.path]);
+    return { ...res, hostId, repoPath, dir, branch: repo.defaultBranch };
+  });
+
+  ipcMain.handle('narado:synced', async () => sync.list());
 
   // Connecting or disconnecting an account happens in the front; start afresh when the interface asks.
   ipcMain.handle('narado:hosts', async () => {
@@ -485,7 +521,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
     }
   };
 
-  return { registry, workspaces, collectionsFor, stopViews };
+  return { registry, workspaces, collectionsFor, stopViews, sync };
 };
 
 module.exports = { registerNaradoIpc };
