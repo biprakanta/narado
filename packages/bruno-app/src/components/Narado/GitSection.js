@@ -83,6 +83,7 @@ const GitSection = () => {
     const login = params.get('login');
     const text = {
       ok: [`Connected ${host} as ${login || 'you'}. Not you? Disconnect it in Explore APIs.`, true],
+      mismatch: [`${host} account ${login || ''} isn't verified for your sign-in email, and this server requires that. Connect the ${host} account that uses your work email.`, false],
       taken: [`${host} account ${login || ''} is already connected by someone else in narado. Sign in to ${host} as yourself, then connect again.`, false],
       refused: [`${host} was not connected: the request was declined`, false],
       expired: [`That ${host} connection link expired. Try again.`, false],

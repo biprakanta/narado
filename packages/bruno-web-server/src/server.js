@@ -85,8 +85,19 @@ const main = async () => {
   const tokenCalls = tokenService(tokens, auth.enabled);
   const secretCalls = secretsService(secrets);
   const gitCalls = gitService(gitAccounts);
+  // A worker says which repository a secrets call is for; rules that name repositories only
+  // count when the person can really read it (asked of the host as them). Otherwise the call
+  // goes ahead without a repository, so repository-specific rules don't match.
+  const checkedSecretCalls = async (user, method, args) => {
+    const last = args[args.length - 1];
+    if (auth.enabled && last && typeof last === 'object' && !Array.isArray(last) && last.repoPath) {
+      const ok = typeof last.hostId === 'string' && typeof last.repoPath === 'string' && (await gitAccounts.canRead(user, last.hostId, last.repoPath));
+      if (!ok) args = [...args.slice(0, -1), {}];
+    }
+    return secretCalls(user, method, args);
+  };
   const rpc = (user, method, args) =>
-    method.startsWith('secrets.') ? secretCalls(user, method, args) : method.startsWith('git.') ? gitCalls(user, method, args) : tokenCalls(user, method, args);
+    method.startsWith('secrets.') ? checkedSecretCalls(user, method, args) : method.startsWith('git.') ? gitCalls(user, method, args) : tokenCalls(user, method, args);
   const pool = new WorkerPool({ dataDir: DATA_DIR, multiUser: auth.enabled, publicPort: PORT, rpc, privateEnv: gitAccounts.tokenEnvNames() });
 
   const fail = (res, err) => {

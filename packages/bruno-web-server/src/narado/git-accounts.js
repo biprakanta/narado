@@ -21,7 +21,9 @@
  * GitHub NARADO_<HOST ID>_APP_SLUG for the "install the app" link.
  *
  * One host account can be connected by one narado person only, so that what narado does
- * on the host is always attributed to the person who did it.
+ * on the host is always attributed to the person who did it. The host account's verified
+ * emails are compared with the person's sign-in email: NARADO_GIT_ACCOUNT_MATCH=warn (the
+ * default) shows a mismatch, =require refuses it, =off skips the check.
  *
  * Shared tokens (NARADO_<HOST ID>_TOKEN) still work in single-user local mode. With
  * sign-in on they are not used, unless NARADO_SHARED_GIT_TOKENS=1 (for moving over).
@@ -99,6 +101,9 @@ class GitAccountStore {
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (user_key, host_id)
       )`);
+    // Added later: whether the account's verified emails include the person's sign-in email.
+    const cols = this.db.prepare('PRAGMA table_info(git_accounts)').all().map((c) => c.name);
+    if (!cols.includes('email_match')) this.db.exec('ALTER TABLE git_accounts ADD COLUMN email_match INTEGER');
   }
 
   aad(userKey, hostId) {
@@ -116,6 +121,7 @@ class GitAccountStore {
       accessExpiresAt: r.access_expires_at,
       refreshToken: this.box.open(r.refresh_token, aad),
       refreshExpiresAt: r.refresh_expires_at,
+      emailMatch: r.email_match === null || r.email_match === undefined ? null : !!r.email_match,
       createdAt: r.created_at,
       updatedAt: r.updated_at
     };
@@ -126,13 +132,26 @@ class GitAccountStore {
     const aad = this.aad(userKey, hostId);
     this.db
       .prepare(
-        `INSERT INTO git_accounts (user_key, host_id, login, account_id, access_token, access_expires_at, refresh_token, refresh_expires_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO git_accounts (user_key, host_id, login, account_id, access_token, access_expires_at, refresh_token, refresh_expires_at, email_match, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (user_key, host_id) DO UPDATE SET login = excluded.login, account_id = excluded.account_id,
            access_token = excluded.access_token, access_expires_at = excluded.access_expires_at,
-           refresh_token = excluded.refresh_token, refresh_expires_at = excluded.refresh_expires_at, updated_at = excluded.updated_at`
+           refresh_token = excluded.refresh_token, refresh_expires_at = excluded.refresh_expires_at,
+           email_match = excluded.email_match, updated_at = excluded.updated_at`
       )
-      .run(userKey, hostId, a.login || null, a.accountId != null ? String(a.accountId) : null, this.box.seal(a.accessToken, aad), a.accessExpiresAt || null, this.box.seal(a.refreshToken, aad), a.refreshExpiresAt || null, now, now);
+      .run(
+        userKey,
+        hostId,
+        a.login || null,
+        a.accountId != null ? String(a.accountId) : null,
+        this.box.seal(a.accessToken, aad),
+        a.accessExpiresAt || null,
+        this.box.seal(a.refreshToken, aad),
+        a.refreshExpiresAt || null,
+        a.emailMatch === null || a.emailMatch === undefined ? null : a.emailMatch ? 1 : 0,
+        now,
+        now
+      );
   }
 
   /** Who else, if anyone, has this host account connected. */
@@ -232,6 +251,7 @@ class GitAccounts {
         connected: !!(account && !expired) || shared,
         via: account && !expired ? 'account' : shared ? 'server' : null,
         login: account && !expired ? account.login : null,
+        emailMatch: account && !expired ? account.emailMatch : null,
         canConnect: !!app,
         connectUrl: app ? `/auth/git/${encodeURIComponent(h.id)}/connect` : null,
         installUrl: app && h.type === 'github' && app.slug ? `${p.url}/apps/${app.slug}/installations/new` : null,
@@ -263,6 +283,29 @@ class GitAccounts {
     }
     const token = await this.refreshing.get(k);
     return { token, via: 'account', login: account.login };
+  }
+
+  /**
+   * Can this person read this repository on the host? Asked of the host with their own
+   * token, cached for five minutes. Used to check a worker's claim about which repository
+   * a request belongs to (secrets rules). False when it can't be confirmed.
+   */
+  async canRead(user, hostId, repoPath) {
+    const key = `${this.userKey(user)}|${hostId}|${repoPath}`;
+    this.readCache = this.readCache || new Map();
+    const hit = this.readCache.get(key);
+    if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.ok;
+    let ok = false;
+    try {
+      const h = this.host(hostId);
+      const provider = this.registry.build(h, undefined, (opts) => this.token(user, hostId, opts).then((t) => t.token));
+      const repo = await provider.getRepo(repoPath);
+      ok = !!repo && repo.access !== 'none';
+    } catch {
+      ok = false;
+    }
+    this.readCache.set(key, { at: Date.now(), ok });
+    return ok;
   }
 
   notConnectedText(h) {
@@ -378,14 +421,29 @@ class GitAccounts {
       }
       try {
         const t = await this.tokenRequest(h, { grant_type: 'authorization_code', code: url.searchParams.get('code') || '', redirect_uri: this.callbackUrl(hostId), code_verifier: p.verifier });
-        const me = await this.registry.build(h, t.accessToken).getCurrentUser();
+        const hostClient = this.registry.build(h, t.accessToken);
+        const me = await hostClient.getCurrentUser();
+        // Is this the same person as the sign-in? Compare verified emails with the SSO email.
+        const policy = ['off', 'warn', 'require'].includes(this.env.NARADO_GIT_ACCOUNT_MATCH) ? this.env.NARADO_GIT_ACCOUNT_MATCH : 'warn';
+        let emailMatch = null;
+        if (policy !== 'off' && user && user.email && hostClient.verifiedEmails) {
+          try {
+            emailMatch = (await hostClient.verifiedEmails()).includes(String(user.email).toLowerCase());
+          } catch (err) {
+            this.log.warn(`[narado] could not read ${hostId} emails for ${me.login}: ${err.message}`);
+          }
+          if (policy === 'require' && emailMatch !== true) {
+            this.log.warn(`[narado] ${key} tried to connect ${hostId} account ${me.login}, whose verified emails don't include their sign-in email`);
+            return back(p.returnTo, { 'git-connect': 'mismatch', host: hostId, login: me.login }), true;
+          }
+        }
         // One host account belongs to one person, so the host's audit trail names the right one.
         const owner = this.store.ownerOf(hostId, me.id);
         if (owner && owner !== key) {
           this.log.warn(`[narado] ${key} tried to connect ${hostId} account ${me.login}, which another person has connected`);
           return back(p.returnTo, { 'git-connect': 'taken', host: hostId, login: me.login }), true;
         }
-        this.store.save(key, hostId, { ...t, login: me.login, accountId: me.id });
+        this.store.save(key, hostId, { ...t, login: me.login, accountId: me.id, emailMatch });
         this.log.log(`[narado] ${key} connected ${hostId} account ${me.login}`);
         return back(p.returnTo, { 'git-connect': 'ok', host: hostId, login: me.login }), true;
       } catch (err) {

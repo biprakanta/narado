@@ -100,6 +100,30 @@ class GitLabProvider {
     return { files, truncated: page > maxPages, commit: null };
   }
 
+  /** Whether changes to `branch` need code-owner approval (true, false, or null when it can't be told). */
+  async reviewRules(repoPath, branch) {
+    try {
+      const { data } = await this.api(`/projects/${encodeURIComponent(repoPath)}/protected_branches/${encodeURIComponent(branch)}`);
+      return { protected: true, codeOwnerReview: !!data.code_owner_approval_required, sources: ['protected branch'] };
+    } catch (err) {
+      if (err.status === 404) return { protected: false, codeOwnerReview: false, sources: [] };
+      if (err.status === 403) return { protected: null, codeOwnerReview: null, sources: [] };
+      throw err;
+    }
+  }
+
+  /** The account's confirmed email addresses (primary and secondary). */
+  async verifiedEmails() {
+    const out = new Set();
+    const { data: me } = await this.api('/user');
+    if (me && me.email && me.confirmed_at) out.add(String(me.email).toLowerCase());
+    try {
+      const { data } = await this.api('/user/emails');
+      for (const e of data || []) if (e.confirmed_at) out.add(String(e.email).toLowerCase());
+    } catch {}
+    return [...out];
+  }
+
   /** One file's text on `ref`. */
   async readFile(repoPath, ref, filePath) {
     const { data } = await this.api(`/projects/${encodeURIComponent(repoPath)}/repository/files/${encodeURIComponent(filePath)}/raw?ref=${encodeURIComponent(ref)}`);

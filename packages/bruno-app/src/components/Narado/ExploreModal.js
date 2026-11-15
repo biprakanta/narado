@@ -182,6 +182,11 @@ const ExploreModal = ({ onClose, onOpened, onMoreOptions, onSynced }) => {
             </button>
           </div>
         )}
+        {current && current.via === 'account' && current.emailMatch === false && (
+          <div className="text-xs" style={{ color: 'var(--color-text-warning, #d4a106)' }} data-testid="narado-explore-email-mismatch">
+            {current.login}'s verified emails on {current.name} don't include your sign-in email. If this isn't your own account, disconnect it.
+          </div>
+        )}
 
         {hostId && (
           <div className="text-xs opacity-70" data-testid="narado-explore-status">

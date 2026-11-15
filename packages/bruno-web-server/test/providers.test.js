@@ -185,3 +185,39 @@ test('listing and reading files through the host API, for the catalogue', async 
   assert.ok(listed.files.includes('api/openapi.yaml'));
   assert.equal(await gl.readFile('acme/svc', 'main', 'api/openapi.yaml'), '{"openapi":"3.1.0"}');
 });
+
+test('code-owner review on the default branch: rulesets, classic protection, or unknown', async () => {
+  const gh = (routes) => new GitHubProvider({ id: 'github', token: 't', fetchImpl: fakeFetch(routes) });
+  // A ruleset asks for code-owner review.
+  let r = await gh({
+    'GET /repos/acme/api/branches/main': () => [200, { protected: true }],
+    'GET /repos/acme/api/rules/branches/main': () => [200, [{ type: 'pull_request', parameters: { require_code_owner_review: true } }]]
+  }).reviewRules('acme/api', 'main');
+  assert.deepEqual([r.protected, r.codeOwnerReview, r.sources], [true, true, ['ruleset']]);
+  // Classic protection, readable: says no.
+  r = await gh({
+    'GET /repos/acme/api/branches/main/protection': () => [200, { required_pull_request_reviews: { require_code_owner_reviews: false } }],
+    'GET /repos/acme/api/branches/main': () => [200, { protected: true }],
+    'GET /repos/acme/api/rules/branches/main': () => [200, []]
+  }).reviewRules('acme/api', 'main');
+  assert.equal(r.codeOwnerReview, false);
+  // Protected, but details need admin rights: unknown.
+  r = await gh({
+    'GET /repos/acme/api/branches/main/protection': () => [403, { message: 'Must have admin rights' }],
+    'GET /repos/acme/api/branches/main': () => [200, { protected: true }],
+    'GET /repos/acme/api/rules/branches/main': () => [403, { message: 'Upgrade to GitHub Pro' }]
+  }).reviewRules('acme/api', 'main');
+  assert.equal(r.codeOwnerReview, null);
+  // Not protected at all.
+  r = await gh({
+    'GET /repos/acme/api/branches/main': () => [200, { protected: false }],
+    'GET /repos/acme/api/rules/branches/main': () => [403, { message: 'Upgrade to GitHub Pro' }]
+  }).reviewRules('acme/api', 'main');
+  assert.equal(r.codeOwnerReview, false);
+
+  const gl = (routes) => new GitLabProvider({ id: 'gitlab', token: 't', fetchImpl: fakeFetch(routes) });
+  r = await gl({ 'GET /api/v4/projects/acme%2Fapi/protected_branches/main': () => [200, { name: 'main', code_owner_approval_required: true }] }).reviewRules('acme/api', 'main');
+  assert.equal(r.codeOwnerReview, true);
+  r = await gl({}).reviewRules('acme/api', 'main');
+  assert.deepEqual([r.protected, r.codeOwnerReview], [false, false]);
+});

@@ -343,14 +343,35 @@ const main = async () => {
     guard.install();
     installSendRules({ ipcMain, guard, channels: SEND_CHANNELS, collectionPathIn, rulesFor });
   }
+  // Branch protection on the default branch, asked of the host as the person (cached briefly).
+  const reviewCache = new Map();
+  const reviewRulesFor = async (loc, branch) => {
+    const key = `${loc.hostId}/${loc.repoPath}@${branch}`;
+    const hit = reviewCache.get(key);
+    if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.value;
+    let value = { protected: null, codeOwnerReview: null, sources: [] };
+    try {
+      const provider = narado.registry.get(loc.hostId);
+      if (provider.reviewRules) value = await provider.reviewRules(loc.repoPath, branch);
+    } catch (err) {
+      value.error = err.message;
+    }
+    reviewCache.set(key, { at: Date.now(), value });
+    return value;
+  };
+
   ipcMain.handle('narado:request-rules', async (_e, { path: p } = {}) => {
     const { rules, repo } = await rulesFor(p);
+    const loc = p ? locateRepo(p) : null;
+    const review = loc && rules && rules.branch ? await reviewRulesFor(loc, rules.branch) : null;
     return {
       enforced: rulesOn,
       repo,
       branch: rules ? rules.branch : null,
       hosts: rules ? rules.summary() : [],
-      codeowners: rules ? rules.codeowners : false
+      codeowners: rules ? rules.codeowners : false,
+      codeOwnerReview: review ? review.codeOwnerReview : null,
+      protectedBranch: review ? review.protected : null
     };
   });
 

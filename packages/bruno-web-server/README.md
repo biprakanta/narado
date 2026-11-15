@@ -80,6 +80,7 @@ How it is kept safe:
 - Refresh tokens and app credentials stay in the front process. A person's worker asks the front for an access token when it needs one, and the front refreshes it when it has under five minutes left. A refused refresh disconnects the account, and narado asks the person to connect again.
 - Git commands get the token in an HTTP header for that command only, with credential helpers turned off, so nothing is saved on disk and nothing falls back to another account.
 - Disconnecting deletes the stored tokens and withdraws narado's access on the host.
+- **Same person?** The Git account's verified emails are compared with the person's sign-in email. By default a mismatch is shown (Explore APIs warns); `NARADO_GIT_ACCOUNT_MATCH=require` refuses the connection, and `off` skips the check.
 - One Git account can be connected by one narado person only, so the host's records always name the person who acted. A second person trying to connect the same account (for example on a shared computer) is refused and told to sign in to the host as themselves.
 
 ### Shared tokens (local mode)
@@ -221,7 +222,7 @@ A request may only go to hosts the repo names on its **default branch**. A host 
 How the check works:
 
 - **Each HTTP request is checked** (host, port and path), including reused keep-alive connections. Other connections are checked by host and port.
-- **Review the file.** The Git panel lists the hosts and warns when `CODEOWNERS` doesn't cover every `allowed-hosts.yml` in the repo (a `.narado/` line covers them all). Add one, and turn on code-owner review in branch protection, so allowlist changes need approval.
+- **Review the file.** The Git panel lists the hosts and warns when `CODEOWNERS` doesn't cover every `allowed-hosts.yml` in the repo (a `.narado/` line covers them all). It also asks the host, as the person, whether the default branch requires code-owner review (GitHub rulesets or branch protection, GitLab protected branches), and says so; when the details need admin rights it says it can't tell. Add one, and turn on code-owner review in branch protection, so allowlist changes need approval.
 - **Collections outside a Git workspace** only get the block list. Set `NARADO_REQUESTS_OUTSIDE_REPOS=refuse` to stop their sends.
 - **MCP sends** use the same default-branch allowlist, also in single-user mode.
 
@@ -240,6 +241,7 @@ secret://<store>/<path>[#<field>]       for example  secret://vault/payments/sta
 - **When a request is sent,** the person's worker asks the front for the values of the references in it. The front checks access, reads the store and answers. The worker swaps the references for values, only for sending: saving an environment never resolves anything.
 - **Values reach the browser only when asked for.** In everything a worker sends back (responses, timelines, script output, MCP results), a string that is exactly a secret's value turns back into its reference, and any other occurrence is masked as `••••••`, also when URL- or base64-encoded.
 - **Store credentials never reach a worker.** They are read by the front from `NARADO_SECRETS_<STORE ID>_*` variables, which workers do not get.
+- **Rules that name repositories** only count when the person can really read that repository: the front asks the host, as them, before applying them (cached for five minutes).
 - **Every read is logged** by the front with the person, store, path, repo and outcome, never the value. Values are cached for 60 seconds (`NARADO_SECRETS_CACHE_SECONDS`); access is checked every time.
 - **Picker:** Secrets (in the Git section's menu) browses the stores (only what you may use), builds a reference and checks it without showing the value.
 - **Reveal:** the same dialog can show a value on purpose, for 30 seconds, with the same access rules as a send. Each reveal is logged (`revealed`), and `NARADO_SECRETS_REVEAL=0` turns it off. Reveals never go through MCP.
@@ -316,6 +318,7 @@ claude mcp add --transport http narado http://127.0.0.1:4100/mcp --header "Autho
 | `NARADO_GIT_TOKEN_KEY` | a key file in the data folder | 32 bytes, base64: encrypts stored Git tokens |
 | `NARADO_<HOST ID>_TOKEN` | none | Shared token for a Git host, local mode only |
 | `NARADO_SPARSE_CLONES` | on | `0` clones code repositories in full instead of fetching only their collection folders |
+| `NARADO_GIT_ACCOUNT_MATCH` | `warn` | Compare a Git account's verified emails with the sign-in email: `warn`, `require` (refuse a mismatch) or `off` |
 | `NARADO_SHARED_GIT_TOKENS` | off | `1` lets signed-in people use shared tokens when they have not connected an account |
 | `NARADO_MCP_ALLOW_WRITE` | on | `0` turns MCP write tools off for every token |
 | `NARADO_WORKER_IDLE_MINUTES` | `30` | Stop a person's worker after this long without a connection |
@@ -339,7 +342,7 @@ The workspace tests run real Git against a local repo standing in for the host, 
 
 ## Known limits
 
-- **Git accounts are separate from sign-in.** narado connects the Git account signed in to the person's browser, and doesn't check it belongs to the same person as the SSO account (only that no one else has it).
+- **Git accounts and sign-in** are matched by verified email, which only works when people use their work email on the Git host; otherwise set `NARADO_GIT_ACCOUNT_MATCH=off` and rely on one account per person.
 - **Partial clones need the host for some local commands.** Reading a file Git hasn't fetched yet (a merge outside the collection folders, an allowlist file) contacts the host with the person's token, so it fails while the host is unreachable or the account is disconnected.
 - **Repositories cloned before light clones** become light the next time they're opened, but only when nothing local could be lost: at most a clean copy of the default branch, and every local branch already on the host. Otherwise they stay full and keep working.
 - **GitLab sign-in** is covered by the same code and tests as GitHub, but has not been tried against a real GitLab instance yet.
@@ -359,7 +362,6 @@ The workspace tests run real Git against a local repo standing in for the host, 
 - **Drag-and-drop file paths** are not available, because browsers don't expose them.
 - **Turned off:** the built-in terminal (it would give a shell on the server), window controls and native menus.
 - **Bruno's own secret variables** (the "secret" checkbox) still work, encrypted with a key file in each person's folder. Prefer `secret://` references, which keep values in the organisation's store.
-- **Secret references and the repo.** The front trusts the worker about which repo a request is in when applying `repos` rules. Now that people have their own Git accounts, it could check that the person can read that repo; it does not yet.
 - **Scripts can read resolved secrets** (for example `bru.getEnvVar`) and could send them on in a request or encode them in ways masking does not catch. Who may change a repo's scripts is controlled by review in Git.
 - **Masking** skips values shorter than 4 characters, and does not catch a value inside Basic auth's encoded `user:password`.
 - **During a conflict**, the affected request shows as unreadable in the sidebar until a side is chosen, because the file holds Git's conflict markers.

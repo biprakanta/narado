@@ -108,6 +108,52 @@ class GitHubProvider {
     return { files: (data.tree || []).filter((e) => e.type === 'blob').map((e) => e.path), truncated: !!data.truncated, commit: data.sha };
   }
 
+  /**
+   * Whether changes to `branch` need code-owner review, as far as the person can see:
+   * classic branch protection (its details need admin rights) and rulesets (not on every
+   * plan). codeOwnerReview is true, false, or null when it can't be told.
+   */
+  async reviewRules(repoPath, branch) {
+    const out = { protected: null, codeOwnerReview: null, sources: [] };
+    try {
+      const { data } = await this.api(`/repos/${repoPath}/branches/${encodeURIComponent(branch)}`);
+      out.protected = !!data.protected;
+    } catch (err) {
+      if (err.status !== 404 && err.status !== 403) throw err;
+    }
+    let rulesKnown = false;
+    try {
+      const { data } = await this.api(`/repos/${repoPath}/rules/branches/${encodeURIComponent(branch)}`);
+      rulesKnown = true;
+      if ((data || []).some((r) => r.type === 'pull_request' && r.parameters && r.parameters.require_code_owner_review)) {
+        out.codeOwnerReview = true;
+        out.sources.push('ruleset');
+      }
+    } catch (err) {
+      if (![403, 404].includes(err.status)) throw err;
+    }
+    if (out.codeOwnerReview !== true && out.protected) {
+      try {
+        const { data } = await this.api(`/repos/${repoPath}/branches/${encodeURIComponent(branch)}/protection`);
+        const prr = data.required_pull_request_reviews;
+        out.codeOwnerReview = !!(prr && prr.require_code_owner_reviews);
+        out.sources.push('branch protection');
+      } catch (err) {
+        if (![403, 404].includes(err.status)) throw err; // needs admin rights: can't tell
+      }
+    }
+    // Not protected, and no ruleset asks for it (or rulesets aren't available on this plan).
+    if (out.codeOwnerReview === null && out.protected === false) out.codeOwnerReview = false;
+    out.rulesets = rulesKnown;
+    return out;
+  }
+
+  /** The account's verified email addresses (needs the Email addresses permission). */
+  async verifiedEmails() {
+    const { data } = await this.api('/user/emails?per_page=100');
+    return (data || []).filter((e) => e.verified).map((e) => String(e.email).toLowerCase());
+  }
+
   /** One file's text on `ref`. */
   async readFile(repoPath, ref, filePath) {
     const { data } = await this.api(`/repos/${repoPath}/contents/${filePath.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(ref)}`, {

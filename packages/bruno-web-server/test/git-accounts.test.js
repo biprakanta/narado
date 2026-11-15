@@ -51,6 +51,9 @@ const fakeGitHub = () => {
         return json(200, issue());
       }
     }
+    if (u.pathname === '/user/emails') {
+      return json(200, [{ email: 'Alice@Acme.test', verified: true, primary: true }, { email: 'old@acme.test', verified: false }]);
+    }
     if (u.pathname === '/user') {
       const token = String(init.headers.authorization || '').replace('Bearer ', '');
       if (!state.valid.has(token)) return json(401, { message: 'Bad credentials' });
@@ -228,4 +231,42 @@ test('git.* calls from a worker act for that worker\'s person only', async () =>
   const st = await svc(alice, 'git.status', []);
   assert.ok(!JSON.stringify(st).includes('ghu_'), 'status carries no tokens');
   await assert.rejects(svc(alice, 'git.refresh-all', []), /Unknown call/);
+});
+
+test('canRead asks the host as the person, and caches the answer', async () => {
+  const { gh, accounts } = make();
+  await connect(accounts, gh, alice);
+  let asked = 0;
+  const realFetch = accounts.fetch;
+  accounts.registry.fetchImpl = async (url, init) => {
+    if (String(url).includes('/repos/acme/visible')) {
+      asked++;
+      return new Response(JSON.stringify({ full_name: 'acme/visible', name: 'visible', private: true, permissions: { pull: true }, default_branch: 'main' }), { status: 200 });
+    }
+    if (String(url).includes('/repos/acme/hidden')) return new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 });
+    return realFetch(url, init);
+  };
+  assert.equal(await accounts.canRead(alice, 'github', 'acme/visible'), true);
+  assert.equal(await accounts.canRead(alice, 'github', 'acme/visible'), true);
+  assert.equal(asked, 1, 'cached');
+  assert.equal(await accounts.canRead(alice, 'github', 'acme/hidden'), false);
+  assert.equal(await accounts.canRead(bob, 'github', 'acme/visible'), false, 'Bob has no GitHub account connected');
+});
+
+test('the Git account is compared with the sign-in email: warn by default, refuse when required', async () => {
+  const signedIn = { id: 'u-alice', email: 'alice@acme.test' };
+  const stranger = { id: 'u-carol', email: 'carol@acme.test' };
+  let { gh, accounts } = make();
+  await connect(accounts, gh, signedIn);
+  assert.equal(accounts.status(signedIn).find((h) => h.id === 'github').emailMatch, true, 'case-insensitive, verified only');
+
+  ({ gh, accounts } = make());
+  const warned = await connect(accounts, gh, stranger);
+  assert.match(warned.headers.location, /git-connect=ok/);
+  assert.equal(accounts.status(stranger).find((h) => h.id === 'github').emailMatch, false, 'connected, with a warning');
+
+  ({ gh, accounts } = make({ env: { NARADO_GIT_ACCOUNT_MATCH: 'require' } }));
+  const refused = await connect(accounts, gh, stranger);
+  assert.match(refused.headers.location, /git-connect=mismatch/);
+  assert.equal(accounts.status(stranger).find((h) => h.id === 'github').connected, false);
 });

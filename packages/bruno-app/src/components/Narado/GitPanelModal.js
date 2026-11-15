@@ -68,6 +68,23 @@ const GitPanelModal = ({ path, onClose, onSwitch }) => {
           branch protection, so that changes to the allowlist need approval.
         </div>
       )}
+      {rules.codeowners && rules.codeOwnerReview === false && (
+        <div style={{ color: 'var(--color-text-warning, #e8590c)' }} data-testid="narado-review-warning">
+          {rules.branch || 'The default branch'} doesn't require code-owner review, so CODEOWNERS alone doesn't stop allowlist changes being merged
+          without approval. Turn it on in the branch's protection rules.
+        </div>
+      )}
+      {rules.codeowners && rules.codeOwnerReview === true && (
+        <div style={{ color: 'var(--color-text-green, #2f9e44)' }} data-testid="narado-review-ok">
+          Changes to the allowlist need code-owner approval on {rules.branch || 'the default branch'}.
+        </div>
+      )}
+      {rules.codeowners && rules.codeOwnerReview === null && (
+        <div className="opacity-80" data-testid="narado-review-unknown">
+          narado can't see whether {rules.branch || 'the default branch'} requires code-owner review (that needs admin access on the host). Check it in
+          the branch's protection rules.
+        </div>
+      )}
     </div>
   ) : null;
 
