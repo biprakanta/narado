@@ -209,3 +209,17 @@ test('the guard: block list on every connection, repo rules inside a send', asyn
     b.close();
   }
 });
+
+test('an address is allowed by the name this worker resolved it from (clients like gRPC connect by address)', () => {
+  const guard = new RequestGuard({ env: {}, log: { log() {} } });
+  const rules = new RepoRules({ repo: 'github:acme/payments', branch: 'main', entries: [parseEntry('grpc.payments.test:443')] });
+  guard.recordLookup('grpc.payments.test', [{ address: '203.0.113.7', family: 4 }]);
+  guard.runSend({ rules, repo: 'github:acme/payments' }, () => {
+    assert.doesNotThrow(() => guard.checkHost('203.0.113.7', 443));
+    assert.throws(() => guard.checkHost('203.0.113.7', 50051), /grpc\.payments\.test:50051 \(203\.0\.113\.7\) is not on the allowlist/);
+    assert.throws(() => guard.checkHost('203.0.113.8', 443), /203\.0\.113\.8:443 is not on the allowlist/);
+  });
+  // Lookups are remembered for a while only.
+  guard.recordLookup('grpc.payments.test', ['203.0.113.9'], -1);
+  assert.deepEqual(guard.namesFor('203.0.113.9'), []);
+});

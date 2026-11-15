@@ -9,7 +9,7 @@ const path = require('node:path');
 const { ProviderRegistry } = require('./providers');
 const { WorkspaceManager, branchFor, runGit } = require('./workspaces');
 const { collectionsInTree, Catalogue } = require('./catalogue');
-const { findSpec, readConfig } = require('./openapi/config');
+const { findSpec, readConfig, parseConfig } = require('./openapi/config');
 const { SyncManager } = require('./sync');
 const { Projection } = require('./openapi/projection');
 
@@ -72,7 +72,7 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
           p = null;
         }
         if (!p) {
-          p = new Projection({ repoDir: dir, viewDir: c.dir ? path.join(workspaces.viewPath(wtPath), ...c.dir.split('/')) : workspaces.viewPath(wtPath) });
+          p = new Projection({ repoDir: dir, root: wtPath, viewDir: c.dir ? path.join(workspaces.viewPath(wtPath), ...c.dir.split('/')) : workspaces.viewPath(wtPath) });
           await p.start();
           projections.set(dir, p);
         } else {
@@ -119,6 +119,16 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
         if (!found.length || found.some((c) => c.dir === '')) return null;
         const dirs = new Set(found.map((c) => c.dir));
         for (const d of ['.narado', '.client']) if (files.some((f) => f.startsWith(`${d}/`))) dirs.add(d);
+        // gRPC proto files and import paths that config.nar names, wherever they are in the repo.
+        for (const c of found.filter((x) => x.config)) {
+          try {
+            const { grpc } = parseConfig(await provider.readFile(repo.path, r, c.file));
+            for (const p of [...grpc.protoFiles.map((f) => path.posix.dirname(f)), ...grpc.importPaths]) {
+              const inRepo = path.posix.normalize(path.posix.join(c.dir || '.', p));
+              if (inRepo && inRepo !== '.' && !inRepo.startsWith('..')) dirs.add(inRepo);
+            }
+          } catch {}
+        }
         return [...dirs].sort();
       } catch (err) {
         if (err.status !== 404) return null; // the branch may only exist in a fork; try the default

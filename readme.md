@@ -20,7 +20,7 @@ Your collections live in your own GitHub or GitLab repositories, stored as OpenA
 - **Bruno in the browser.** Bruno's interface for building and sending requests, with environments, scripts and tests, running on a server you control. HTTP requests are tested in narado; Bruno's other request types have not been checked yet.
 - **Git is the storage.** Open a repository from GitHub or GitLab and narado clones it on the server. Edits stay local until you save them.
 - **Changes through review.** Saving on the default branch asks for a new branch, or a fork when you can only read the repo, and opens a pull or merge request. You can update from main and resolve conflicts in the interface.
-- **OpenAPI as the source of truth.** Requests are stored in the repo's OpenAPI spec, with client-only data (values, scripts, tests, allowed hosts) in a `.narado/` folder beside it. `.narado/config.nar` names the spec, so it can have any file name; without it, narado looks for `openapi.yaml` or `openapi.json`. Edits in the interface go back into the spec, keeping its formatting.
+- **OpenAPI as the source of truth.** Requests are stored in the repo's OpenAPI spec, with client-only data (values, scripts, tests, allowed hosts, and GraphQL, gRPC and WebSocket requests) in a `.narado/` folder beside it. `.narado/config.nar` names the spec, so it can have any file name; without it, narado looks for `openapi.yaml` or `openapi.json`. Edits in the interface go back into the spec, keeping its formatting.
 - **Company sign-in.** Any OpenID Connect provider: Okta, Microsoft Entra ID, Google Workspace, Keycloak and others. You can restrict sign-in to your email domains.
 - **Secrets stay in your secrets store.** Environments hold references such as `secret://vault/payments/staging#api_key`; the server swaps in values only when it sends, and the browser never sees them. Vault can decide per person; other stores follow access rules by repo and person.
 - **Requests can't reach what they shouldn't.** The server refuses loopback, cloud metadata and private networks, after DNS and on every redirect, and each repo's requests only go to hosts listed on its default branch, so new hosts go through review.
@@ -60,7 +60,7 @@ narado is in active development and not production-ready yet.
 | | |
 |---|---|
 | Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · a separate, sandboxed Bruno process per person · secrets from Vault, AWS, Google Cloud and Azure · request safety (block list and per-repo host allowlists) · each person's own Git account (GitHub App, GitLab OAuth) · an API catalogue across repositories, including code repositories carrying their API, cloned with only their collection folders · one-click Sync of a personal copy into your workspace · branding |
-| Next | GitLab against a real instance, hosting, and checks that build on per-person accounts (branch protection on the allowlist, repo access for secrets rules). |
+| Next | A desktop app for Windows and Mac (which also reaches services on your own machine), GitLab against a real instance, hosting, and checks that build on per-person accounts (branch protection on the allowlist, repo access for secrets rules). |
 
 GitLab support has been tested against unit-test fakes only so far, not a real GitLab instance.
 

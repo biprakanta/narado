@@ -13,6 +13,12 @@
  *   version: 1
  *   name: Payments API          optional; defaults to the spec's info.title
  *   spec: payments-v2.yaml      relative to the folder holding .narado/
+ *   grpc:                       optional; for gRPC requests (see .narado/extra/)
+ *     protoFiles: [../../proto/payments.proto]   relative to this folder, inside the repo
+ *     importPaths: [../../proto]
+ *
+ * GraphQL, gRPC and WebSocket requests, which OpenAPI can't describe, are kept as Bruno
+ * files in .narado/extra/, in the same folders as in the collection.
  *
  * Without config.nar, a folder is a collection when it holds openapi.yaml, openapi.yml
  * or openapi.json (in that order). Collections made before `.narado/` keep their files
@@ -42,7 +48,7 @@ const parseConfig = (text, where = CONFIG_FILE) => {
   if (typeof doc !== 'object' || Array.isArray(doc)) throw new ConfigError(`${where} must be a YAML mapping`);
   const version = doc.version === undefined ? 1 : doc.version;
   if (version !== 1) throw new ConfigError(`${where}: version ${version} is not supported (use 1)`);
-  const out = { version: 1, name: null, spec: null };
+  const out = { version: 1, name: null, spec: null, grpc: { protoFiles: [], importPaths: [] } };
   if (doc.name !== undefined && doc.name !== null) {
     if (typeof doc.name !== 'string' || !doc.name.trim()) throw new ConfigError(`${where}: name must be text`);
     out.name = doc.name.trim();
@@ -57,7 +63,37 @@ const parseConfig = (text, where = CONFIG_FILE) => {
     if (!SPEC_EXT.test(spec)) throw new ConfigError(`${where}: spec must be a .yaml, .yml or .json file`);
     out.spec = spec;
   }
+  if (doc.grpc !== undefined && doc.grpc !== null) {
+    if (typeof doc.grpc !== 'object' || Array.isArray(doc.grpc)) throw new ConfigError(`${where}: grpc must be a mapping`);
+    for (const key of ['protoFiles', 'importPaths']) {
+      const list = doc.grpc[key] === undefined || doc.grpc[key] === null ? [] : doc.grpc[key];
+      if (!Array.isArray(list) || list.some((x) => typeof x !== 'string' || !x.trim())) throw new ConfigError(`${where}: grpc.${key} must be a list of paths`);
+      out.grpc[key] = list.map((x) => {
+        const p = path.posix.normalize(x.trim().replace(/\\/g, '/'));
+        if (path.posix.isAbsolute(p)) throw new ConfigError(`${where}: grpc.${key} paths must be relative to the collection's folder`);
+        return p;
+      });
+    }
+  }
   return out;
+};
+
+/**
+ * Set config.nar's grpc lists, keeping the rest of the file (and its comments) as it is.
+ * Creates config.nar when there is none.
+ */
+const writeGrpcConfig = (dir, { protoFiles = [], importPaths = [] }) => {
+  const file = path.join(dir, NARADO_DIR, CONFIG_NAME);
+  const doc = fs.existsSync(file) ? YAML.parseDocument(fs.readFileSync(file, 'utf8')) : new YAML.Document({ version: 1 });
+  if (!protoFiles.length && !importPaths.length) doc.delete('grpc');
+  else {
+    doc.setIn(['grpc', 'protoFiles'], protoFiles);
+    doc.setIn(['grpc', 'importPaths'], importPaths);
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const text = doc.toString();
+  fs.writeFileSync(file, text);
+  return text;
 };
 
 /** The collection's config, or null without one. Throws ConfigError when it is invalid. */
@@ -100,4 +136,4 @@ const dataDirName = (dir) => (!fs.existsSync(path.join(dir, NARADO_DIR)) && fs.e
 /** Is this repo path narado's folder (either name)? */
 const isNaradoDir = (name) => name === NARADO_DIR || name === LEGACY_DIR;
 
-module.exports = { NARADO_DIR, LEGACY_DIR, CONFIG_NAME, CONFIG_FILE, SPEC_FILES, ConfigError, parseConfig, readConfig, findSpec, findSpecQuiet, dataDirName, isNaradoDir };
+module.exports = { NARADO_DIR, LEGACY_DIR, CONFIG_NAME, CONFIG_FILE, SPEC_FILES, ConfigError, parseConfig, readConfig, writeGrpcConfig, findSpec, findSpecQuiet, dataDirName, isNaradoDir };

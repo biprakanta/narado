@@ -12,6 +12,10 @@
  *   is regenerated, touching only files whose content changed.
  * - Each side remembers the hash of what it last wrote, so neither reacts to its own
  *   writes and the two cannot ping-pong.
+ * - GraphQL, gRPC and WebSocket requests have no place in OpenAPI: they are kept as Bruno
+ *   files in .narado/extra/, at the same path as in the view. gRPC proto files and import
+ *   paths come from config.nar (grpc:), and choosing them in the collection's settings
+ *   writes them back there.
  */
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -19,7 +23,7 @@ const path = require('node:path');
 const YAML = require('yaml');
 const { parseRequest, stringifyRequest, stringifyEnvironment } = require('@usebruno/filestore');
 const { SpecDoc, findSpec } = require('./spec');
-const { dataDirName, readConfig } = require('./config');
+const { dataDirName, readConfig, writeGrpcConfig, CONFIG_FILE } = require('./config');
 const { toBrunoRequest, applyBrunoRequest, operationIdFor, uniqueOperationId, camel, parseBrunoUrl } = require('./mapping');
 const { upgradeTo31 } = require('./upgrade');
 
@@ -27,6 +31,15 @@ const STATE_FILE = '.narado-view.json';
 const DEBOUNCE_MS = 250;
 
 const hash = (text) => crypto.createHash('sha1').update(text).digest('hex');
+
+/** A Bruno file's request type from its meta block: http, graphql, grpc or ws. */
+const requestTypeOf = (text) => {
+  const meta = /(?:^|\n)meta\s*\{([\s\S]*?)\n\}/.exec(String(text));
+  const m = meta && /\btype:\s*([\w-]+)/.exec(meta[1]);
+  return m ? m[1].toLowerCase() : 'http';
+};
+const isExtraType = (type) => ['graphql', 'grpc', 'ws', 'websocket'].includes(type);
+const toPosix = (p) => p.split(path.sep).join('/');
 
 /** Folder name for a tag (tags can hold characters folders cannot). */
 const folderFor = (tag) => (tag ? tag.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'untitled' : null);
@@ -44,14 +57,17 @@ class Projection {
    * @param {string} opts.repoDir  the working copy (holds openapi.yaml)
    * @param {string} opts.viewDir  where the Bruno collection is generated
    */
-  constructor({ repoDir, viewDir, log = console }) {
+  constructor({ repoDir, viewDir, root = repoDir, log = console }) {
     this.repoDir = repoDir;
+    // The working copy's root: proto files may sit anywhere in it, never outside.
+    this.root = root;
     this.viewDir = viewDir;
     this.log = log;
     this.specPath = findSpec(repoDir);
     if (!this.specPath) throw new Error(`No OpenAPI spec in ${repoDir}: add .narado/config.nar naming it, or name it openapi.yaml`);
     // Request files: .narado/requests, or .client/requests for collections made before .narado.
     this.clientDir = path.join(dataDirName(repoDir), 'requests');
+    this.extraDir = path.join(dataDirName(repoDir), 'extra');
     this.config = readConfig(repoDir);
     this.state = this.loadState();
     this.watchers = [];
@@ -64,7 +80,7 @@ class Projection {
 
   loadState() {
     const file = path.join(this.viewDir, STATE_FILE);
-    const empty = { files: {}, folders: {}, viewHashes: {}, repoHashes: {} };
+    const empty = { files: {}, folders: {}, viewHashes: {}, repoHashes: {}, extras: {} };
     if (!fs.existsSync(file)) return empty;
     try {
       return { ...empty, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
@@ -142,7 +158,11 @@ class Projection {
     const spec2 = spec.toJS();
 
     const desired = new Map();
-    desired.set('bruno.json', JSON.stringify({ version: '1', name: (this.config && this.config.name) || (js.info && js.info.title) || path.basename(this.repoDir), type: 'collection', ignore: ['node_modules', '.git'] }, null, 2) + '\n');
+    this.config = readConfig(this.repoDir);
+    const brunoJson = { version: '1', name: (this.config && this.config.name) || (js.info && js.info.title) || path.basename(this.repoDir), type: 'collection', ignore: ['node_modules', '.git'] };
+    const protobuf = this.protobufForView();
+    if (protobuf) brunoJson.protobuf = protobuf;
+    desired.set('bruno.json', JSON.stringify(brunoJson, null, 2) + '\n');
 
     const servers = Array.isArray(spec2.servers) && spec2.servers.length ? spec2.servers : [];
     servers.forEach((s, i) => {
@@ -174,6 +194,15 @@ class Projection {
       nextFiles[rel] = id;
     }
 
+    // GraphQL, gRPC and WebSocket requests, stored as they are in .narado/extra/.
+    const nextExtras = {};
+    for (const rel of this.listExtras()) {
+      if (desired.has(rel)) continue; // an operation's file wins over a same-named extra
+      desired.set(rel, fs.readFileSync(path.join(this.repoDir, this.extraDir, rel), 'utf8'));
+      nextExtras[rel] = true;
+    }
+    this.state.extras = nextExtras;
+
     let touched = 0;
     for (const [rel, content] of desired) {
       const file = path.join(this.viewDir, rel);
@@ -194,6 +223,80 @@ class Projection {
     this.state.repoHashes[path.relative(this.repoDir, this.specPath)] = hash(fs.readFileSync(this.specPath, 'utf8'));
     this.saveState();
     return touched;
+  }
+
+  /** Bruno files under .narado/extra/, as view-relative paths. */
+  listExtras() {
+    const base = path.join(this.repoDir, this.extraDir);
+    const out = [];
+    const walk = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (e.name.startsWith('.')) continue;
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.name.endsWith('.bru')) out.push(path.relative(base, p));
+      }
+    };
+    walk(base);
+    return out.sort();
+  }
+
+  /** A repo path from config.nar, if it stays inside the working copy. */
+  repoPath(rel) {
+    const abs = path.resolve(this.repoDir, rel);
+    const inside = path.relative(this.root, abs);
+    return inside.startsWith('..') || path.isAbsolute(inside) ? null : abs;
+  }
+
+  /** bruno.json's protobuf block: config.nar's paths, made relative to the view. */
+  protobufForView() {
+    const grpc = this.config && this.config.grpc;
+    if (!grpc || (!grpc.protoFiles.length && !grpc.importPaths.length)) return null;
+    const viewRel = (p) => {
+      const abs = this.repoPath(p);
+      if (!abs) {
+        this.log.warn(`[narado] ${CONFIG_FILE}: ${p} is outside the repository; ignored`);
+        return null;
+      }
+      return toPosix(path.relative(this.viewDir, abs));
+    };
+    const protoFiles = grpc.protoFiles.map(viewRel).filter(Boolean).map((p) => ({ path: p, type: 'file' }));
+    const importPaths = grpc.importPaths.map(viewRel).filter(Boolean).map((p) => ({ path: p, enabled: true }));
+    return protoFiles.length || importPaths.length ? { protoFiles, importPaths } : null;
+  }
+
+  /** Proto settings chosen in the collection's settings: write them to config.nar. */
+  applyBrunoJson() {
+    const file = path.join(this.viewDir, 'bruno.json');
+    if (!fs.existsSync(file)) return 0;
+    const text = fs.readFileSync(file, 'utf8');
+    if (this.state.viewHashes['bruno.json'] === hash(text)) return 0;
+    let cfg;
+    try {
+      cfg = JSON.parse(text);
+    } catch {
+      return 0;
+    }
+    const pb = cfg.protobuf || {};
+    const repoRel = (p) => {
+      const abs = path.resolve(this.viewDir, p);
+      const inside = path.relative(this.root, abs);
+      if (inside.startsWith('..') || path.isAbsolute(inside)) {
+        this.log.warn(`[narado] proto path ${p} is outside the repository; not saved`);
+        return null;
+      }
+      return toPosix(path.relative(this.repoDir, abs));
+    };
+    const protoFiles = (pb.protoFiles || []).map((f) => f && repoRel(f.path)).filter(Boolean);
+    const importPaths = (pb.importPaths || []).filter((f) => f && f.enabled !== false).map((f) => repoRel(f.path)).filter(Boolean);
+    const current = (this.config && this.config.grpc) || { protoFiles: [], importPaths: [] };
+    this.state.viewHashes['bruno.json'] = hash(text);
+    if (JSON.stringify(current.protoFiles) === JSON.stringify(protoFiles) && JSON.stringify(current.importPaths) === JSON.stringify(importPaths)) return 0;
+    const written = writeGrpcConfig(this.repoDir, { protoFiles, importPaths });
+    this.state.repoHashes[toPosix(path.join('.narado', 'config.nar'))] = hash(written);
+    this.config = readConfig(this.repoDir);
+    return 1;
   }
 
   listViewRequests() {
@@ -231,8 +334,38 @@ class Projection {
    * A delete and an add of the same method and path in one batch is a rename or move.
    */
   applyViewChanges(batch) {
-    const changes = [...batch].filter(([rel]) => rel.endsWith('.bru') && !rel.startsWith('environments') && path.basename(rel) !== 'folder.bru' && path.basename(rel) !== 'collection.bru');
-    if (!changes.length) return 0;
+    let extraApplied = batch.has('bruno.json') ? this.applyBrunoJson() : 0;
+    const all = [...batch].filter(([rel]) => rel.endsWith('.bru') && !rel.startsWith('environments') && path.basename(rel) !== 'folder.bru' && path.basename(rel) !== 'collection.bru');
+    // GraphQL, gRPC and WebSocket requests go to .narado/extra/ as they are.
+    const changes = [];
+    for (const [rel, kind] of all) {
+      const file = path.join(this.viewDir, rel);
+      const exists = kind !== 'unlink' && fs.existsSync(file);
+      const text = exists ? fs.readFileSync(file, 'utf8') : null;
+      const extra = exists ? isExtraType(requestTypeOf(text)) : !!this.state.extras[rel];
+      if (!extra) {
+        changes.push([rel, kind]);
+        continue;
+      }
+      const target = path.join(this.repoDir, this.extraDir, rel);
+      if (!exists) {
+        if (fs.existsSync(target)) fs.rmSync(target);
+        delete this.state.repoHashes[toPosix(path.relative(this.repoDir, target))];
+        delete this.state.extras[rel];
+        delete this.state.viewHashes[rel];
+        extraApplied++;
+        continue;
+      }
+      if (this.state.viewHashes[rel] === hash(text)) continue; // our own write
+      this.writeRepoFile(target, text);
+      this.state.extras[rel] = true;
+      this.state.viewHashes[rel] = hash(text);
+      extraApplied++;
+    }
+    if (!changes.length) {
+      if (extraApplied) this.saveState();
+      return extraApplied;
+    }
 
     let spec = SpecDoc.load(this.specPath);
     if (/^3\.0\./.test(spec.version())) {
@@ -322,7 +455,7 @@ class Projection {
 
     this.writeSpec(spec);
     this.saveState();
-    return applied;
+    return applied + extraApplied;
   }
 
   /* ---------------------------------------------------------------- watch */
@@ -344,8 +477,12 @@ class Projection {
     };
     viewWatcher.on('add', queue('change')).on('change', queue('change')).on('unlink', queue('unlink'));
 
-    const repoWatcher = chokidar.watch([this.specPath, path.join(this.repoDir, this.clientDir)], {
+    // The spec and narado's folders (.narado/, or .client/ in older collections), which may
+    // not exist yet: watch the collection folder, skipping everything else in it.
+    const keep = [this.specPath, path.join(this.repoDir, '.narado'), path.join(this.repoDir, '.client')];
+    const repoWatcher = chokidar.watch(this.repoDir, {
       ignoreInitial: true,
+      ignored: (p) => p !== this.repoDir && !keep.some((k) => p === k || p.startsWith(k + path.sep) || k.startsWith(p + path.sep)),
       awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 20 }
     });
     const onRepo = (p) => {
@@ -387,4 +524,4 @@ class Projection {
   }
 }
 
-module.exports = { Projection, folderFor, STATE_FILE };
+module.exports = { requestTypeOf, Projection, folderFor, STATE_FILE };

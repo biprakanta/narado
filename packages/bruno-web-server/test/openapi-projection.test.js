@@ -173,3 +173,62 @@ test('.narado/config.nar names the spec (any file name) and the collection', asy
   assert.equal(JSON.parse(fs.readFileSync(viewFile('bruno.json'), 'utf8')).name, 'Payments (team)');
   assert.ok(fs.existsSync(viewFile('Payments/getPayment.bru')));
 });
+
+const GRAPHQL = 'meta {\n  name: Payment by id (GraphQL)\n  type: graphql\n  seq: 5\n}\n\npost {\n  url: {{baseUrl}}/graphql\n  body: graphql\n  auth: inherit\n}\n\nbody:graphql {\n  query { payment(id: "pay_1") { id amount } }\n}\n';
+const GRPC = 'meta {\n  name: Get payment (gRPC)\n  type: grpc\n  seq: 6\n}\n\ngrpc {\n  url: grpcs://payments.example.test:443\n  method: /payments.v1.Payments/GetPayment\n  body: grpc\n  auth: inherit\n}\n';
+const WS = 'meta {\n  name: Payment events\n  type: ws\n  seq: 7\n}\n\nws {\n  url: wss://events.example.test/payments\n  body: ws\n  auth: inherit\n}\n';
+
+test('GraphQL, gRPC and WebSocket requests are kept in .narado/extra/, and the spec is untouched', async () => {
+  await start();
+  fs.mkdirSync(viewFile('Realtime'), { recursive: true });
+  fs.writeFileSync(viewFile('Payments/paymentById.bru'), GRAPHQL);
+  fs.writeFileSync(viewFile('Payments/getPaymentGrpc.bru'), GRPC);
+  fs.writeFileSync(viewFile('Realtime/paymentEvents.bru'), WS);
+  const extra = (rel) => path.join(repoDir, '.narado', 'extra', ...rel.split('/'));
+  await waitFor(() => ['Payments/paymentById.bru', 'Payments/getPaymentGrpc.bru', 'Realtime/paymentEvents.bru'].every((r) => fs.existsSync(extra(r))), 'the extra files');
+  assert.equal(fs.readFileSync(extra('Payments/getPaymentGrpc.bru'), 'utf8'), GRPC, 'stored as they are');
+  await proj.settle();
+  assert.equal(specText(), FIXTURE, 'nothing of them goes into the spec');
+
+  // Edited in the repo (a teammate's change pulled in): the view follows.
+  fs.writeFileSync(extra('Realtime/paymentEvents.bru'), WS.replace('/payments', '/payments/v2'));
+  await waitFor(() => fs.readFileSync(viewFile('Realtime/paymentEvents.bru'), 'utf8').includes('/payments/v2'), 'the view to update');
+
+  // Deleted in the view: gone from the repo too.
+  fs.rmSync(viewFile('Payments/paymentById.bru'));
+  await waitFor(() => !fs.existsSync(extra('Payments/paymentById.bru')), 'the extra file to go');
+
+  // A fresh view (another person, another server) gets them back from the repo.
+  await proj.stop();
+  fs.rmSync(viewDir, { recursive: true, force: true });
+  await start();
+  assert.ok(fs.existsSync(viewFile('Payments/getPaymentGrpc.bru')));
+  assert.ok(fs.existsSync(viewFile('Realtime/paymentEvents.bru')));
+  assert.ok(!fs.existsSync(viewFile('Payments/paymentById.bru')));
+});
+
+test('gRPC proto files come from config.nar, and choosing them in the collection settings writes them back', async () => {
+  const root = tmp; // the working copy; repoDir is a collection folder inside it
+  fs.mkdirSync(path.join(root, 'proto', 'payments'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'proto', 'payments', 'v1.proto'), 'syntax = "proto3";\n');
+  fs.mkdirSync(path.join(repoDir, '.narado'), { recursive: true });
+  fs.writeFileSync(path.join(repoDir, '.narado', 'config.nar'), '# our payments API\nversion: 1\ngrpc:\n  protoFiles: [../proto/payments/v1.proto]\n  importPaths: [../proto]\n');
+  proj = new Projection({ repoDir, viewDir, root, log: quiet });
+  await proj.start();
+  const cfg = JSON.parse(fs.readFileSync(viewFile('bruno.json'), 'utf8'));
+  assert.deepEqual(cfg.protobuf.protoFiles.map((f) => path.resolve(viewDir, f.path)), [path.join(root, 'proto', 'payments', 'v1.proto')]);
+  assert.deepEqual(cfg.protobuf.importPaths.map((f) => path.resolve(viewDir, f.path)), [path.join(root, 'proto')]);
+
+  // Bruno's protobuf settings add a second proto file: config.nar gets it, comments kept.
+  fs.writeFileSync(path.join(root, 'proto', 'payments', 'events.proto'), 'syntax = "proto3";\n');
+  cfg.protobuf.protoFiles.push({ path: path.relative(viewDir, path.join(root, 'proto', 'payments', 'events.proto')), type: 'file' });
+  fs.writeFileSync(viewFile('bruno.json'), JSON.stringify(cfg, null, 2));
+  const nar = () => fs.readFileSync(path.join(repoDir, '.narado', 'config.nar'), 'utf8');
+  await waitFor(() => nar().includes('events.proto'), 'config.nar to list the new proto file');
+  assert.match(nar(), /# our payments API/);
+  assert.deepEqual(YAML.parse(nar()).grpc.protoFiles, ['../proto/payments/v1.proto', '../proto/payments/events.proto']);
+
+  // A proto path outside the working copy is ignored.
+  fs.writeFileSync(path.join(repoDir, '.narado', 'config.nar'), 'version: 1\ngrpc:\n  protoFiles: [../../../etc/x.proto]\n');
+  await waitFor(() => !JSON.parse(fs.readFileSync(viewFile('bruno.json'), 'utf8')).protobuf, 'the outside path to be dropped');
+});

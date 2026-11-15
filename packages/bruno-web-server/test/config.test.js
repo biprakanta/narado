@@ -6,8 +6,10 @@ const path = require('node:path');
 const { parseConfig, findSpec, dataDirName, ConfigError } = require('../src/narado/openapi/config');
 
 test('config.nar: version 1, an optional name, and a spec inside the folder', () => {
-  assert.deepEqual(parseConfig('version: 1\nname: Payments\nspec: specs/payments.yaml\n'), { version: 1, name: 'Payments', spec: 'specs/payments.yaml' });
-  assert.deepEqual(parseConfig(''), { version: 1, name: null, spec: null });
+  const none = { protoFiles: [], importPaths: [] };
+  assert.deepEqual(parseConfig('version: 1\nname: Payments\nspec: specs/payments.yaml\n'), { version: 1, name: 'Payments', spec: 'specs/payments.yaml', grpc: none });
+  assert.deepEqual(parseConfig(''), { version: 1, name: null, spec: null, grpc: none });
+  assert.deepEqual(parseConfig('grpc:\n  protoFiles: [../../proto/a.proto]\n  importPaths: [../../proto/]\n').grpc, { protoFiles: ['../../proto/a.proto'], importPaths: ['../../proto/'] });
   for (const [text, why] of [
     ['spec: ../other/openapi.yaml', /inside the collection/],
     ['spec: /etc/openapi.yaml', /inside the collection/],
@@ -15,7 +17,10 @@ test('config.nar: version 1, an optional name, and a spec inside the folder', ()
     ['spec: payments.txt', /\.yaml, \.yml or \.json/],
     ['version: 2', /not supported/],
     ['- a list', /mapping/],
-    ['spec: [', /not valid YAML/]
+    ['spec: [', /not valid YAML/],
+    ['grpc: [a]', /grpc must be a mapping/],
+    ['grpc:\n  protoFiles: /abs/a.proto', /list of paths/],
+    ['grpc:\n  protoFiles: [/abs/a.proto]', /relative/]
   ]) {
     assert.throws(() => parseConfig(text), (err) => err instanceof ConfigError && why.test(err.message), text);
   }

@@ -13,6 +13,11 @@
  *      made later in the same send are checked against the same rules. HTTP requests are
  *      checked one by one (host, port and path), which also covers reused keep-alive sockets.
  *
+ * Some clients resolve names themselves and connect to the address (gRPC does), so the
+ * guard remembers which names this worker's own lookups resolved to which addresses, and
+ * checks an address against the allowlist by those names. The block list still checks
+ * every address.
+ *
  * Each request made during a send is logged with the person, method, host and status;
  * never the path's query, headers or body.
  */
@@ -46,6 +51,7 @@ class RequestGuard {
     this.trusted = new Set(trustedHosts.map((h) => h.toLowerCase()));
     this.outsideRepos = outsideRepos || (env.NARADO_REQUESTS_OUTSIDE_REPOS === 'refuse' ? 'refuse' : 'allow');
     this.als = new AsyncLocalStorage();
+    this.resolved = new Map(); // address -> Map(hostname -> expires at)
     this.log = log;
     this.installed = false;
   }
@@ -65,6 +71,27 @@ class RequestGuard {
   }
 
   /** Throws if a connection to host:port is not allowed (name check, before DNS). */
+  /** Remember that `hostname` resolved to these addresses (for clients that connect by address). */
+  recordLookup(hostname, addresses, ttlMs = 5 * 60 * 1000) {
+    if (!hostname || net.isIP(hostname)) return;
+    const until = Date.now() + ttlMs;
+    for (const a of addresses) {
+      const address = typeof a === 'string' ? a : a && a.address;
+      if (!address) continue;
+      if (!this.resolved.has(address)) this.resolved.set(address, new Map());
+      this.resolved.get(address).set(String(hostname).toLowerCase(), until);
+    }
+  }
+
+  /** Names this worker recently resolved to `address`. */
+  namesFor(address) {
+    const names = this.resolved.get(address);
+    if (!names) return [];
+    const now = Date.now();
+    for (const [n, until] of names) if (until < now) names.delete(n);
+    return [...names.keys()];
+  }
+
   checkHost(host, port) {
     const ctx = this.current();
     if (!ctx) return;
@@ -72,9 +99,12 @@ class RequestGuard {
       if (this.outsideRepos === 'refuse') throw new RequestRefused(`Requests from collections outside a Git workspace are turned off on this server (${host})`);
       return;
     }
-    if (!ctx.rules.allowsHost(host, port)) {
+    const allowedByName = net.isIP(host) && this.namesFor(host).some((n) => ctx.rules.allowsHost(n, port));
+    if (!allowedByName && !ctx.rules.allowsHost(host, port)) {
+      const names = net.isIP(host) ? this.namesFor(host) : [];
+      const target = names.length ? `${names[0]}:${port} (${host})` : `${host}:${port}`;
       throw new RequestRefused(
-        `${host}:${port} is not on the allowlist of ${ctx.rules.repo} (its ${ctx.rules.branch || 'default'} branch). Add it to .narado/allowed-hosts.yml through a merge request.`
+        `${target} is not on the allowlist of ${ctx.rules.repo} (its ${ctx.rules.branch || 'default'} branch). Add it to .narado/allowed-hosts.yml through a merge request.`
       );
     }
   }
@@ -95,6 +125,7 @@ class RequestGuard {
       const opts = typeof options === 'number' ? { family: options } : options || {};
       (original || dns.lookup)(hostname, opts, (err, address, family) => {
         if (err) return callback(err, address, family);
+        guard.recordLookup(hostname, Array.isArray(address) ? address : [address]);
         try {
           for (const a of Array.isArray(address) ? address.map((x) => x.address) : [address]) guard.checkAddress(a, host || hostname);
         } catch (e) {
@@ -109,6 +140,23 @@ class RequestGuard {
     if (this.installed) return;
     this.installed = true;
     const guard = this;
+
+    // Remember what names resolve to, for clients that resolve first and connect by address.
+    const originalLookup = dns.lookup;
+    dns.lookup = function lookup(hostname, options, callback) {
+      const cb = typeof options === 'function' ? options : callback;
+      const opts = typeof options === 'function' ? {} : options;
+      return originalLookup.call(dns, hostname, opts, (err, address, family) => {
+        if (!err) guard.recordLookup(hostname, Array.isArray(address) ? address : [address]);
+        cb(err, address, family);
+      });
+    };
+    const originalPromiseLookup = dns.promises.lookup;
+    dns.promises.lookup = async function lookup(hostname, options) {
+      const res = await originalPromiseLookup.call(dns.promises, hostname, options);
+      guard.recordLookup(hostname, Array.isArray(res) ? res : [res]);
+      return res;
+    };
 
     const originalConnect = net.Socket.prototype.connect;
     net.Socket.prototype.connect = function connect(...args) {

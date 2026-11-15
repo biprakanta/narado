@@ -104,6 +104,7 @@ services/payments/api/
     config.nar              marks the collection and names the spec
     requests/<operationId>.yml   values, scripts and tests per request
     allowed-hosts.yml       hosts requests may reach (see Request safety)
+    extra/                  GraphQL, gRPC and WebSocket requests, as Bruno files
 ```
 
 `config.nar` is YAML:
@@ -112,7 +113,12 @@ services/payments/api/
 version: 1
 name: Payments API        # optional; defaults to the spec's info.title
 spec: payments-v2.yaml    # relative to this folder, and inside it
+grpc:                     # optional, for gRPC requests
+  protoFiles: [../../proto/payments/v1.proto]   # relative to this folder, inside the repo
+  importPaths: [../../proto]
 ```
+
+**GraphQL, gRPC and WebSocket requests** can't be described in OpenAPI, so narado keeps them as Bruno files in `.narado/extra/`, at the same folder path as in the collection. They're created, edited and reviewed like everything else; the spec is never touched by them. gRPC proto files and import paths come from `config.nar`; choosing them in the collection's Protobuf settings writes them back there, and light clones also fetch the folders they're in. All three follow the same request rules as HTTP: a WebSocket or gRPC host must be on the repo's allowlist (`.narado/allowed-hosts.yml`, as `host:port`).
 
 Without `config.nar`, a folder holding `openapi.yaml`, `openapi.yml` or `openapi.json` (in that order) is a collection too, and narado creates `.narado/` there when it first needs to save something. Collections made before `.narado/` keep their files in `.client/`, which narado still reads and writes for them.
 
@@ -342,6 +348,7 @@ The workspace tests run real Git against a local repo standing in for the host, 
   - Native add-ons are allowed, for file watching.
   - Network rules (Request safety) are enforced in the worker itself; a container per worker with its own egress rules adds a second layer.
   - For a hosted service, run each worker in its own container or OS user as well.
+- **MCP** sends HTTP requests only; GraphQL, gRPC and WebSocket requests are used from the interface.
 - **Request rules and other programs.** The block list and allowlists are applied inside the worker's Node process; programs it starts (git) are not covered, but their targets are narado's configured Git hosts. Names are resolved once per connection, by the system resolver.
 - **The allowlist's repo** is found from the collection's folder; a person's worker reads it from its own clone of the default branch, fetched with their own Git account.
 - **Data from before Phase 4d** at the top of the data folder is not moved into anyone's `users/` folder; people re-open their repositories.
