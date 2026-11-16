@@ -101,3 +101,20 @@ describe('EditorTaskItem NodeView edge cases', () => {
     expect(checkbox.checked).toBe(false);
   });
 });
+
+describe('EditorTaskItem attributes', () => {
+  it('puts the configured HTMLAttributes on the item, next to data-checked', () => {
+    const editor = new Editor({
+      extensions: [
+        Document, Paragraph, Text, Strike, EditorTaskList,
+        EditorTaskItem.configure({ HTMLAttributes: { class: 'editor-task-item' } })
+      ],
+      content: '<ul data-type="taskList"><li data-type="taskItem" data-checked="true"><p>Done</p></li></ul>'
+    });
+    const item = editor.view.dom.querySelector('li');
+
+    expect(item.classList.contains('editor-task-item')).toBe(true);
+    expect(item.getAttribute('data-checked')).toBe('true');
+    editor.destroy();
+  });
+});

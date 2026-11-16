@@ -57,6 +57,9 @@ const DocsEditor = ({
       extensions: RichTextEditor.extensions({ collectionPath }),
       content: docs || '',
       editable: isEditing && !isMarkdownMode,
+      // tiptap 3 stops re-rendering on each transaction; the toolbar reads
+      // editor.isActive() while rendering, so keep tiptap 2's behaviour.
+      shouldRerenderOnTransaction: true,
       onUpdate: ({ editor: currentEditor, transaction }) => {
         if (isMarkdownModeRef.current) return;
         // A task checkbox stays clickable in preview (EditorTaskList's own
@@ -116,7 +119,7 @@ const DocsEditor = ({
     const content = docs || (isEditing ? '' : emptyPreviewContent || '');
 
     if (!editor.isDestroyed) {
-      editor.commands.setContent(content, false);
+      editor.commands.setContent(content, { emitUpdate: false });
     }
   }, [docs, editor, isMarkdownMode, isEditing, emptyPreviewContent]);
 
