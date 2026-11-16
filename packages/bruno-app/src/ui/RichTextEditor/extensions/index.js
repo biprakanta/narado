@@ -1,5 +1,5 @@
 import TableRow from '@tiptap/extension-table-row';
-import TextStyle from '@tiptap/extension-text-style';
+import { TextStyle } from '@tiptap/extension-text-style';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import EditorGapCursor from './EditorGapCursor';
@@ -59,7 +59,13 @@ const createExtensions = ({ allowHtml = true, collectionPath = '' } = {}) => [
     hardBreak: false,
     gapcursor: false,
     paragraph: false,
-    codeBlock: false
+    codeBlock: false,
+    // Added to StarterKit in tiptap 3: narado brings its own link and list keys,
+    // and underline / a forced trailing paragraph aren't part of Markdown docs.
+    link: false,
+    underline: false,
+    listKeymap: false,
+    trailingNode: false
   }),
   EditorParagraph,
   EditorHardBreak,

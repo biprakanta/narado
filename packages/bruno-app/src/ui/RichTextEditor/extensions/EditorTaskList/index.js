@@ -1,3 +1,4 @@
+import { mergeAttributes } from '@tiptap/core';
 import BulletList from '@tiptap/extension-bullet-list';
 import ListItem from '@tiptap/extension-list-item';
 import OrderedList from '@tiptap/extension-ordered-list';
@@ -212,10 +213,10 @@ const EditorTaskItem = TaskItem.extend({
       checkboxWrapper.append(checkbox, checkboxStyler);
       listItem.append(checkboxWrapper, content);
 
-      // `HTMLAttributes` here is already this.options.HTMLAttributes merged
-      // with the node's own renderHTML output (e.g. data-checked) — applying
-      // it once after building the DOM covers both in one pass.
-      Object.entries(HTMLAttributes).forEach(([key, value]) => {
+      // Since tiptap 3, `HTMLAttributes` here is only the node's own renderHTML
+      // output (e.g. data-checked); the configured ones (the editor-task-item
+      // class the styles key on) are merged in explicitly.
+      Object.entries(mergeAttributes(this.options.HTMLAttributes, HTMLAttributes)).forEach(([key, value]) => {
         listItem.setAttribute(key, value);
       });
 

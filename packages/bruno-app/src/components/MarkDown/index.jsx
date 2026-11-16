@@ -7,14 +7,15 @@ const Markdown = ({ onDoubleClick, content, allowHtml = true, collectionPath = '
     {
       extensions: RichTextEditor.extensions({ allowHtml, collectionPath }),
       content: content || '',
-      editable: false
+      editable: false,
+      shouldRerenderOnTransaction: true
     },
     [allowHtml, collectionPath]
   );
 
   useEffect(() => {
     if (editor) {
-      editor.commands.setContent(content || '', false);
+      editor.commands.setContent(content || '', { emitUpdate: false });
     }
   }, [content, editor]);
 
