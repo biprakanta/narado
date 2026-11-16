@@ -20,7 +20,7 @@
     "prepack": "npm run test && npm run build"
   },
   "dependencies": {
-    "@faker-js/faker": "^9.7.0",
+    "@faker-js/faker": "^10.5.0",
     "@usebruno/common": "0.1.0",
     "@grpc/grpc-js": "1.14.6",
     "@grpc/proto-loader": "^0.7.15",
@@ -57,7 +57,7 @@
     "rollup-plugin-dts": "^5.0.0",
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "@rollup/plugin-terser": "^1.0.0",
-    "typescript": "^4.8.4"
+    "typescript": "^5.9.3"
   },
   "overrides": {
     "rollup": "3.30.0"
