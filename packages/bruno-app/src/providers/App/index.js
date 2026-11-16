@@ -11,6 +11,7 @@ import useOpenAPISyncPolling from './useOpenAPISyncPolling';
 import useChangelogOnUpdate from './useChangelogOnUpdate';
 import { version } from '../../../package.json';
 import { checkpoint, startBenchmarkFlush, stopBenchmarkFlush, flushEvents } from 'utils/benchmark';
+import { ServerFileDialogHost } from 'components/Narado/ServerFileDialog';
 
 export const AppContext = React.createContext();
 
@@ -80,6 +81,7 @@ export const AppProvider = (props) => {
     <AppContext.Provider {...props} value={{ version }}>
       <StyledWrapper>
         <ConfirmAppClose />
+        <ServerFileDialogHost />
         <MigrateCollectionToYmlModal />
         {props.children}
       </StyledWrapper>

@@ -12,6 +12,7 @@ const { collectionsInTree, Catalogue } = require('./catalogue');
 const { findSpec, readConfig, parseConfig } = require('./openapi/config');
 const { SyncManager } = require('./sync');
 const { Projection } = require('./openapi/projection');
+const { listFolder } = require('./browse');
 
 const REPO_TTL_MS = 5 * 60 * 1000;
 
@@ -187,6 +188,11 @@ const registerNaradoIpc = ({ ipcMain, mainWindow, collectionWatcher, openCollect
   });
 
   ipcMain.handle('narado:synced', async () => sync.list());
+
+  // The browser's open and save dialogs: one folder at a time, limited to the person's own
+  // folder when sign-in is on (see browse.js).
+  ipcMain.handle('narado:list-folder', async (_e, { path: folder } = {}) =>
+    listFolder({ path: folder, multiUser: env.NARADO_MULTI_USER === '1', root: dataDir }));
 
   // Connecting or disconnecting an account happens in the front; start afresh when the interface asks.
   ipcMain.handle('narado:hosts', async () => {
