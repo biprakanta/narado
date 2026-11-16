@@ -2,12 +2,16 @@
 
 This folder runs narado on one machine with Docker: the narado server behind [Caddy](https://caddyserver.com), which gets and renews the TLS certificate for your domain.
 
+Setting narado up somewhere else (behind your own load balancer, on Kubernetes), or looking for every setting? See [ADMIN.md](ADMIN.md).
+
 | File | What it is |
 |---|---|
 | `Dockerfile` | The narado image: the web interface, the front process and the per-person workers. Runs as the unprivileged `node` user, data in `/data`. |
 | `compose.yaml` | narado plus Caddy, with volumes for narado's data and Caddy's certificates. |
+| `compose.proxy.yaml` | narado alone, for when your own load balancer handles TLS. |
 | `Caddyfile` | HTTPS in front of narado, WebSockets included. |
-| `narado.env.example` | The settings to fill in. |
+| `narado.env.example` | The settings to fill in. Your copy, `narado.env`, is kept out of Git and out of the image. |
+| `ADMIN.md` | The administrator's guide: requirements, registering with your sign-in provider and Git host, other ways to run it, every setting. |
 
 ## Before you start
 
@@ -95,4 +99,4 @@ docker compose ps
 docker compose logs -f narado
 ```
 
-The image has a health check on `/auth/me`. The log shows each sign-in, Git account connection, secret read (never the value) and every request a worker sends (person, host, repository, status).
+The image has a health check on `/healthz`. The log shows each sign-in, Git account connection, secret read (never the value) and every request a worker sends (person, host, repository, status).

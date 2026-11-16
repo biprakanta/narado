@@ -1,0 +1,25 @@
+# narado without Caddy, for when your own load balancer or ingress terminates TLS
+# (see ADMIN.md, "Behind your own load balancer").
+#   cp narado.env.example narado.env   # fill it in
+#   NARADO_DOMAIN=narado.example.com docker compose -f compose.proxy.yaml up -d
+# narado listens on 127.0.0.1:4100 on this host; point the load balancer there.
+services:
+  narado:
+    image: narado:latest
+    build:
+      context: ../../..
+      dockerfile: packages/bruno-web-server/deploy/Dockerfile
+    env_file: narado.env
+    environment:
+      NARADO_PUBLIC_URL: https://${NARADO_DOMAIN:?set NARADO_DOMAIN to narado's public host name}
+      BRUNO_WEB_ORIGINS: https://${NARADO_DOMAIN}
+    volumes:
+      - narado-data:/data
+    ports:
+      # Loopback only: the load balancer on this host (or an SSH tunnel) reaches it.
+      # To accept a load balancer on another machine, use "4100:4100" and firewall the port.
+      - "127.0.0.1:4100:4100"
+    restart: unless-stopped
+
+volumes:
+  narado-data:

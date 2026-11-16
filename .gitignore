@@ -79,3 +79,6 @@ packages/bruno-converters/dist
 # narado desktop builds (scripts/build-narado-desktop.js)
 packages/bruno-electron/narado/
 packages/bruno-electron/out-narado/
+
+# narado deploy settings hold secrets (deploy/narado.env.example is the template)
+packages/bruno-web-server/deploy/narado.env

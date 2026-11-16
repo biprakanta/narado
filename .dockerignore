@@ -10,3 +10,5 @@ packages/bruno-electron/dist
 packages/bruno-electron/out-narado
 packages/bruno-electron/web
 packages/bruno-electron/narado
+# deploy settings hold secrets; never bake them into the image
+packages/bruno-web-server/deploy/narado.env
