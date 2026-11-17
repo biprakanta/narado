@@ -74,6 +74,11 @@ child.on('exit', (code) => {
   for (const c of r.checks) console.log(`${c.ok ? 'ok  ' : 'FAIL'} ${c.name}${c.detail ? ` (${c.detail})` : ''}${c.error ? `: ${c.error}` : ''}`);
   console.log(`[narado] ${r.platform} ${r.arch}, Electron ${r.electron}: ${r.ok ? 'all checks passed' : 'checks failed'}`);
   if (!r.ok) console.error(output.slice(-6000));
-  fs.rmSync(dir, { recursive: true, force: true });
+  try {
+    // Electron's helper processes can still be writing here after a forced stop.
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+  } catch (err) {
+    console.log(`[narado] left ${dir} behind (${err.code})`);
+  }
   process.exit(r.ok && (code === 0 || stopped) ? 0 : 1);
 });
