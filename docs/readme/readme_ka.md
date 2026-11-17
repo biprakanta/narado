@@ -170,4 +170,4 @@ sudo apt update && sudo apt install bruno
 
 ### ლიცენზია 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)

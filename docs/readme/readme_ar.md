@@ -150,4 +150,4 @@ sudo apt update && sudo apt install bruno
 
 ### الرخصة 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)

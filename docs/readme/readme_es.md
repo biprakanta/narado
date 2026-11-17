@@ -149,4 +149,4 @@ El logo fue obtenido de [OpenMoji](https://openmoji.org/library/emoji-1F436/). L
 
 ### Licencia 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)

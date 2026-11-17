@@ -149,4 +149,4 @@ Zelfs als je geen bijdragen via code kunt leveren, aarzel dan niet om bugs en fu
 
 ### Licentie 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)

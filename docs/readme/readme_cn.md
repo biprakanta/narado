@@ -173,4 +173,4 @@ Logo 源自 [OpenMoji](https://openmoji.org/library/emoji-1F436/). License: CC [
 
 ## 许可证 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)

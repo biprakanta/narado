@@ -170,4 +170,4 @@ Bruno を改善していただけるのは歓迎です。[コントリビュー�
 
 ### ライセンス 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)
