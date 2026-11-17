@@ -140,4 +140,4 @@ sudo apt update && sudo apt install bruno
 
 ### লাইসেন্স 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)

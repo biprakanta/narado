@@ -146,4 +146,4 @@ Logo 源自於 [OpenMoji](https://openmoji.org/library/emoji-1F436/)。授權: C
 
 ### 授權許可 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)

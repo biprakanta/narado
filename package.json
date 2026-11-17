@@ -1,6 +1,7 @@
 {
   "name": "usebruno",
   "private": true,
+  "license": "AGPL-3.0-only",
   "workspaces": [
     "packages/bruno-app",
     "packages/bruno-electron",

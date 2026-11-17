@@ -142,4 +142,4 @@ Logo-ul provine de la [OpenMoji](https://openmoji.org/library/emoji-1F436/). Lic
 
 ### Licența 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)

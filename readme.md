@@ -145,6 +145,8 @@ The server tests take about 15 seconds and need no network. For changes you can 
 
 narado is a fork of [Bruno](https://github.com/usebruno/bruno), the open-source, Git-friendly API client by Anoop M D, Anusree P S and contributors. Bruno does the hard part; narado adds the server, Git hosting, sign-in and MCP around it. Bruno's own readme is kept in [README.bruno.md](README.bruno.md).
 
-## License
+## Licence
 
-MIT, as Bruno is. See [license.md](license.md), which keeps Bruno's copyright notice.
+narado is open source under the [GNU AGPL-3.0](LICENSE): use it, self-host it and change it freely, at work too. If you offer a changed narado to others over a network, share your changes under the same licence. A [commercial licence](COMMERCIAL-LICENSE.md) is available for organisations that can't use the AGPL. Contributors accept the [Contributor Licence Agreement](CLA.md) once, through a bot on their first pull request.
+
+Code that came from Bruno keeps Bruno's MIT notice in [LICENSE-BRUNO.md](LICENSE-BRUNO.md). [NOTICE.md](NOTICE.md) explains how the two fit together.

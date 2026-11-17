@@ -152,4 +152,4 @@ Mesmo que você não possa contribuir codificando, não deixe de relatar problem
 
 ### Licença 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)

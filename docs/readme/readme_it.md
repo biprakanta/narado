@@ -140,4 +140,4 @@ Il logo è stato creato da [OpenMoji](https://openmoji.org/library/emoji-1F436/)
 
 ### Licenza 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)

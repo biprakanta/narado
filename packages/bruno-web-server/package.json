@@ -4,7 +4,7 @@
   "private": true,
   "description": "Runs Bruno's main-process code on a server and bridges IPC to the browser over WebSocket",
   "main": "src/server.js",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test 'test/**/*.test.js'"

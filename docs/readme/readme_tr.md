@@ -146,4 +146,4 @@ Logo [OpenMoji](https://openmoji.org/library/emoji-1F436/) adresinden alınmış
 
 ### Lisans 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)

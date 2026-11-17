@@ -162,4 +162,4 @@ Das Logo stammt von [OpenMoji](https://openmoji.org/library/emoji-1F436/). Lizen
 
 ### Lizenz 📄
 
-[MIT](../../license.md)
+[MIT](../../LICENSE-BRUNO.md)

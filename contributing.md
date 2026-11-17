@@ -19,6 +19,10 @@
 | [Slovenčina](docs/contributing/contributing_sk.md)
 | [فارسی](docs/contributing/contributing_fa.md)
 
+## Contributing to narado
+
+narado is licensed under the [AGPL-3.0](LICENSE) and also offered under a [commercial licence](COMMERCIAL-LICENSE.md). Before your first pull request can be merged, a bot will ask you to accept the [Contributor Licence Agreement](CLA.md) by commenting on the pull request. You keep the copyright in your work. The [readme](readme.md#working-on-narado) explains how narado's code is laid out; the rest of this guide is Bruno's and applies to the code narado shares with it.
+
 ## Let's make Bruno better, together!!
 
 We are happy that you are looking to improve Bruno. Below are the guidelines to run Bruno on your computer.
