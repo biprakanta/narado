@@ -83,7 +83,7 @@ jobs:
       - name: Run the desktop and CLI tests
         working-directory: packages/bruno-web-server
         shell: bash
-        run: node --test test/desktop.test.js test/desktop-d5.test.js test/desktop-guard.test.js test/devices.test.js test/cli.test.js test/mcp.test.js test/browse.test.js
+        run: node --test --test-force-exit test/desktop.test.js test/desktop-d5.test.js test/desktop-guard.test.js test/devices.test.js test/cli.test.js test/mcp.test.js test/browse.test.js
 
   interface:
     name: Interface tests (narado screens and request tabs)

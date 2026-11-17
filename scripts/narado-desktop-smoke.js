@@ -50,8 +50,22 @@ const timer = setTimeout(() => {
   console.error('[narado] the app did not finish its checks within 3 minutes');
   child.kill();
 }, 180000);
+// Once the report is written the checks are done: give the app 20 s to quit on its own,
+// then stop it (its result is in the report either way).
+let quitTimer = null;
+const watch = setInterval(() => {
+  if (quitTimer || !fs.existsSync(report)) return;
+  quitTimer = setTimeout(() => {
+    console.log('[narado] the app wrote its report but did not quit within 20 s; stopping it');
+    stopped = true;
+    child.kill();
+  }, 20000);
+}, 1000);
+let stopped = false;
 child.on('exit', (code) => {
   clearTimeout(timer);
+  clearInterval(watch);
+  clearTimeout(quitTimer);
   if (!fs.existsSync(report)) {
     console.error(`[narado] no report (exit ${code}). The app's output:\n${output.slice(-6000)}`);
     process.exit(1);
@@ -61,5 +75,5 @@ child.on('exit', (code) => {
   console.log(`[narado] ${r.platform} ${r.arch}, Electron ${r.electron}: ${r.ok ? 'all checks passed' : 'checks failed'}`);
   if (!r.ok) console.error(output.slice(-6000));
   fs.rmSync(dir, { recursive: true, force: true });
-  process.exit(r.ok && code === 0 ? 0 : 1);
+  process.exit(r.ok && (code === 0 || stopped) ? 0 : 1);
 });

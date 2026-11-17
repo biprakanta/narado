@@ -59,7 +59,8 @@ test('desktop settings: MCP and the terminal start off, and bad ports are refuse
   s.update({ mcp: { enabled: true, port: 5123 }, terminal: true });
   assert.deepEqual(new DesktopSettings({ dataDir: dir }).get(), { mcp: { enabled: true, port: 5123 }, terminal: true }, 'kept on disk');
   assert.throws(() => s.update({ mcp: { port: 80 } }), /1024 to 65535/);
-  assert.equal(fs.statSync(path.join(dir, 'desktop-settings.json')).mode & 0o777, 0o600);
+  // Windows has no POSIX modes.
+  if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(dir, 'desktop-settings.json')).mode & 0o777, 0o600);
 });
 
 test('the organisation\'s policy: MCP off, read or write; the terminal allowed unless turned off', () => {

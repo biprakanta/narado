@@ -92,7 +92,8 @@ test('tokens are created by their owner, stored only as hashes, listed and revok
   assert.deepEqual(record.owner, { name: 'Alice Example', hosts: { github: 'alice' } });
   const file = fs.readFileSync(path.join(tmp, 'mcp-tokens.json'), 'utf8');
   assert.ok(!file.includes(token), 'the token itself is never stored');
-  assert.equal(fs.statSync(path.join(tmp, 'mcp-tokens.json')).mode & 0o777, 0o600);
+  // Windows has no POSIX modes.
+  if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(tmp, 'mcp-tokens.json')).mode & 0o777, 0o600);
   const listed = (await srv.ipc('narado:mcp-tokens')).find((t) => t.id === record.id);
   assert.equal(listed.name, 'Claude Code');
   assert.ok(!('hash' in listed));

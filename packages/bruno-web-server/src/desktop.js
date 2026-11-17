@@ -570,10 +570,15 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
   if (env.NARADO_DESKTOP_SMOKE === '1') {
     const { runSmoke } = require('./narado/desktop-smoke');
     runSmoke({ ipcMain, getHandler: (ch) => ipc.getHandler(ch), mainWindow, safeStorage, log, env })
-      .then((r) => app.exit(r.ok ? 0 : 1))
+      .then((r) => r.ok)
       .catch((err) => {
         log.error('[narado] desktop smoke check failed:', err);
-        app.exit(1);
+        return false;
+      })
+      .then((ok) => {
+        app.exit(ok ? 0 : 1);
+        // A helper process can hold Electron's quit up; the report is written by now.
+        setTimeout(() => process.exit(ok ? 0 : 1), 5000).unref();
       });
   }
   return { narado, dataDir, remote, front, audit, settings, localMcp };

@@ -6,7 +6,7 @@ const path = require('node:path');
 const { listFolder } = require('../src/narado/browse');
 
 const setup = () => {
-  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'narado-browse-')));
+  const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'narado-browse-')));
   const root = path.join(tmp, 'person');
   fs.mkdirSync(path.join(root, 'collections/petstore'), { recursive: true });
   fs.mkdirSync(path.join(root, 'Beta'));

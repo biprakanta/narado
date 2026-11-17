@@ -31,9 +31,10 @@ const resolveReal = (p) => {
  * @returns {{ path: string, parent: string|null, root: string, entries: {name: string, dir: boolean}[], truncated: boolean }}
  */
 const listFolder = ({ path: wanted, multiUser, root, home = os.homedir() }) => {
-  const top = multiUser ? resolveReal(root) : path.parse(process.cwd()).root;
-  if (!top) throw new Error('Your folder on the server is missing');
-  const start = multiUser ? top : resolveReal(home) || top;
+  // In local mode every drive is open (on Windows, not only the one narado started from).
+  const fence = multiUser ? resolveReal(root) : path.parse(process.cwd()).root;
+  if (!fence) throw new Error('Your folder on the server is missing');
+  const start = multiUser ? fence : resolveReal(home) || fence;
 
   let folder = wanted && String(wanted).trim() ? path.resolve(start, String(wanted).trim()) : start;
   // A file, or a folder that doesn't exist yet: show its nearest existing parent.
@@ -56,6 +57,7 @@ const listFolder = ({ path: wanted, multiUser, root, home = os.homedir() }) => {
     }
     folder = up;
   }
+  const top = multiUser ? fence : path.parse(folder).root;
   if (!inside(top, folder)) throw new Error('That folder is outside your space on the server');
 
   const entries = [];

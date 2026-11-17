@@ -49,7 +49,7 @@ const listRequestFiles = (root, others = []) => {
       if (e.isDirectory()) {
         if (rel !== 'environments' && !skip.has(path.resolve(p))) walk(p);
       } else if (e.name.endsWith('.bru') && !['collection.bru', 'folder.bru'].includes(e.name)) {
-        out.push(rel);
+        out.push(rel.split(path.sep).join('/'));
       }
     }
   };
