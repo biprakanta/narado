@@ -28,6 +28,7 @@ import { showInFolder } from 'providers/ReduxStore/slices/collections/actions';
 import { toggleCollectionFileMode } from 'providers/ReduxStore/slices/collections';
 import { toggleAiSidebar } from 'providers/ReduxStore/slices/chat';
 import { showMigrateToYmlModal } from 'providers/ReduxStore/slices/collection-migration';
+import { isNarado } from 'utils/common/product';
 import { findItemInCollection, findItemInCollectionByPathname, getWorkspaceCollections } from 'utils/collections';
 import get from 'lodash/get';
 import isEqual from 'lodash/isEqual';
@@ -752,7 +753,9 @@ const CollectionHeader = ({ collection, isScratchCollection }) => {
                   </ActionIcon>
                 </ToolHint>
               )}
-              {collection.format === 'bru' && !migratePillDismissed && (
+              {/* Bruno's nudge to its newer file format; narado keeps collections as they are in Git
+                  (the collection's Overview still offers the migration). */}
+              {!isNarado() && collection.format === 'bru' && !migratePillDismissed && (
                 <div
                   className="migrate-yml-pill"
                   data-testid="migrate-yml-pill"

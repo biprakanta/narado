@@ -152,8 +152,12 @@ const ExploreModal = ({ onClose, onOpened, onMoreOptions, onSynced }) => {
     <Modal size="lg" title="Explore APIs" hideFooter handleCancel={onClose} dataTestId="narado-explore-modal">
       <div className="flex flex-col gap-3 text-sm" data-testid="narado-explore">
         {hosts && !connected.length && (
-          <div className="flex flex-col gap-2">
-            <span>Connect your Git account to see your team's APIs. narado looks through the repositories you can access, as you.</span>
+          <div className="flex flex-col gap-2" data-testid="narado-explore-not-connected">
+            <span>
+              {connectable.length
+                ? 'Connect your Git account to see your team\'s APIs. narado looks through the repositories you can access, as you.'
+                : 'No Git host is set up on this server yet. An administrator needs to configure the GitHub App or GitLab application before APIs can be explored.'}
+            </span>
             <div className="flex gap-2">
               {connectable.map((h) => (
                 <button key={h.id} type="button" className="btn btn-sm btn-secondary" onClick={() => connectGitAccount(h)}>

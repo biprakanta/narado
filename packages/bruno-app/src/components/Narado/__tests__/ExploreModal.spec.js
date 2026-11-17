@@ -54,6 +54,13 @@ describe('Explore APIs', () => {
     expect(calls.find(([c]) => c === 'narado:sync')[1]).toEqual({ hostId: 'github', repoPath: 'acme/partners', dir: '' });
   });
 
+  it('says an administrator must set up Git when no host can be connected', async () => {
+    fakeServer({ 'narado:hosts': () => [{ ...host, connected: false, via: null, login: null, canConnect: false }] });
+    renderWithApp(<ExploreModal onClose={() => {}} />);
+    expect(await screen.findByTestId('narado-explore-not-connected')).toHaveTextContent('An administrator needs to configure');
+    expect(screen.queryByText('Connect GitHub')).not.toBeInTheDocument();
+  });
+
   it('warns when the Git account is not verified for the sign-in email', async () => {
     fakeServer({ 'narado:hosts': () => [{ ...host, emailMatch: false }], 'narado:catalogue': () => catalogue });
     renderWithApp(<ExploreModal onClose={() => {}} />);

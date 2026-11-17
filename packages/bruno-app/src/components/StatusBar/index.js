@@ -104,18 +104,21 @@ const StatusBar = () => {
               </ToolHint>
             )}
 
-            <ToolHint text="GitHub Repository" toolhintId="GitHub" place="top" offset={10}>
-              <button
-                className="status-bar-button"
-                onClick={() => {
-                  window?.ipcRenderer?.openExternal(repoUrl());
-                }}
-                tabIndex={0}
-                aria-label="Open GitHub Repository"
-              >
-                <IconBrandGithub size={16} strokeWidth={1.5} aria-hidden="true" />
-              </button>
-            </ToolHint>
+            {/* Bruno's own repository link; narado's support links are in Preferences. */}
+            {!isNarado() && (
+              <ToolHint text="GitHub Repository" toolhintId="GitHub" place="top" offset={10}>
+                <button
+                  className="status-bar-button"
+                  onClick={() => {
+                    window?.ipcRenderer?.openExternal(repoUrl());
+                  }}
+                  tabIndex={0}
+                  aria-label="Open GitHub Repository"
+                >
+                  <IconBrandGithub size={16} strokeWidth={1.5} aria-hidden="true" />
+                </button>
+              </ToolHint>
+            )}
           </div>
         </div>
 

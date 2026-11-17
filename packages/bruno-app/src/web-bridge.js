@@ -66,6 +66,8 @@ const installWebBridge = () => {
   const answerServerRequest = async (kind, payload = {}) => {
     switch (kind) {
       case 'dialog:open': {
+        // The in-app folder browser (components/Narado/ServerFileDialog.js) once the app has loaded.
+        if (window.__naradoServerDialog) return window.__naradoServerDialog({ kind: 'open', ...payload });
         const wantsFolder = (payload.properties || []).includes('openDirectory');
         const multi = (payload.properties || []).includes('multiSelections');
         const label = payload.title || (wantsFolder ? 'Choose a folder' : 'Choose a file');
@@ -78,6 +80,7 @@ const installWebBridge = () => {
         return { canceled: false, filePaths };
       }
       case 'dialog:save': {
+        if (window.__naradoServerDialog) return window.__naradoServerDialog({ kind: 'save', ...payload });
         const answer = window.prompt(`${payload.title || 'Save as'}\n\nEnter a path on the server:`, payload.defaultPath || '');
         return answer && answer.trim() ? { canceled: false, filePath: answer.trim() } : { canceled: true };
       }
