@@ -11,6 +11,6 @@ A commercial licence replaces the AGPL's terms for your organisation. You may wa
 
 ## How to get one
 
-Write to **TODO: licensing contact address** with your organisation's name, roughly how many people will use narado, and how you plan to run it. We'll reply with terms and pricing.
+Write to **[biprakanta.pal@gmail.com](mailto:biprakanta.pal@gmail.com)** with your organisation's name, roughly how many people will use narado, and how you plan to run it. We'll reply with terms and pricing.
 
 The commercial licence's terms are set in the agreement you sign with narado's makers; nothing in this file grants a licence by itself.
