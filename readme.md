@@ -65,8 +65,8 @@ narado is in active development and not production-ready yet.
 
 | | |
 |---|---|
-| Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · a separate, sandboxed Bruno process per person · secrets from Vault, AWS, Google Cloud and Azure, bound to collections through their environments · request safety (block list and per-repo host allowlists) · each person's own Git account (GitHub App, GitLab OAuth) · an API catalogue across repositories, including code repositories carrying their API, cloned with only their collection folders · one-click Sync of a personal copy into your workspace · setup and admin pages · narado desktop phases D1–D3 (runs from source: sign-in through the server, local request rules, offline) · the `narado` command · OAuth 2 sign-ins to APIs through narado's own callback · branding |
-| Next | Desktop D4 (installers, signing, auto-update) and D5 (a local MCP server, tests on all three systems); one container or OS user per person's worker. |
+| Done | Bruno in the browser · Git workspaces on GitHub and GitLab · branches, forks and merge requests · OpenAPI storage · MCP server · OpenID Connect sign-in · a separate, sandboxed Bruno process per person · secrets from Vault, AWS, Google Cloud and Azure, bound to collections through their environments · request safety (block list and per-repo host allowlists) · each person's own Git account (GitHub App, GitLab OAuth) · an API catalogue across repositories, including code repositories carrying their API, cloned with only their collection folders · one-click Sync of a personal copy into your workspace · setup and admin pages · narado desktop D1–D5 (sign-in through the server, local request rules, offline, installers and updates, a local MCP server, the terminal setting, start-up checks on macOS, Windows and Linux) · the `narado` command, packaged as an executable per system and an npm package · each person's worker as its own system user (Linux, optional) · OAuth 2 sign-ins to APIs through narado's own callback · branding |
+| Next | Signing the desktop installers (waits on the signing accounts); a first desktop release. |
 
 GitHub and GitLab have both been tried end to end against GitHub.com and GitLab.com: connecting an account, opening a repository (light clones included), editing, and opening a pull or merge request as the person.
 
@@ -117,6 +117,7 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electr
   ```bash
   node packages/bruno-web-server/bin/narado.js --help
   ```
+  `npm run build:narado-cli` packages it (an executable for this system, one JS file and an npm package) into `packages/bruno-web-server/dist-cli/`; never commit them.
 
 Keep your own credentials (GitHub App or GitLab application secrets, tokens) in a file outside the repository, such as `~/.narado-dev.env` (mode 600), and load it with `set -a; . ~/.narado-dev.env; set +a`. Nothing secret goes into commits.
 

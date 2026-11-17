@@ -34,7 +34,10 @@ if (isDev && process.env.ELECTRON_USER_DATA_PATH) {
 const NARADO_DESKTOP = process.env.NARADO_DESKTOP === '1';
 if (NARADO_DESKTOP) {
   app.setName('narado');
-  if (!process.env.ELECTRON_USER_DATA_PATH) app.setPath('userData', path.join(app.getPath('appData'), 'narado'));
+  // The packaged app's start-up check (scripts/narado-desktop-smoke.js) runs with a fresh data
+  // folder, never the person's own; development builds may also choose one.
+  const chosen = process.env.ELECTRON_USER_DATA_PATH && (isDev || process.env.NARADO_DESKTOP_SMOKE === '1');
+  app.setPath('userData', chosen ? process.env.ELECTRON_USER_DATA_PATH : path.join(app.getPath('appData'), 'narado'));
   // Windows groups taskbar buttons by this ID; without it they show as Electron.
   if (os.platform() === 'win32') app.setAppUserModelId('co.narado.desktop');
 }

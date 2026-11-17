@@ -41,6 +41,50 @@ jobs:
         working-directory: packages/bruno-web-server
         run: npm test
 
+      # NARADO_WORKER_USERS=1: as root in a container with only the capabilities ADMIN.md asks
+      # for, each person's worker runs as a system user of its own.
+      - name: Run the system-user tests as root, with only the capabilities they need
+        run: |
+          docker run --rm --cap-drop ALL \
+            --cap-add SETUID --cap-add SETGID --cap-add CHOWN --cap-add FOWNER --cap-add DAC_OVERRIDE --cap-add KILL \
+            --security-opt no-new-privileges \
+            -v "$PWD":/repo:ro -w /repo/packages/bruno-web-server \
+            node:24.22.3-bookworm-slim \
+            node --test test/worker-users.test.js test/workers.test.js
+
+  # The code narado desktop and the narado command run, on the systems they run on (Linux is
+  # covered by the job above). The packaged app itself is checked on all three systems by
+  # narado-desktop-release.yml.
+  desktop-systems:
+    name: Desktop and CLI tests (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS, os: macos-latest }
+          - { name: Windows, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node dependencies
+        uses: ./.github/actions/common/setup-node-deps
+        with:
+          shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+
+      - name: Git identity for tests that commit
+        shell: bash
+        run: |
+          git config --global user.name "narado CI"
+          git config --global user.email "ci@narado.invalid"
+          git config --global init.defaultBranch main
+
+      - name: Run the desktop and CLI tests
+        working-directory: packages/bruno-web-server
+        shell: bash
+        run: node --test test/desktop.test.js test/desktop-d5.test.js test/desktop-guard.test.js test/devices.test.js test/cli.test.js test/mcp.test.js test/browse.test.js
+
   interface:
     name: Interface tests (narado screens and request tabs)
     runs-on: ubuntu-latest

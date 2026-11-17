@@ -39,6 +39,8 @@ const naradoVersion = () => {
 const { installSendRules } = require('./narado/requests/guard');
 const { AllowlistReader } = require('./narado/requests/allowlist');
 const { RemoteFront, NeedsSignIn, normaliseServer } = require('./narado/desktop-front');
+const { DesktopSettings, LocalMcp, allowedByPolicy } = require('./narado/desktop-local');
+const { createMcpHandler } = require('./narado/mcp');
 
 /** Electron's ipcMain, with the getHandler the shared code expects. */
 const withGetHandler = (ipcMain) => {
@@ -422,9 +424,109 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
   const updateTimer = setInterval(() => checkForUpdate().catch(() => {}), 6 * 60 * 60 * 1000);
   if (updateTimer.unref) updateTimer.unref();
 
-  // MCP on the desktop (a local MCP server for assistants on this computer) is phase D5.
-  ipcMain.handle('narado:mcp-info', async () => ({ available: false, note: 'MCP comes to narado desktop in a later version.' }));
-  ipcMain.handle('narado:mcp-tokens', async () => []);
+  /* ---- this computer's settings: the local MCP server and the terminal (phase D5) ---- */
+  const settings = new DesktopSettings({ dataDir });
+  const policy = () => allowedByPolicy(remote.server && remote.session && remote.session.policy);
+  // Calls the MCP tools make, as the window would make them (and cleaned the same way).
+  const windowEvent = () => ({
+    sender: mainWindow.webContents,
+    senderFrame: mainWindow.webContents.mainFrame,
+    reply: (ch, ...args) => mainWindow.webContents.send(ch, ...args)
+  });
+  const invoke = (channel, ...args) => {
+    const handler = ipc.getHandler(channel);
+    if (!handler) throw new Error(`No handler for ${channel}`);
+    return Promise.resolve(handler(windowEvent(), ...args)).then((v) => secretRefs.clean(v));
+  };
+  // Bruno's events to the window, for the MCP tools that wait for gRPC and WebSocket replies.
+  const eventTaps = new Set();
+  const wc = mainWindow.webContents;
+  const sendToWindow = wc.send.bind(wc);
+  wc.send = (channel, ...args) => {
+    for (const tap of eventTaps) {
+      try {
+        tap(channel, args);
+      } catch {}
+    }
+    return sendToWindow(channel, ...args);
+  };
+  const mcpHandler = createMcpHandler({
+    call: invoke,
+    callAs: () => invoke,
+    ipcMain,
+    workspaces: narado.workspaces,
+    collectionsFor: narado.collectionsFor,
+    dataDir,
+    port: () => settings.get().mcp.port,
+    writeAllowed: () => policy().mcp === 'write',
+    rulesFor,
+    env,
+    log,
+    onEvent: (fn) => {
+      eventTaps.add(fn);
+      return () => eventTaps.delete(fn);
+    }
+  });
+  const localMcp = new LocalMcp({ createHandler: () => mcpHandler, log });
+  const applyMcp = async () => {
+    const { mcp } = settings.get();
+    await localMcp.apply({ enabled: mcp.enabled && policy().mcp !== 'off', port: mcp.port });
+  };
+  const desktopSettings = () => {
+    const s = settings.get();
+    const allowed = policy();
+    return {
+      ...s,
+      allowed,
+      mcpRunning: localMcp.running,
+      mcpUrl: `http://127.0.0.1:${s.mcp.port}/mcp`,
+      mcpError: localMcp.error,
+      terminalOn: s.terminal && allowed.terminal
+    };
+  };
+  // The tokens modal also shows (and switches) the local server on the desktop.
+  ipcMain.removeHandler('narado:mcp-info');
+  ipcMain.handle('narado:mcp-info', async () => {
+    const d = desktopSettings();
+    return { url: d.mcpUrl, writeAllowed: mcpHandler.writeAllowed, desktop: true, enabled: d.mcp.enabled, running: d.mcpRunning, port: d.mcp.port, error: d.mcpError, policy: d.allowed.mcp };
+  });
+  ipcMain.handle('narado:desktop-settings', async () => desktopSettings());
+  ipcMain.handle('narado:desktop-settings-update', async (_e, changes = {}) => {
+    if (changes.mcp && changes.mcp.enabled && policy().mcp === 'off') throw new Error("Your organisation's policy turns MCP off on narado desktop");
+    if (changes.terminal && !policy().terminal) throw new Error("Your organisation's policy turns the terminal off on narado desktop");
+    settings.update(changes);
+    await applyMcp();
+    if (changes.terminal === false) await closeTerminals();
+    return desktopSettings();
+  });
+  // Turning the terminal off (or a policy that forbids it) ends the shells already open.
+  const closeTerminals = async () => {
+    const list = ipc.getHandler('terminal:list-sessions');
+    if (!list) return;
+    const sessions = (await list(windowEvent())) || [];
+    for (const s of sessions) ipcMain.emit('terminal:kill', windowEvent(), s.sessionId);
+  };
+  remote.onChange(() => {
+    applyMcp().catch((err) => log.warn(`[narado] desktop: ${err.message}`));
+    if (!desktopSettings().terminalOn) closeTerminals().catch(() => {});
+  });
+  if (app.on) {
+    app.on('will-quit', () => {
+      localMcp.stop().catch(() => {});
+    });
+  }
+  await applyMcp();
+
+  // Bruno's terminal runs a shell on this computer: only when the person turns it on and
+  // the organisation's policy allows it.
+  const terminalCreate = ipc.getHandler('terminal:create');
+  if (terminalCreate) {
+    ipcMain.removeHandler('terminal:create');
+    ipcMain.handle('terminal:create', async (event, ...args) => {
+      if (!desktopSettings().terminalOn) throw new Error('The terminal is off. Turn it on in the Terminal tab.');
+      return terminalCreate(event, ...args);
+    });
+  }
 
   const audit = auditSends({ ipcMain, remote, locateRepo, log, file: path.join(dataDir, 'pending-send-reports.json') });
 
@@ -464,7 +566,17 @@ const start = async ({ app, ipcMain, mainWindow, collectionWatcher, openCollecti
     log.log(`[narado] desktop: no narado server set; local mode. Git hosts ${hosts.map((h) => `${h.id} (${h.connected ? `connected${h.via === 'server' ? ' with a token' : ''}` : 'not connected'})`).join(', ')}`);
     log.log(`[narado] desktop: secrets stores ${local.secretsService.enabled ? local.secretsService.listStores().map((s) => s.id).join(', ') : 'none'}`);
   }
-  return { narado, dataDir, remote, front, audit };
+  // The start-up check CI runs on each system (narado/desktop-smoke.js): check, report, quit.
+  if (env.NARADO_DESKTOP_SMOKE === '1') {
+    const { runSmoke } = require('./narado/desktop-smoke');
+    runSmoke({ ipcMain, getHandler: (ch) => ipc.getHandler(ch), mainWindow, safeStorage, log, env })
+      .then((r) => app.exit(r.ok ? 0 : 1))
+      .catch((err) => {
+        log.error('[narado] desktop smoke check failed:', err);
+        app.exit(1);
+      });
+  }
+  return { narado, dataDir, remote, front, audit, settings, localMcp };
 };
 
 module.exports = { start, withGetHandler, localFront, cleanOutgoing, switchingFront, auditSends };

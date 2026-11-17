@@ -51,6 +51,9 @@ export const desktopApi = {
   checkUpdate: () => invoke('narado:desktop-update-check'),
   installUpdate: () => invoke('narado:desktop-update-install'),
   signOut: () => invoke('narado:desktop-sign-out'),
+  // This computer's settings: the local MCP server and the terminal (desktop phase D5).
+  settings: () => invoke('narado:desktop-settings'),
+  updateSettings: (changes) => invoke('narado:desktop-settings-update', changes),
   /** Status changes pushed by the app (signed in, signed out, session refreshed). */
   onStatus: (fn) => (window.ipcRenderer && window.ipcRenderer.on ? window.ipcRenderer.on('narado:desktop-status', fn) : () => {})
 };

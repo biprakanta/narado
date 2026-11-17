@@ -26,6 +26,8 @@ import { DevToolsFilterDropdown } from './FilterDropdown';
 import LogIcon from './LogIcon';
 import NetworkTab from './NetworkTab';
 import TerminalTab from './TerminalTab';
+import TerminalGate from 'components/Narado/TerminalGate';
+import { isNarado } from 'utils/common/product';
 import RequestDetailsPanel from './RequestDetailsPanel';
 // import DebugTab from './DebugTab';
 import ErrorDetailsPanel from './ErrorDetailsPanel';
@@ -351,7 +353,13 @@ const Console = () => {
       case 'performance':
         return <Performance />;
       case 'terminal':
-        return <TerminalTab />;
+        return isNarado() ? (
+          <TerminalGate>
+            <TerminalTab />
+          </TerminalGate>
+        ) : (
+          <TerminalTab />
+        );
       // case 'debug':
       //   return <DebugTab />;
       default:

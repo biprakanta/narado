@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import Modal from 'components/Modal';
 import Button from 'ui/Button';
-import { naradoApi, errorText } from './api';
+import { naradoApi, desktopApi, errorText } from './api';
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString() : 'never');
 
@@ -60,6 +60,24 @@ const McpTokensModal = ({ onClose }) => {
     }
   };
 
+  // narado desktop: the MCP server on this computer (desktop phase D5).
+  const [port, setPort] = useState('');
+  useEffect(() => {
+    if (info && info.desktop) setPort(String(info.port));
+  }, [info]);
+  const updateServer = async (mcp) => {
+    setBusy(true);
+    setError('');
+    try {
+      await desktopApi.updateSettings({ mcp });
+      await load();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const copy = async (text) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -75,9 +93,52 @@ const McpTokensModal = ({ onClose }) => {
     <Modal size="lg" title="MCP tokens" hideFooter handleCancel={onClose} dataTestId="narado-mcp-tokens">
       <div className="flex flex-col gap-4 text-sm">
         <div className="opacity-80">
-          AI assistants connect to narado over MCP at <code>{info ? info.url : '…'}</code>. Each token acts as you: it can only see and do what
-          you can, merge requests it opens say they came from it, and it stops working if narado is connected to a different Git account.
+          AI assistants connect to narado over MCP at <code>{info ? info.url : '…'}</code>
+          {info && info.desktop ? ', on this computer only' : ''}. Each token acts as you: it can only see and do what you can, merge requests
+          it opens say they came from it, and it stops working if narado is connected to a different Git account.
         </div>
+
+        {info && info.desktop && (
+          <div className="flex flex-col gap-2 p-2 rounded" style={{ border: '1px solid rgba(127,127,127,.4)' }} data-testid="narado-mcp-local">
+            {info.policy === 'off' ? (
+              <div data-testid="narado-mcp-local-blocked">Your organisation's narado settings turn MCP off in narado desktop.</div>
+            ) : (
+              <>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={!!info.enabled}
+                    disabled={busy}
+                    onChange={(e) => updateServer({ enabled: e.target.checked })}
+                    data-testid="narado-mcp-local-toggle"
+                  />
+                  <span className="font-medium">Run the MCP server on this computer</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="opacity-80">Port</span>
+                  <input
+                    className="textbox"
+                    style={{ width: 90 }}
+                    inputMode="numeric"
+                    value={port}
+                    onChange={(e) => setPort(e.target.value.replace(/[^0-9]/g, ''))}
+                    data-testid="narado-mcp-local-port"
+                  />
+                  <Button size="sm" variant="ghost" disabled={busy || !port || String(info.port) === port} onClick={() => updateServer({ port: Number(port) })}>
+                    Change port
+                  </Button>
+                </div>
+                <div className="text-xs opacity-80" data-testid="narado-mcp-local-status">
+                  {info.error
+                    ? info.error
+                    : info.running
+                      ? `Running at ${info.url}. Only programs on this computer can reach it, and each needs a token.`
+                      : 'Off. Assistants on this computer can use narado once it is on.'}
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {created && (
           <div className="flex flex-col gap-2 p-2 rounded" style={{ border: '1px solid rgba(127,127,127,.4)' }} data-testid="narado-mcp-new-token">
@@ -110,7 +171,7 @@ const McpTokensModal = ({ onClose }) => {
           <label className="flex items-center gap-2" style={{ opacity: info && !info.writeAllowed ? 0.5 : 1 }}>
             <input type="radio" checked={scope === 'write'} disabled={info && !info.writeAllowed} onChange={() => setScope('write')} data-testid="narado-mcp-scope-write" />
             Read and write: also edit requests, commit, push and open merge requests as you
-            {info && !info.writeAllowed ? ' (turned off on this server)' : ''}
+            {info && !info.writeAllowed ? (info.desktop ? ' (turned off by your organisation)' : ' (turned off on this server)') : ''}
           </label>
           <div>
             <Button size="sm" disabled={busy || !name.trim()} onClick={create} data-testid="narado-mcp-create-btn">

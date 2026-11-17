@@ -226,6 +226,11 @@ const createDesktopAuth = ({ auth, dataDir, rpc, hosts = () => [], isAdmin = () 
   if (env.NARADO_DESKTOP_SEND && !SEND_POLICIES.includes(env.NARADO_DESKTOP_SEND)) {
     log.warn(`[narado] NARADO_DESKTOP_SEND must be one of ${SEND_POLICIES.join(', ')}; using "any"`);
   }
+  // The desktop's local MCP server (off, read tokens only, or read and write) and Bruno's
+  // terminal (on lets people turn it on; it is off on each computer until they do).
+  const mcpPolicy = ['off', 'read', 'write'].includes(env.NARADO_DESKTOP_MCP) ? env.NARADO_DESKTOP_MCP : 'write';
+  if (env.NARADO_DESKTOP_MCP && mcpPolicy !== env.NARADO_DESKTOP_MCP) log.warn('[narado] NARADO_DESKTOP_MCP must be off, read or write; using "write"');
+  const terminalPolicy = env.NARADO_DESKTOP_TERMINAL !== 'off';
 
   const json = (res, status, body, headers = {}) => {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers });
@@ -409,7 +414,7 @@ const createDesktopAuth = ({ auth, dataDir, rpc, hosts = () => [], isAdmin = () 
             json(res, 200, {
               user: { id: who.user.id, name: who.user.name, email: who.user.email },
               device: DeviceStore.view(who.device),
-              policy: { send: sendPolicy },
+              policy: { send: sendPolicy, mcp: mcpPolicy, terminal: terminalPolicy },
               hosts: hosts(),
               isAdmin: !!isAdmin(who.user),
               server: { version: SERVER_VERSION, minDesktopVersion: minDesktop }
@@ -457,7 +462,7 @@ const createDesktopAuth = ({ auth, dataDir, rpc, hosts = () => [], isAdmin = () 
     return true;
   };
 
-  return { handle, deviceCalls, devices, access, sendPolicy, adminDevices, adminRevoke };
+  return { handle, deviceCalls, devices, access, sendPolicy, mcpPolicy, terminalPolicy, adminDevices, adminRevoke };
 };
 
 module.exports = { createDesktopAuth, DeviceStore, AccessTokens, DesktopError, DESKTOP_CALLS, LOOPBACK, compareVersions, SERVER_VERSION };
