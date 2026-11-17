@@ -31,6 +31,25 @@ const rpc = (method, args) =>
 const server = http.createServer((req, res) => {
   if (!ok(req)) return res.writeHead(403).end();
   res.writeHead(200, { 'content-type': 'application/json' });
+  // For worker-users.test.js: who this process is, and what it may read or write.
+  const u = new URL(req.url, 'http://x');
+  const fs = require('node:fs');
+  if (u.pathname === '/whoami') return res.end(JSON.stringify({ uid: process.getuid(), gid: process.getgid(), groups: process.getgroups() }));
+  if (u.pathname === '/read') {
+    try {
+      return res.end(JSON.stringify({ text: fs.readFileSync(u.searchParams.get('path'), 'utf8') }));
+    } catch (err) {
+      return res.end(JSON.stringify({ error: err.code || err.message }));
+    }
+  }
+  if (u.pathname === '/write') {
+    try {
+      fs.writeFileSync(u.searchParams.get('path'), 'x');
+      return res.end(JSON.stringify({ ok: true }));
+    } catch (err) {
+      return res.end(JSON.stringify({ error: err.code || err.message }));
+    }
+  }
   res.end(JSON.stringify(info(req)));
 });
 const wss = new WebSocketServer({ noServer: true });

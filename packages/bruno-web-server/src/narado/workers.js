@@ -9,6 +9,8 @@
  *     checked their session or token, with cookies removed;
  *   - with sign-in on, runs under Node's permission model: it may read narado's code, its
  *     own folder and the shared host settings, and write only its own folder;
+ *   - with NARADO_WORKER_USERS=1 (Linux), also runs as a system user of its own, which owns
+ *     its folder (narado/worker-users.js);
  *   - reaches the token store through the front, which limits it to its own person's tokens.
  * Idle workers stop after a while; a crashed one is started again on the next request.
  */
@@ -18,6 +20,7 @@ const fs = require('node:fs');
 const net = require('node:net');
 const http = require('node:http');
 const path = require('node:path');
+const { WorkerUsers } = require('./worker-users');
 
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 const WORKER_SCRIPT = path.resolve(__dirname, '../worker.js');
@@ -49,7 +52,7 @@ class WorkerPool {
    * @param {number}   o.publicPort  the front's port (MCP's allowed Host)
    * @param {Function} o.rpc         (user, method, args) => result, for calls from a worker
    */
-  constructor({ dataDir, multiUser, publicPort, rpc, privateEnv = [], env = process.env, script = WORKER_SCRIPT, sandbox, idleMs, maxWorkers, startTimeoutMs = 120000, log = console }) {
+  constructor({ dataDir, multiUser, publicPort, rpc, privateEnv = [], env = process.env, script = WORKER_SCRIPT, sandbox, idleMs, maxWorkers, startTimeoutMs = 120000, log = console, workerUsers }) {
     this.dataDir = path.resolve(dataDir);
     this.multiUser = !!multiUser;
     this.publicPort = publicPort;
@@ -62,6 +65,16 @@ class WorkerPool {
     this.maxWorkers = maxWorkers !== undefined ? maxWorkers : Number(env.NARADO_MAX_WORKERS || 50);
     this.startTimeoutMs = startTimeoutMs;
     this.log = log;
+    // One system user per person (NARADO_WORKER_USERS=1): refuse to start rather than run
+    // everyone as one user when this computer can't do it.
+    this.osUsers = null;
+    if (this.multiUser && (workerUsers || env.NARADO_WORKER_USERS === '1')) {
+      this.osUsers = workerUsers || new WorkerUsers({ dataDir: this.dataDir, env, log });
+      const why = this.osUsers.cannot();
+      if (why) throw new Error(why);
+    } else if (env.NARADO_WORKER_USERS === '1') {
+      log.warn('[narado] NARADO_WORKER_USERS=1 has no effect without sign-in: there is one worker');
+    }
     this.workers = new Map(); // key -> entry
     this.sweeper = setInterval(() => this.sweep(), Math.min(60000, Math.max(1000, this.idleMs / 4)));
     this.sweeper.unref();
@@ -119,7 +132,10 @@ class WorkerPool {
 
   spawn(key, user) {
     const dir = this.dirFor(user);
-    fs.mkdirSync(path.join(dir, 'tmp'), { recursive: true, mode: 0o700 });
+    const ids = this.osUsers ? this.osUsers.prepare(user.id, dir) : null;
+    const tmp = path.join(dir, 'tmp');
+    fs.mkdirSync(tmp, { recursive: true, mode: 0o700 });
+    if (ids) this.osUsers.handOver(tmp, ids.uid);
     const secret = crypto.randomBytes(32).toString('hex');
     const env = {};
     for (const [k, v] of Object.entries(this.env)) if (!PRIVATE_ENV.test(k) && !this.privateEnv.has(k)) env[k] = v;
@@ -130,10 +146,11 @@ class WorkerPool {
       BRUNO_WEB_DATA_DIR: dir,
       NARADO_CONFIG_DIR: this.dataDir,
       BRUNO_WEB_PUBLIC_PORT: String(this.publicPort),
-      TMPDIR: path.join(dir, 'tmp')
+      TMPDIR: tmp,
+      ...(ids ? { HOME: dir, USER: `narado-${ids.uid}`, LOGNAME: `narado-${ids.uid}` } : {})
     });
     const label = user ? user.name || user.email || user.id : 'local';
-    const child = fork(this.script, [], { env, execArgv: this.execArgvFor(dir), stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+    const child = fork(this.script, [], { env, execArgv: this.execArgvFor(dir), stdio: ['ignore', 'pipe', 'pipe', 'ipc'], ...(ids || {}) });
     const prefix = (stream, out) => {
       let buf = '';
       stream.on('data', (d) => {
@@ -160,7 +177,7 @@ class WorkerPool {
           clearTimeout(timer);
           entry.port = msg.port;
           entry.instance = msg.instance;
-          this.log.log(`[narado] worker for ${label} ready (pid ${child.pid}, ${msg.handlers} handlers${this.sandbox ? ', sandboxed' : ''})`);
+          this.log.log(`[narado] worker for ${label} ready (pid ${child.pid}, ${msg.handlers} handlers${this.sandbox ? ', sandboxed' : ''}${ids ? `, as system user ${ids.uid}` : ''})`);
           resolve(entry);
         } else if (msg.type === 'rpc') {
           let reply;

@@ -1,0 +1,22 @@
+# One system user per person (Linux hosts; see ADMIN.md, "One system user per person").
+# Add it to either Compose file:
+#   docker compose -f compose.yaml -f compose.worker-users.yaml up -d
+#   NARADO_DOMAIN=… docker compose -f compose.proxy.yaml -f compose.worker-users.yaml up -d
+# The front runs as root, but only with the capabilities it needs to start each person's
+# worker as their own user and hand them their folder; workers have none.
+services:
+  narado:
+    user: "0:0"
+    environment:
+      NARADO_WORKER_USERS: "1"
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
+      - KILL
+    security_opt:
+      - no-new-privileges:true
