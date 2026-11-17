@@ -101,7 +101,8 @@
     "version:bump": "npx lerna version --no-private --exact --dry-run",
     "version:since:last": "npx lerna publish from-package --dry-run",
     "dev:narado-desktop": "scripts/narado-desktop-dev.sh",
-    "build:narado-desktop": "node ./scripts/build-narado-desktop.js"
+    "build:narado-desktop": "node ./scripts/build-narado-desktop.js",
+    "build:narado-cli": "node ./scripts/build-narado-cli.js"
   },
   "nano-staged": {
     "*.{js,ts,jsx}": [
