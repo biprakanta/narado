@@ -7,7 +7,7 @@ A guide for whoever runs narado for a team: what it needs, the ways to run it, w
 narado is one container (Node.js 24) with three parts:
 
 - **The front process** serves the web interface and handles sign-in, sessions and MCP tokens. It holds every credential: OpenID Connect, Git apps, secrets stores.
-- **One worker per signed-in person** runs Bruno's request engine with that person's files, under Node's permission model: it can read and write only that person's folder (`/data/users/<id>`). Workers stop after 30 idle minutes and start again on the next request.
+- **One worker per signed-in person** runs Bruno's request engine with that person's files, under Node's permission model: it can read and write only that person's folder (`/data/users/<id>`). On Linux, each worker can also run as a system user of its own (see "One system user per person" below). Workers stop after 30 idle minutes and start again on the next request.
 - **The data volume** (`/data`) holds the database (SQLite), the signing keys and each person's clones and working copies. It is narado's only state.
 
 People reach narado over HTTPS. The browser keeps a WebSocket open to `/ipc`, and AI assistants use `/mcp`.
@@ -124,6 +124,18 @@ The same rules apply. In Kubernetes terms:
 - **Requests and limits** sized from the table above. For example, 2 CPU and 4 Gi requested and an 8 Gi limit, with `NARADO_MAX_WORKERS=25`.
 - **Request rules:** set `NARADO_BLOCKED_NETWORKS` to the pod and service networks (for example `10.0.0.0/8`) so people's requests can't reach the cluster's own services. Use `NARADO_ALLOWED_NETWORKS` for internal APIs they may call.
 
+### One system user per person (optional, Linux)
+
+By default every worker runs as the image's `node` user, kept apart by Node's permission model. With `NARADO_WORKER_USERS=1` the operating system keeps them apart too: each person's worker runs as a numeric user and group of its own (from 200000 up, `NARADO_WORKER_UID_BASE`), which owns their folder (mode 700). A bug that let code escape Node's sandbox would still be refused by the kernel when reaching for another person's files or processes.
+
+To do this the front runs as root, with only the capabilities it needs: `SETUID`, `SETGID` (start each worker as its user), `CHOWN`, `FOWNER`, `DAC_OVERRIDE` (hand each person their folder) and `KILL` (stop workers). Workers get none, and `no-new-privileges` stops them getting any back. narado refuses to start in this mode when it can't do it (not Linux, or not root), rather than run everyone as one user.
+
+- **Compose:** add `compose.worker-users.yaml`: `docker compose -f compose.yaml -f compose.worker-users.yaml up -d`.
+- **`docker run`:** `--user 0:0 --cap-drop ALL --cap-add SETUID --cap-add SETGID --cap-add CHOWN --cap-add FOWNER --cap-add DAC_OVERRIDE --cap-add KILL --security-opt no-new-privileges -e NARADO_WORKER_USERS=1`.
+- **Kubernetes:** `securityContext: { runAsUser: 0, runAsNonRoot: false, allowPrivilegeEscalation: false, capabilities: { drop: [ALL], add: [SETUID, SETGID, CHOWN, FOWNER, DAC_OVERRIDE, KILL] } }`. Clusters that enforce the "restricted" Pod Security Standard refuse root, so this needs the "baseline" level for narado's namespace. User namespaces (`hostUsers: false`, where your cluster supports it) map these ids to unprivileged ones on the node.
+
+Turning it on for an existing server hands each person's folder to their new user the first time they sign in, which takes a moment for large clones. The ids are kept in `/data/worker-uids.json`; back it up with the rest of `/data`.
+
 ## 4. First start
 
 1. Start narado with the sign-in settings filled in. You can leave them empty to set them up from the browser instead.
@@ -155,6 +167,8 @@ Put secrets (marked 🔒) in your secrets manager or `narado.env`, which is kept
 | `NARADO_MAX_WORKERS` | `50` | People working at the same time; the least recently active idle worker makes room. |
 | `NARADO_WORKER_IDLE_MINUTES` | `30` | Stop a person's worker after this long without use. |
 | `NARADO_WORKER_SANDBOX` | on | `0` turns off the per-person file sandbox. Don't, except to diagnose. |
+| `NARADO_WORKER_USERS` | off | `1` runs each person's worker as a system user of its own (Linux, with the capabilities in "One system user per person"). |
+| `NARADO_WORKER_UID_BASE` | `200000` | The first system user id given to a person's worker. Keep it clear of the host's own users. |
 
 ### Sign-in
 
@@ -197,6 +211,8 @@ Put secrets (marked 🔒) in your secrets manager or `narado.env`, which is kept
 | `NARADO_SECRETS_REVEAL` | `0` stops people revealing secret values in the interface. |
 | `NARADO_MCP_ALLOW_WRITE` | `0` makes every MCP token read-only, whatever its owner chose. |
 | `NARADO_DESKTOP_SEND` | `any`, `private-only` or `allowlist-only`: where narado desktop may send requests. |
+| `NARADO_DESKTOP_MCP` | `write` (default), `read` or `off`: the MCP server narado desktop can run on a person's computer, for assistants there. |
+| `NARADO_DESKTOP_TERMINAL` | `off` stops people turning on Bruno's terminal in narado desktop. It's off on each computer until its owner turns it on. |
 | `NARADO_DESKTOP_MIN_VERSION` | Oldest narado desktop version allowed to connect, for example `0.4.0`. |
 
 ## 6. Checklist before people use it
@@ -207,5 +223,6 @@ Put secrets (marked 🔒) in your secrets manager or `narado.env`, which is kept
 - [ ] Connecting a Git account works, and Explore APIs lists repositories.
 - [ ] A request to an internal address you didn't allow is blocked.
 - [ ] The `/data` volume is backed up (see [README.md](README.md), "What to back up").
+- [ ] If people's workers should be kept apart by the operating system too, `NARADO_WORKER_USERS=1` is on, and the log says "each as its own system user".
 - [ ] `NARADO_GIT_TOKEN_KEY` is stored in your secrets manager, not only in the data volume.
 - [ ] Logs are collected: they record each sign-in, Git connection, secret read (never the value) and request sent.

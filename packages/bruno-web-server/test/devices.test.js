@@ -227,11 +227,11 @@ test('devices: listed per person, signed out from the list, and a copied refresh
 });
 
 test('desktop API: only the desktop calls, sign-out on the computer, policy, audit', async () => {
-  const srv = await startServer({ env: { NARADO_DESKTOP_SEND: 'private-only' } });
+  const srv = await startServer({ env: { NARADO_DESKTOP_SEND: 'private-only', NARADO_DESKTOP_MCP: 'read', NARADO_DESKTOP_TERMINAL: 'off' } });
   try {
     const front = new RemoteFront({ dataDir: tmp(), safeStorage: fakeSafeStorage(), openExternal: browserAs('bob').open, deviceName: 'bob-pc', platform: 'win32', log: quiet });
     await front.signIn(srv.publicUrl);
-    assert.equal(front.status().policy.send, 'private-only');
+    assert.deepEqual(front.status().policy, { send: 'private-only', mcp: 'read', terminal: false });
     await assert.rejects(front.call('tokens.create', [{ name: 'x' }]), /may not call tokens.create/);
 
     await front.audit([{ at: Date.now(), method: 'post', host: 'localhost:4900', repo: 'github:acme/api', status: 200 }, { method: 'GET\nINJECT', host: 'x\ny', status: 'error' }]);

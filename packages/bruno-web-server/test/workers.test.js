@@ -221,10 +221,15 @@ const invoke = (ws, ch, ...args) =>
     ws.send(JSON.stringify({ t: 'invoke', id, ch, args, u: [] }));
   });
 
-test('sandboxed workers cannot read each other\'s files, run developer-mode scripts or install packages', { timeout: 120000 }, async () => {
+const ROOT_ON_LINUX = process.platform === 'linux' && process.getuid && process.getuid() === 0;
+
+const sandboxTest = (osUsers) => async () => {
   const dataDir = fs.realpathSync(fs.mkdtempSync(path.join(tmp, 'real-')));
-  const pool = new WorkerPool({ dataDir, multiUser: true, publicPort: 1, rpc: async () => [], env: { ...process.env, NARADO_WORKER_SANDBOX: '1' }, log: quiet });
+  // Each person's own system user (NARADO_WORKER_USERS=1) has to pass through the folders above.
+  if (osUsers) for (let d = path.dirname(dataDir); d !== path.dirname(d); d = path.dirname(d)) fs.chmodSync(d, fs.statSync(d).mode | 0o011);
+  const pool = new WorkerPool({ dataDir, multiUser: true, publicPort: 1, rpc: async () => [], env: { ...process.env, NARADO_WORKER_SANDBOX: '1', ...(osUsers ? { NARADO_WORKER_USERS: '1' } : {}) }, log: quiet });
   assert.equal(pool.sandbox, true);
+  assert.equal(!!pool.osUsers, osUsers);
   const front = await startFront(pool, { alice, bob });
   try {
     const [a, b] = await Promise.all([openSocket(front.url, 'alice'), openSocket(front.url, 'bob')]);
@@ -253,4 +258,7 @@ test('sandboxed workers cannot read each other\'s files, run developer-mode scri
     front.close();
     pool.stopAll();
   }
-});
+};
+
+test("sandboxed workers cannot read each other's files, run developer-mode scripts or install packages", { timeout: 120000 }, sandboxTest(false));
+test('the same, with each worker as its own system user (root on Linux)', { timeout: 120000, skip: !ROOT_ON_LINUX && 'needs root on Linux' }, sandboxTest(true));

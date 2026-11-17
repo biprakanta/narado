@@ -578,13 +578,26 @@ ${hosts.map((x) => x.dialog).join('\n')}${addDlg}</section>`;
       ['private-only', 'Private networks only', 'Local and private addresses; no public hosts.'],
       ['allowlist-only', 'The repository’s allowlist only', 'Only hosts a repository allows, private ones included.']
     ];
-    const desktopSec = `<section id="desktop">${sectionHead('Desktop', 'What narado desktop may send requests to from people’s computers. Cloud metadata addresses are always refused.')}
+    const mcpFromEnv = src('NARADO_DESKTOP_MCP') === 'env';
+    const mcpNow = v('NARADO_DESKTOP_MCP') || 'write';
+    const mcpChoices = [
+      ['write', 'Read and write tokens', 'Assistants on a person’s computer can read and send requests, and with a write token edit, commit and open merge requests as that person. The default.'],
+      ['read', 'Read tokens only', 'Assistants can read and send requests, but not change anything.'],
+      ['off', 'Off', 'narado desktop doesn’t run its MCP server.']
+    ];
+    const terminalFromEnv = src('NARADO_DESKTOP_TERMINAL') === 'env';
+    const terminalNow = v('NARADO_DESKTOP_TERMINAL') !== 'off';
+    const desktopSec = `<section id="desktop">${sectionHead('Desktop', 'What narado desktop may do on people’s computers. Cloud metadata addresses are always refused.')}
 <div class="card"><form method="post" action="/admin/desktop"><div class="body">
 <fieldset><legend style="font-size:12.5px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px;width:100%">Requests may go to${sendFromEnv ? envBadge('NARADO_DESKTOP_SEND') : ''}</legend><div class="choices">
 ${sendChoices.map(([val, title, text]) => `<label class="choice"><input type="radio" name="NARADO_DESKTOP_SEND" value="${val}"${sendNow === val ? ' checked' : ''}${sendFromEnv ? ' disabled' : ''}><div><strong>${esc(title)}</strong><span>${esc(text)}</span></div></label>`).join('')}
 </div></fieldset>
+<fieldset style="margin-top:16px"><legend style="font-size:12.5px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px;width:100%">MCP on people’s computers${mcpFromEnv ? envBadge('NARADO_DESKTOP_MCP') : ''}</legend><div class="choices">
+${mcpChoices.map(([val, title, text]) => `<label class="choice"><input type="radio" name="NARADO_DESKTOP_MCP" value="${val}"${mcpNow === val ? ' checked' : ''}${mcpFromEnv ? ' disabled' : ''}><div><strong>${esc(title)}</strong><span>${esc(text)}</span></div></label>`).join('')}
+</div></fieldset>
+<label class="choice" style="margin-top:16px"><input type="checkbox" name="NARADO_DESKTOP_TERMINAL" value="on"${terminalNow ? ' checked' : ''}${terminalFromEnv ? ' disabled' : ''}><div><strong>Let people turn on the terminal${terminalFromEnv ? envBadge('NARADO_DESKTOP_TERMINAL') : ''}</strong><span>Bruno’s terminal runs a shell on the person’s own computer. It stays off on each computer until its owner turns it on.</span></div></label>
 <div style="margin-top:16px">${field({ name: 'NARADO_DESKTOP_MIN_VERSION', label: 'Oldest supported version', value: v('NARADO_DESKTOP_MIN_VERSION'), source: src('NARADO_DESKTOP_MIN_VERSION'), placeholder: '0.1.0', help: 'Older copies of narado desktop are asked to update before they continue.' })}</div>
-</div>${sendFromEnv && src('NARADO_DESKTOP_MIN_VERSION') === 'env' ? '' : '<div class="foot"><span class="hint">Applies to every signed-in desktop at its next contact.</span><button type="submit" class="btn">Save</button></div>'}</form></div>
+</div>${sendFromEnv && mcpFromEnv && terminalFromEnv && src('NARADO_DESKTOP_MIN_VERSION') === 'env' ? '' : '<div class="foot"><span class="hint">Applies to every signed-in desktop at its next contact.</span><button type="submit" class="btn">Save</button></div>'}</form></div>
 <div class="card" style="margin-top:16px"><div class="card-head"><div class="t"><strong>Installers on this server</strong><span class="sub">What signed-in desktops are offered as an update.</span></div></div>${desktopUpdatesList()}</div></section>`;
 
     const computers = auth.enabled
@@ -789,10 +802,14 @@ ${error}${info}${local}${steps}${overview}${signin}${admins}${connectors}${secre
         if (!['any', 'private-only', 'allowlist-only'].includes(value)) throw new Error('Unknown setting');
         const minimum = String(form.get('NARADO_DESKTOP_MIN_VERSION') || '').trim();
         if (minimum && !/^\d+\.\d+\.\d+$/.test(minimum)) throw new Error('The oldest version looks like 0.1.0');
+        const mcp = form.get('NARADO_DESKTOP_MCP') || 'write';
+        if (!['write', 'read', 'off'].includes(mcp)) throw new Error('Unknown setting');
         const values = { NARADO_DESKTOP_SEND: value === 'any' ? null : value };
+        if (settings.source('NARADO_DESKTOP_MCP', realEnv) !== 'env') values.NARADO_DESKTOP_MCP = mcp === 'write' ? null : mcp;
+        if (settings.source('NARADO_DESKTOP_TERMINAL', realEnv) !== 'env') values.NARADO_DESKTOP_TERMINAL = form.get('NARADO_DESKTOP_TERMINAL') === 'on' ? null : 'off';
         if (settings.source('NARADO_DESKTOP_MIN_VERSION', realEnv) !== 'env') values.NARADO_DESKTOP_MIN_VERSION = minimum || null;
         settings.set(values, who.email || who.name);
-        log.log(`[narado] admin: ${who.name} set desktop sends to ${value}`);
+        log.log(`[narado] admin: ${who.name} set desktop sends to ${value}, MCP to ${mcp}, terminal ${form.get('NARADO_DESKTOP_TERMINAL') === 'on' ? 'allowed' : 'off'}`);
         return savedAndRestart(res, '/admin?saved=desktop'), true;
       }
       if (p === '/admin/secrets/add') {

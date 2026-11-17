@@ -8,6 +8,7 @@ packages/bruno-electron/dist
 *.log
 # narado desktop build output (scripts/build-narado-desktop.js)
 packages/bruno-electron/out-narado
+packages/bruno-web-server/dist-cli
 packages/bruno-electron/web
 packages/bruno-electron/narado
 # deploy settings hold secrets; never bake them into the image

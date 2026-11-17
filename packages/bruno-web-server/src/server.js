@@ -273,7 +273,7 @@ const start = async ({ settings, restart }) => {
   });
   console.log(`[narado] sign-in: ${auth.enabled ? `OIDC (${env.NARADO_OIDC_ISSUER}), public URL ${auth.publicUrl}` : localOnly ? 'off (single-user local mode)' : 'not set up yet: only the setup pages are served'}`);
   if (!setupOnly) {
-    console.log(`[narado] one Bruno worker per ${auth.enabled ? `person, in ${path.join(DATA_DIR, 'users')}${pool.sandbox ? ', sandboxed' : ', NOT sandboxed (NARADO_WORKER_SANDBOX=0)'}` : 'server (local mode)'}`);
+    console.log(`[narado] one Bruno worker per ${auth.enabled ? `person, in ${path.join(DATA_DIR, 'users')}${pool.sandbox ? ', sandboxed' : ', NOT sandboxed (NARADO_WORKER_SANDBOX=0)'}${pool.osUsers ? ', each as its own system user' : ''}` : 'server (local mode)'}`);
     console.log(
       `[narado] Git accounts: ${gitAccounts.status(null).map((h) => `${h.id} (${h.canConnect ? 'people connect their own' : 'no app configured'}${gitAccounts.sharedTokens && env[h.tokenEnv] ? ', shared token' : ''})`).join(', ')}`
     );

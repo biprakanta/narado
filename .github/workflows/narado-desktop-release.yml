@@ -2,7 +2,9 @@
 #
 #   Release:  push a tag desktop-v<version>, matching packages/bruno-web-server/package.json
 #             (git tag desktop-v0.1.0 && git push origin desktop-v0.1.0).
-#   Check:    pull requests that change the packaging build everything without publishing.
+#   Check:    pull requests that change the packaging or the desktop's code build everything
+#             without publishing, and start each system's app in its check mode
+#             (scripts/narado-desktop-smoke.js).
 #   Try it:   run the workflow by hand ("Run workflow"); it builds and keeps the files as
 #             workflow artifacts, and publishes nothing unless "publish" is ticked.
 #
@@ -24,6 +26,12 @@ on:
       - 'scripts/build-narado-desktop.js'
       - 'packages/bruno-electron/electron-builder-narado.js'
       - 'packages/bruno-electron/src/narado-main.js'
+      - 'packages/bruno-electron/src/index.js'
+      - 'packages/bruno-web-server/src/desktop.js'
+      - 'packages/bruno-web-server/src/narado/desktop-*.js'
+      - 'scripts/narado-desktop-smoke.js'
+      - 'scripts/build-narado-cli.js'
+      - 'packages/bruno-web-server/src/narado/cli.js'
   workflow_dispatch:
     inputs:
       publish:
@@ -76,6 +84,28 @@ jobs:
         shell: bash
         run: node scripts/build-narado-desktop.js --${{ matrix.target }} --arch ${{ matrix.arch }}
 
+      - name: Start the app in its check mode
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            command -v xvfb-run >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq xvfb; }
+            xvfb-run --auto-servernum node scripts/narado-desktop-smoke.js
+          else
+            node scripts/narado-desktop-smoke.js
+          fi
+
+      - name: Package the narado command
+        shell: bash
+        run: node scripts/build-narado-cli.js
+
+      - name: Keep the narado command
+        uses: actions/upload-artifact@v4
+        with:
+          name: narado-cli-${{ matrix.target }}
+          path: packages/bruno-web-server/dist-cli/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Keep the installers and update files
         uses: actions/upload-artifact@v4
         with:
@@ -101,6 +131,12 @@ jobs:
           pattern: narado-desktop-*
           path: built
 
+      - name: Collect the narado command
+        uses: actions/download-artifact@v4
+        with:
+          pattern: narado-cli-*
+          path: built-cli
+
       - name: Make the release files
         id: files
         shell: bash
@@ -115,7 +151,11 @@ jobs:
             find "$src" -maxdepth 1 -type f ! -name latest.json -exec cp {} release/ \;
           done
           (cd release && zip -qr "narado-desktop-updates-${version}.zip" desktop-updates && rm -rf desktop-updates)
-          (cd release && sha256sum narado_* narado-desktop-updates-* > SHA256SUMS.txt)
+          # The narado command: an executable per system, plus the one-file and npm versions (the same everywhere).
+          find built-cli -type f -name 'narado-*-*' ! -name '*.tgz' -exec cp {} release/ \;
+          cp built-cli/narado-cli-linux/narado.js "release/narado-cli-${version}.js"
+          cp built-cli/narado-cli-linux/narado-cli-${version}.tgz release/
+          (cd release && sha256sum narado_* narado-desktop-updates-* narado-cli-* narado-macos-* narado-windows-* narado-linux-* > SHA256SUMS.txt)
           ls -la release
 
       - name: Publish
@@ -129,6 +169,8 @@ jobs:
           narado desktop ${VERSION}, built from ${GITHUB_SHA::9}.
 
           **Install:** the dmg for your Mac's chip (arm64 for Apple silicon, x64 for Intel), the Windows installer, or the Linux AppImage or deb. These builds aren't signed yet: on macOS, right-click narado and choose Open the first time; on Windows, choose More info → Run anyway.
+
+          **The narado command:** \`narado-<system>-<chip>\` runs on its own (on macOS, \`xattr -d com.apple.quarantine\` it first), or with Node 20 or later use \`narado-cli-${VERSION}.js\` or \`npm install -g narado-cli-${VERSION}.tgz\`. Then \`narado login <your narado server>\`.
 
           **For admins:** unzip \`narado-desktop-updates-${VERSION}.zip\` into the narado server's data folder. Its \`desktop-updates/\` folder lets signed-in desktops offer this version as an update. \`SHA256SUMS.txt\` has every file's checksum.
           EOF

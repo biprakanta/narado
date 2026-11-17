@@ -210,6 +210,7 @@ const main = async (argv, io = {}) => {
   const [cmd, ...rest] = argv;
 
   if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') return out(USAGE), cmd ? 0 : 2;
+  if (cmd === 'version' || cmd === '--version' || cmd === '-v') return out(`narado ${require('../../package.json').version}`), 0;
 
   if (cmd === 'login') {
     const server = rest[0] || process.env.NARADO_SERVER_URL || front.server;

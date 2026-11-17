@@ -199,8 +199,8 @@ const GitSection = () => {
         ...(deskSignedIn ? [{ id: 'who', type: 'label', label: `${desk.user ? desk.user.name : 'Signed in'} · ${serverHost}` }] : []),
         ...(window.isNaradoDesktop && !deskSignedIn ? [{ id: 'signin', label: 'Sign in to narado server…', leftSection: IconLogin, onClick: () => setSignInOpen(true) }] : []),
         { id: 'secrets', label: 'Secrets', leftSection: IconLock, onClick: () => setSecretsOpen(true) },
-        // The desktop's own MCP server comes later (desktop phase D5).
-        ...(window.isNaradoDesktop ? [] : [{ id: 'mcp', label: 'MCP tokens', leftSection: IconKey, onClick: () => setTokensOpen(true) }]),
+        // On narado desktop, the tokens are for its MCP server on this computer.
+        { id: 'mcp', label: 'MCP tokens', leftSection: IconKey, onClick: () => setTokensOpen(true) },
         ...(webSignedIn || deskSignedIn ? [{ id: 'devices', label: 'Devices', leftSection: IconDeviceLaptop, onClick: () => setDevicesOpen(true) }] : []),
         // Admins: narado's setup and admin pages (sign-in, admins, Git apps, devices).
         ...((webSignedIn && auth.isAdmin) || (!window.isNaradoDesktop && auth.mode === 'local' && auth.isAdmin) || (deskSignedIn && desk.isAdmin)

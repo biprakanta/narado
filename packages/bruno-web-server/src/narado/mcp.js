@@ -49,7 +49,7 @@ const listRequestFiles = (root, others = []) => {
       if (e.isDirectory()) {
         if (rel !== 'environments' && !skip.has(path.resolve(p))) walk(p);
       } else if (e.name.endsWith('.bru') && !['collection.bru', 'folder.bru'].includes(e.name)) {
-        out.push(rel);
+        out.push(rel.split(path.sep).join('/'));
       }
     }
   };
@@ -144,14 +144,17 @@ const allowedHostsFor = ({ repoPath, collectionRoot }) => {
  * @param {object}   deps.workspaces      WorkspaceManager
  * @param {Function} deps.collectionsFor  (worktreePath) => [collection folders]
  */
-const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, workspaces, collectionsFor, dataDir, port, tokens: tokenStore, rulesFor = null, onEvent = null, env = process.env, log = console }) => {
+const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, workspaces, collectionsFor, dataDir, port, tokens: tokenStore, rulesFor = null, onEvent = null, env = process.env, log = console, writeAllowed = null }) => {
   const signInOn = !!(auth && auth.enabled);
   // The token store: the file in the data folder, or (in a per-user worker) the front
   // process's store, reached over IPC and limited to this worker's user.
   const tokens = tokenStore || new TokenStore({ dataDir });
   // Server-wide ceiling: NARADO_MCP_ALLOW_WRITE=0 turns write tools off for every token.
-  const serverAllowsWrite = env.NARADO_MCP_ALLOW_WRITE !== '0';
-  const url = `http://127.0.0.1:${port}/mcp`;
+  // narado desktop passes writeAllowed (the organisation's policy) and port as functions,
+  // since both can change while it runs.
+  const writeOn = () => env.NARADO_MCP_ALLOW_WRITE !== '0' && (typeof writeAllowed === 'function' ? !!writeAllowed() : true);
+  const portNow = () => (typeof port === 'function' ? port() : port);
+  const urlNow = () => `http://127.0.0.1:${portNow()}/mcp`;
 
   /** The person narado currently acts for: their account on each connected Git host. */
   const currentOwner = async () => {
@@ -183,7 +186,7 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
 
   // Token management for the interface (the person signed in to narado manages their own tokens).
   if (ipcMain) {
-    ipcMain.handle('narado:mcp-info', async () => ({ url, writeAllowed: serverAllowsWrite }));
+    ipcMain.handle('narado:mcp-info', async () => ({ url: urlNow(), writeAllowed: writeOn() }));
     // With sign-in on, people see, create and revoke only their own tokens.
     const signedIn = (e) => {
       const user = e && e.narado && e.narado.user;
@@ -197,7 +200,7 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
     ipcMain.handle('narado:mcp-tokens', async (e) => (await tokens.list()).filter(mine(e)));
     ipcMain.handle('narado:mcp-tokens:create', async (e, { name, scope }) => {
       const user = signedIn(e);
-      if (scope === 'write' && !serverAllowsWrite) throw new Error('Write tokens are turned off on this server (NARADO_MCP_ALLOW_WRITE=0)');
+      if (scope === 'write' && !writeOn()) throw new Error('Write tokens are turned off here (NARADO_MCP_ALLOW_WRITE=0, or your organisation\'s policy)');
       const owner = await currentOwner();
       if (user) Object.assign(owner, { userId: user.id, name: user.name || owner.name, email: user.email || null });
       return await tokens.create({ name, scope, owner });
@@ -209,7 +212,7 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
       return true;
     });
   }
-  const allowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`];
+  const allowedHosts = () => [`127.0.0.1:${portNow()}`, `localhost:${portNow()}`];
 
   /** A collection's folder in the repository ('' for the root), from its opened path. */
   const collectionDir = (loc, p) => {
@@ -275,7 +278,7 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
   const buildServer = (record, user) => {
     // Every call an assistant makes runs as the token's owner.
     const call = callAs ? callAs(user) : baseCall;
-    const allowWrite = serverAllowsWrite && record.scope === 'write';
+    const allowWrite = writeOn() && record.scope === 'write';
     const madeBy = `Opened from narado by ${record.owner.name || 'its owner'} through the MCP token "${record.name}".`;
     const server = new McpServer(
       { name: 'narado', version: '0.1.0' },
@@ -790,7 +793,7 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
       enableDnsRebindingProtection: true,
-      allowedHosts
+      allowedHosts: allowedHosts()
     });
     res.on('close', () => {
       transport.close();
@@ -806,7 +809,15 @@ const createMcpHandler = ({ call: baseCall, callAs, auth = null, ipcMain, worksp
     return true;
   };
 
-  return { handle, url, writeAllowed: serverAllowsWrite };
+  return {
+    handle,
+    get url() {
+      return urlNow();
+    },
+    get writeAllowed() {
+      return writeOn();
+    }
+  };
 };
 
 module.exports = { createMcpHandler, allowedHostsFor, maskItem, interpolate };
