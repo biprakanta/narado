@@ -179,6 +179,13 @@ const start = async ({ settings, restart }) => {
         fs.createReadStream(NARADO_FAVICON).pipe(res);
         return;
       }
+      // Liveness for load balancers and orchestrators: answers in every mode, setup included,
+      // so a probe doesn't keep traffic (and the setup page) away from a server still being set up.
+      if (pathname === '/healthz' && (req.method === 'GET' || req.method === 'HEAD')) {
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(req.method === 'HEAD' ? undefined : 'ok');
+        return;
+      }
       if (await admin.handle(req, res)) return;
       // Not set up yet (no sign-in, not on this computer only): the setup pages and their images only.
       if (setupOnly && !pathname.startsWith('/auth/assets/')) {

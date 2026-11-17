@@ -45,6 +45,6 @@ ENV NODE_ENV=production \
     BRUNO_WEB_DATA_DIR=/data
 VOLUME ["/data"]
 EXPOSE 4100
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD node -e "fetch('http://127.0.0.1:4100/auth/me').then((r) => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD node -e "fetch('http://127.0.0.1:4100/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "packages/bruno-web-server/src/server.js"]
